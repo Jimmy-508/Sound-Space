@@ -7,6 +7,7 @@ import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 
 type ViewMode = 'wave' | 'spectrum';
+const audioAccept = '.mp3,.wav,audio/mpeg,audio/mp3,audio/wav,audio/x-wav';
 
 export function MusicLab() {
   const [fileName, setFileName] = useState('');
@@ -54,6 +55,10 @@ export function MusicLab() {
   const loadFile = async (file: File) => {
     const audio = audioRef.current;
     if (!audio) return;
+    if (!isSupportedAudioFile(file)) {
+      setError('這個音訊格式目前無法在此瀏覽器播放，請改用 WAV 或 MP3 檔案。');
+      return;
+    }
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
 
     const url = URL.createObjectURL(file);
@@ -151,7 +156,7 @@ export function MusicLab() {
           <span>匯入音訊</span>
           <input
             type="file"
-            accept="audio/*"
+            accept={audioAccept}
             onChange={(event) => {
               const file = event.currentTarget.files?.[0];
               if (!file) return;
@@ -161,6 +166,7 @@ export function MusicLab() {
           />
         </label>
         {error && <p className="error-message">{error}</p>}
+        <p className="quiet compact-note">支援 MP3、WAV</p>
 
         <SegmentedControl label="觀察內容" value={viewMode} options={[{ value: 'wave', label: '聲音波形' }, { value: 'spectrum', label: '頻譜' }]} onChange={setViewMode} />
         <RangeControl label="音量" value={Math.round(volume * 100)} min={0} max={100} step={1} display={`${Math.round(volume * 100)}%`} onChange={(value) => setVolume(value / 100)} />
@@ -187,8 +193,15 @@ export function MusicLab() {
           <strong>{fileName || '尚未選擇音訊'}</strong>
           <small>聲音長度：{duration ? formatTime(duration) : '等待匯入'}</small>
         </div>
-        <p className="quiet">支援的格式依瀏覽器而定，常見 WAV 與 MP3 通常可以播放。</p>
       </aside>
     </section>
   );
+}
+
+function isSupportedAudioFile(file: File) {
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  const extensionAllowed = name.endsWith('.mp3') || name.endsWith('.wav');
+  const mimeAllowed = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave'].includes(type);
+  return extensionAllowed || mimeAllowed;
 }

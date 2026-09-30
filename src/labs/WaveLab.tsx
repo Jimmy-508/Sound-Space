@@ -1,4 +1,4 @@
-import { Volume2, Square, Play, StopCircle } from 'lucide-react';
+import { Play, StopCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAudioEngine } from '../audio/useAudioEngine';
 import { RangeControl } from '../components/RangeControl';
@@ -15,7 +15,7 @@ const waveOptions: Array<{ value: Waveform; label: string }> = [
 
 export function WaveLab() {
   const audio = useAudioEngine();
-  const [amplitude, setAmplitude] = useState(0.55);
+  const [amplitude, setAmplitude] = useState(0.5);
   const [frequency, setFrequency] = useState(440);
   const [waveform, setWaveform] = useState<Waveform>('sine');
   const [playing, setPlaying] = useState(false);
@@ -65,6 +65,7 @@ export function WaveLab() {
           max={100}
           step={1}
           display={`${Math.round(amplitude * 100)}%`}
+          ariaValueText={`響度 ${Math.round(amplitude * 100)}%`}
           onChange={(value) => dispatch({ type: 'AMPLITUDE_SET', value: value / 100 })}
         />
         <RangeControl
@@ -74,6 +75,7 @@ export function WaveLab() {
           max={1200}
           step={10}
           display={`${frequency} Hz`}
+          ariaValueText={`音調 ${frequency} Hz`}
           onChange={(value) => dispatch({ type: 'FREQUENCY_SET', value })}
         />
         <SegmentedControl label="波形" value={waveform} options={waveOptions} onChange={(value) => dispatch({ type: 'WAVEFORM_SET', value })} />
@@ -85,8 +87,6 @@ export function WaveLab() {
             <StopCircle size={19} />停止聲音
           </button>
         </div>
-        <p className="quiet"><Volume2 size={16} />AudioContext 會在你按下播放後啟動，適合手機和平板瀏覽器。</p>
-        <p className="quiet"><Square size={16} />正弦波、方波、三角波會讓你聽見不同音色。</p>
         <div className="status-pill">{playing ? '正在播放' : '尚未播放'}</div>
       </aside>
     </section>

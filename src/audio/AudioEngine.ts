@@ -5,7 +5,7 @@ export class AudioEngine {
   private oscillator: OscillatorNode | null = null;
   private gain: GainNode | null = null;
   private waveform: Waveform = 'sine';
-  private amplitude = 0.55;
+  private amplitude = 0.5;
   private frequency = 440;
 
   async ensureContext() {

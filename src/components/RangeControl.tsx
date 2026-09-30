@@ -5,10 +5,11 @@ interface RangeControlProps {
   max: number;
   step: number;
   display: string;
+  ariaValueText?: string;
   onChange: (value: number) => void;
 }
 
-export function RangeControl({ label, value, min, max, step, display, onChange }: RangeControlProps) {
+export function RangeControl({ label, value, min, max, step, display, ariaValueText, onChange }: RangeControlProps) {
   return (
     <label className="control">
       <span>
@@ -21,6 +22,8 @@ export function RangeControl({ label, value, min, max, step, display, onChange }
         max={max}
         step={step}
         value={value}
+        aria-label={`${label} ${display}`}
+        aria-valuetext={ariaValueText ?? display}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
       />
     </label>
