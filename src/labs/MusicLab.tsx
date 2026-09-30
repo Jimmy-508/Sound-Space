@@ -6,6 +6,7 @@ import { refineVisualSeed, type MusicSessionState } from '../music/musicSession'
 import type { PointerPoint } from '../types';
 import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
+import type { Repulsor } from '../visualization/repulsor';
 
 type ViewMode = 'wave' | 'spectrum';
 
@@ -35,6 +36,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   const [spectrumData, setSpectrumData] = useState<Uint8Array | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState('');
+  const [repulsor, setRepulsor] = useState<Repulsor | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -44,6 +46,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   const touchPointersRef = useRef(new Map<number, { x: number; y: number; startX: number; startY: number }>());
   const pinchRef = useRef<{ distance: number; zoom: number; anchorFraction: number } | null>(null);
   const gesturePinchedRef = useRef(false);
+  const lastRepulsorPointRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
 
   useEffect(() => {
@@ -60,6 +63,11 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
       audio.load();
     }
   }, [session.sourceUrl]);
+
+  useEffect(() => {
+    setRepulsor(null);
+    lastRepulsorPointRef.current = null;
+  }, [viewMode]);
 
   useEffect(() => {
     let frame = 0;
@@ -213,7 +221,34 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     onSessionChange({ current: time });
   };
 
+  const updateSpectrumRepulsor = (event: PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
+    const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / Math.max(1, rect.height)));
+    const now = performance.now();
+    const previous = lastRepulsorPointRef.current;
+    const elapsed = Math.max(8, now - (previous?.time ?? now));
+    const velocityX = previous ? (x - previous.x) / elapsed * 1000 : 0;
+    const velocityY = previous ? (y - previous.y) / elapsed * 1000 : 0;
+    const speed = Math.hypot(velocityX, velocityY);
+    setRepulsor({
+      x,
+      y,
+      radius: 0.2 + Math.min(0.12, speed * 0.025),
+      strength: 0.75 + Math.min(1.35, speed * 0.24),
+      velocityX,
+      velocityY,
+      type: 'pointer',
+    });
+    lastRepulsorPointRef.current = { x, y, time: now };
+  };
+
   const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (viewMode === 'spectrum') {
+      if (event.pointerType === 'touch') event.currentTarget.setPointerCapture(event.pointerId);
+      updateSpectrumRepulsor(event);
+      return;
+    }
     if (viewMode !== 'wave' || !session.duration || !session.sourceUrl) return;
     if (event.pointerType !== 'touch') {
       seekAtClientX(event.clientX, event.currentTarget);
@@ -237,6 +272,10 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   };
 
   const pointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (viewMode === 'spectrum') {
+      updateSpectrumRepulsor(event);
+      return;
+    }
     const tracked = touchPointersRef.current.get(event.pointerId);
     if (!tracked) return;
     tracked.x = event.clientX;
@@ -253,6 +292,13 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   };
 
   const pointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (viewMode === 'spectrum') {
+      if (event.pointerType === 'touch') {
+        setRepulsor(null);
+        lastRepulsorPointRef.current = null;
+      }
+      return;
+    }
     const tracked = touchPointersRef.current.get(event.pointerId);
     if (!tracked) return;
     const moved = Math.hypot(event.clientX - tracked.startX, event.clientY - tracked.startY) > 8;
@@ -265,6 +311,11 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   };
 
   const pointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    if (viewMode === 'spectrum') {
+      setRepulsor(null);
+      lastRepulsorPointRef.current = null;
+      return;
+    }
     touchPointersRef.current.delete(event.pointerId);
     if (touchPointersRef.current.size < 2) pinchRef.current = null;
     if (touchPointersRef.current.size === 0) gesturePinchedRef.current = false;
@@ -293,7 +344,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
         onError={() => session.fileName && setError(unsupportedAudioMessage)}
         onEnded={() => setPlaying(false)}
       />
-      <div className="stage music-stage" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onWheel={zoomFromWheel}>
+      <div className="stage music-stage" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onPointerLeave={() => viewMode === 'spectrum' && setRepulsor(null)} onWheel={zoomFromWheel}>
         <WaveCanvas
           amplitude={0.7}
           frequency={420}
@@ -309,6 +360,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
           musicVolume={session.volume}
           musicTime={session.current}
           musicVisualSeed={session.visualSeed}
+          repulsors={repulsor ? [repulsor] : []}
         />
       </div>
 
