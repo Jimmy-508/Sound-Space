@@ -23,13 +23,16 @@ export function WaveLab() {
   const [waveform, setWaveform] = useState<Waveform>('sine');
   const [playing, setPlaying] = useState(false);
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
+  const [hint, setHint] = useState('振幅越大，聲音越大。');
 
   const dispatch: CommandHandler = (command) => {
     if (command.type === 'AMPLITUDE_SET') {
       setAmplitude(command.value);
+      setHint(command.value > amplitude ? '振幅變大，聲音也變大了！' : '振幅變小，聲音也變小了。');
     }
     if (command.type === 'FREQUENCY_SET') {
       setFrequency(command.value);
+      setHint(command.value > frequency ? '頻率變高，聲波變得更密集。' : '頻率變低，聲波變得比較疏。');
     }
     if (command.type === 'WAVEFORM_SET') setWaveform(command.value);
     if (command.type === 'POINTER_MOVE') setPointer({ x: command.x, y: command.y });
@@ -51,6 +54,7 @@ export function WaveLab() {
         onPointerMove={(event) => dispatch(createPointerCommand(event, event.currentTarget))}
       >
         <WaveCanvas amplitude={amplitude} frequency={frequency} waveform={waveform} pointer={pointer} />
+        <div className="stage-note"><span>{hint}</span></div>
       </div>
 
       <aside className="control-panel">

@@ -1,10 +1,12 @@
 import { Calculator, Home, Music, Waves } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPointerCommand } from './interaction/commandLayer';
 import { MusicLab } from './labs/MusicLab';
 import { SamplingLab } from './labs/SamplingLab';
 import { WaveLab } from './labs/WaveLab';
+import { createFileSeed, initialMusicSession, spectrumModeFromSeed, type MusicSessionState } from './music/musicSession';
 import type { LabId, PointerPoint } from './types';
+import { StarfieldBackground } from './visualization/StarfieldBackground';
 import { WaveCanvas } from './visualization/WaveCanvas';
 
 const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: string; icon: React.ReactNode }> = [
@@ -16,9 +18,38 @@ const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: stri
 export default function App() {
   const [activeLab, setActiveLab] = useState<LabId>('home');
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
+  const [musicSession, setMusicSession] = useState<MusicSessionState>(initialMusicSession);
+  const musicUrlRef = useRef<string | null>(null);
+
+  const updateMusicSession = useCallback((patch: Partial<MusicSessionState>) => {
+    setMusicSession((current) => ({ ...current, ...patch }));
+  }, []);
+
+  const replaceMusicFile = useCallback((file: File) => {
+    if (musicUrlRef.current) URL.revokeObjectURL(musicUrlRef.current);
+    const sourceUrl = URL.createObjectURL(file);
+    const dnaSeed = createFileSeed(file);
+    musicUrlRef.current = sourceUrl;
+    setMusicSession((current) => ({
+      ...initialMusicSession,
+      sourceUrl,
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      volume: current.volume,
+      dnaSeed,
+      spectrumMode: spectrumModeFromSeed(dnaSeed),
+    }));
+    return sourceUrl;
+  }, []);
+
+  useEffect(() => () => {
+    if (musicUrlRef.current) URL.revokeObjectURL(musicUrlRef.current);
+  }, []);
 
   return (
     <main className="app-shell">
+      <StarfieldBackground />
       <nav className="top-nav" aria-label="主要導覽">
         <div className="top-nav-track">
           <button type="button" className={activeLab === 'home' ? 'active' : ''} onClick={() => setActiveLab('home')}>
@@ -52,7 +83,13 @@ export default function App() {
 
       {activeLab === 'wave' && <WaveLab />}
       {activeLab === 'sampling' && <SamplingLab />}
-      {activeLab === 'music' && <MusicLab />}
+      {activeLab === 'music' && (
+        <MusicLab
+          session={musicSession}
+          onSessionChange={updateMusicSession}
+          onReplaceFile={replaceMusicFile}
+        />
+      )}
 
     </main>
   );

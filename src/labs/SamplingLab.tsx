@@ -38,6 +38,9 @@ export function SamplingLab() {
           sampleCount={sampleCount}
           bitDepth={quantizeBit}
         />
+        <div className="stage-note">
+          <span>{tab === 'sample' ? '取樣越密集，記錄到的聲音資訊越完整。' : tab === 'quantize' ? '量化位元數越高，振幅記錄越精細。' : '資料核心會隨檔案大小變亮。'}</span>
+        </div>
         {tab === 'size' && (
           <div
             className="data-core"
