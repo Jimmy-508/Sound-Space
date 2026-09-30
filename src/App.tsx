@@ -1,4 +1,4 @@
-import { AudioWaveform, Calculator, Home, Music, Waves } from 'lucide-react';
+import { Calculator, Home, Music, Waves } from 'lucide-react';
 import { useState } from 'react';
 import { createPointerCommand } from './interaction/commandLayer';
 import { MusicLab } from './labs/MusicLab';
@@ -45,15 +45,6 @@ export default function App() {
             <p className="eyebrow">聲音數位化互動實驗室</p>
             <h1>Sound Space</h1>
             <p>用手、滑鼠或觸控改變聲波，理解聲音如何被取樣、量化，最後變成數位資料。</p>
-            <div className="entry-grid">
-              {labs.map((lab) => (
-                <button key={lab.id} type="button" onClick={() => setActiveLab(lab.id)}>
-                  {lab.icon}
-                  <strong>{lab.title}</strong>
-                  <span>{lab.description}</span>
-                </button>
-              ))}
-            </div>
           </div>
         </section>
       )}

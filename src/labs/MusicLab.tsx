@@ -1,4 +1,4 @@
-import { Pause, Play, StopCircle, Upload } from 'lucide-react';
+import { Download, Pause, Play, StopCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
@@ -17,9 +17,11 @@ export function MusicLab() {
   const [musicData, setMusicData] = useState<Float32Array | null>(null);
   const [spectrumData, setSpectrumData] = useState<Uint8Array | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [error, setError] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
 
   useEffect(() => {
@@ -45,30 +47,45 @@ export function MusicLab() {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  useEffect(() => () => {
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+  }, []);
+
   const loadFile = async (file: File) => {
-    const url = URL.createObjectURL(file);
     const audio = audioRef.current;
     if (!audio) return;
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+
+    const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
     audio.src = url;
     audio.load();
     setFileName(file.name);
+    setDuration(0);
     setCurrent(0);
     setPlaying(false);
+    setMusicData(null);
+    setSpectrumData(null);
+    setError('');
 
-    const arrayBuffer = await file.arrayBuffer();
-    const AudioCtor = window.AudioContext || window.webkitAudioContext;
-    const context = contextRef.current ?? new AudioCtor();
-    contextRef.current = context;
-    const buffer = await context.decodeAudioData(arrayBuffer.slice(0));
-    setDuration(buffer.duration);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      const context = contextRef.current ?? new AudioCtor();
+      contextRef.current = context;
+      const buffer = await context.decodeAudioData(arrayBuffer.slice(0));
+      setDuration(buffer.duration);
 
-    const channel = buffer.getChannelData(0);
-    const samples = new Float32Array(512);
-    const step = Math.max(1, Math.floor(channel.length / samples.length));
-    for (let i = 0; i < samples.length; i += 1) {
-      samples[i] = channel[i * step] ?? 0;
+      const channel = buffer.getChannelData(0);
+      const samples = new Float32Array(512);
+      const step = Math.max(1, Math.floor(channel.length / samples.length));
+      for (let i = 0; i < samples.length; i += 1) {
+        samples[i] = channel[i * step] ?? 0;
+      }
+      setMusicData(samples);
+    } catch {
+      setError('這個音訊格式目前無法在此瀏覽器播放，請改用 WAV 或 MP3 檔案。');
     }
-    setMusicData(samples);
   };
 
   const ensureAnalyser = async () => {
@@ -107,7 +124,12 @@ export function MusicLab() {
 
   return (
     <section className="lab-layout">
-      <audio ref={audioRef} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onEnded={() => setPlaying(false)} />
+      <audio
+        ref={audioRef}
+        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+        onError={() => fileName && setError('這個音訊格式目前無法在此瀏覽器播放，請改用 WAV 或 MP3 檔案。')}
+        onEnded={() => setPlaying(false)}
+      />
       <div className="stage">
         <WaveCanvas
           amplitude={0.7}
@@ -125,10 +147,20 @@ export function MusicLab() {
 
       <aside className="control-panel">
         <label className="file-picker">
-          <Upload size={20} />
+          <Download size={20} />
           <span>匯入音訊</span>
-          <input type="file" accept="audio/*" onChange={(event) => event.currentTarget.files?.[0] && void loadFile(event.currentTarget.files[0])} />
+          <input
+            type="file"
+            accept="audio/*"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (!file) return;
+              void loadFile(file);
+              event.currentTarget.value = '';
+            }}
+          />
         </label>
+        {error && <p className="error-message">{error}</p>}
 
         <SegmentedControl label="觀察內容" value={viewMode} options={[{ value: 'wave', label: '聲音波形' }, { value: 'spectrum', label: '頻譜' }]} onChange={setViewMode} />
         <RangeControl label="音量" value={Math.round(volume * 100)} min={0} max={100} step={1} display={`${Math.round(volume * 100)}%`} onChange={(value) => setVolume(value / 100)} />
