@@ -7,7 +7,20 @@ import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 
 type ViewMode = 'wave' | 'spectrum';
-const audioAccept = '.mp3,.wav,audio/mpeg,audio/mp3,audio/wav,audio/x-wav';
+const audioAccept = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,.mp3,.wav,.m4a,.aac';
+const supportedAudioExtensions = ['.mp3', '.wav', '.m4a', '.aac'];
+const supportedAudioMimeTypes = [
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/wave',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/aac',
+];
+const unsupportedAudioMessage = '這個音訊格式目前無法在此瀏覽器播放，請改用其他 MP3、WAV 或 M4A 檔案。';
 
 export function MusicLab() {
   const [fileName, setFileName] = useState('');
@@ -56,7 +69,7 @@ export function MusicLab() {
     const audio = audioRef.current;
     if (!audio) return;
     if (!isSupportedAudioFile(file)) {
-      setError('這個音訊格式目前無法在此瀏覽器播放，請改用 WAV 或 MP3 檔案。');
+      setError(unsupportedAudioMessage);
       return;
     }
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -89,7 +102,7 @@ export function MusicLab() {
       }
       setMusicData(samples);
     } catch {
-      setError('這個音訊格式目前無法在此瀏覽器播放，請改用 WAV 或 MP3 檔案。');
+      setError(unsupportedAudioMessage);
     }
   };
 
@@ -132,7 +145,7 @@ export function MusicLab() {
       <audio
         ref={audioRef}
         onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
-        onError={() => fileName && setError('這個音訊格式目前無法在此瀏覽器播放，請改用 WAV 或 MP3 檔案。')}
+        onError={() => fileName && setError(unsupportedAudioMessage)}
         onEnded={() => setPlaying(false)}
       />
       <div className="stage">
@@ -166,7 +179,7 @@ export function MusicLab() {
           />
         </label>
         {error && <p className="error-message">{error}</p>}
-        <p className="quiet compact-note">支援 MP3、WAV</p>
+        <p className="quiet compact-note">支援 MP3、WAV、M4A</p>
 
         <SegmentedControl label="觀察內容" value={viewMode} options={[{ value: 'wave', label: '聲音波形' }, { value: 'spectrum', label: '頻譜' }]} onChange={setViewMode} />
         <RangeControl label="音量" value={Math.round(volume * 100)} min={0} max={100} step={1} display={`${Math.round(volume * 100)}%`} onChange={(value) => setVolume(value / 100)} />
@@ -201,7 +214,7 @@ export function MusicLab() {
 function isSupportedAudioFile(file: File) {
   const name = file.name.toLowerCase();
   const type = file.type.toLowerCase();
-  const extensionAllowed = name.endsWith('.mp3') || name.endsWith('.wav');
-  const mimeAllowed = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave'].includes(type);
+  const extensionAllowed = supportedAudioExtensions.some((extension) => name.endsWith(extension));
+  const mimeAllowed = supportedAudioMimeTypes.includes(type);
   return extensionAllowed || mimeAllowed;
 }
