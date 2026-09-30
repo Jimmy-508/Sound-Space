@@ -70,9 +70,7 @@ button:disabled {
 .top-nav {
   position: relative;
   z-index: 5;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.6rem;
+  display: block;
   max-width: 1180px;
   margin: 0 auto;
   overflow-x: auto;
@@ -82,6 +80,15 @@ button:disabled {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
   padding: 0.15rem 0.05rem 0.35rem;
+}
+
+.top-nav-track {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 0.6rem;
+  width: max-content;
+  min-width: 100%;
 }
 
 .top-nav::-webkit-scrollbar {
@@ -220,30 +227,6 @@ h1 {
   height: 100%;
 }
 
-.stage-caption {
-  position: absolute;
-  left: 1rem;
-  right: 1rem;
-  bottom: 1rem;
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
-  pointer-events: none;
-}
-
-.stage-caption strong {
-  font-size: clamp(1.4rem, 3vw, 2.6rem);
-  text-shadow: 0 0 20px rgba(89, 212, 255, 0.42);
-}
-
-.stage-caption span {
-  max-width: 360px;
-  color: #c9eff8;
-  text-align: right;
-  line-height: 1.55;
-}
-
 .control-panel {
   overflow: visible;
   padding: 1rem;
@@ -330,6 +313,12 @@ input[type="number"] {
   background: linear-gradient(135deg, rgba(24, 119, 158, 0.95), rgba(23, 88, 160, 0.92));
 }
 
+.primary.playing {
+  border-color: rgba(180, 246, 255, 0.88);
+  background: linear-gradient(135deg, rgba(35, 137, 174, 0.98), rgba(34, 102, 177, 0.94));
+  box-shadow: 0 0 18px rgba(90, 218, 255, 0.18);
+}
+
 .quiet {
   display: flex;
   align-items: flex-start;
@@ -338,17 +327,6 @@ input[type="number"] {
   color: #bddbe4;
   line-height: 1.55;
   font-size: 0.94rem;
-}
-
-.status-pill {
-  display: inline-flex;
-  min-height: 36px;
-  align-items: center;
-  padding: 0 0.85rem;
-  border-radius: 999px;
-  color: #051118;
-  background: #94eeff;
-  font-weight: 800;
 }
 
 .result-card,
@@ -558,18 +536,10 @@ progress {
     max-height: none;
   }
 
-  .stage-caption {
-    align-items: start;
-    flex-direction: column;
-  }
-
-  .stage-caption span {
-    text-align: left;
-  }
 }
 
 @media (max-width: 680px) {
-  .top-nav {
+  .top-nav-track {
     gap: 0.42rem;
   }
 
@@ -588,12 +558,31 @@ progress {
     padding: clamp(2.5rem, 12dvh, 6rem) 0;
   }
 
+  .home-content h1 {
+    font-size: 2.65rem;
+  }
+
   .home-content > p:not(.eyebrow) {
     margin-bottom: 1rem;
   }
 
   .orientation-tip {
     display: block;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .data-core,
+  .data-core::before,
+  .data-core::after,
+  .data-core span {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
+  }
+
+  button,
+  .data-core {
+    transition-duration: 1ms;
   }
 }
 

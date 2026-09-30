@@ -26,7 +26,7 @@ export function MusicLab() {
   const [fileName, setFileName] = useState('');
   const [duration, setDuration] = useState(0);
   const [current, setCurrent] = useState(0);
-  const [volume, setVolume] = useState(0.78);
+  const [volume, setVolume] = useState(0.8);
   const [viewMode, setViewMode] = useState<ViewMode>('wave');
   const [musicData, setMusicData] = useState<Float32Array | null>(null);
   const [spectrumData, setSpectrumData] = useState<Uint8Array | null>(null);
@@ -35,6 +35,7 @@ export function MusicLab() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const analyserDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
 
@@ -46,14 +47,22 @@ export function MusicLab() {
 
   useEffect(() => {
     let frame = 0;
+    let lastProgressUpdate = 0;
+    let lastSpectrumUpdate = 0;
     const tick = () => {
       const audio = audioRef.current;
       const analyser = analyserRef.current;
-      if (audio) setCurrent(audio.currentTime);
-      if (analyser) {
-        const data = new Uint8Array(analyser.frequencyBinCount);
+      const now = performance.now();
+      if (audio && now - lastProgressUpdate >= 100) {
+        setCurrent(audio.currentTime);
+        lastProgressUpdate = now;
+      }
+      if (analyser && now - lastSpectrumUpdate >= 32) {
+        const data = analyserDataRef.current ?? new Uint8Array(analyser.frequencyBinCount);
+        analyserDataRef.current = data;
         analyser.getByteFrequencyData(data);
-        setSpectrumData(data);
+        setSpectrumData(data.slice());
+        lastSpectrumUpdate = now;
       }
       frame = requestAnimationFrame(tick);
     };
@@ -115,7 +124,8 @@ export function MusicLab() {
     if (context.state === 'suspended') await context.resume();
     const source = context.createMediaElementSource(audio);
     const analyser = context.createAnalyser();
-    analyser.fftSize = 512;
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.72;
     source.connect(analyser);
     analyser.connect(context.destination);
     analyserRef.current = analyser;
@@ -157,10 +167,6 @@ export function MusicLab() {
           musicData={viewMode === 'wave' ? musicData : null}
           spectrumData={viewMode === 'spectrum' ? spectrumData : null}
         />
-        <div className="stage-caption">
-          <strong>音樂實驗室</strong>
-          <span>音訊只在你的裝置中處理，不會上傳。</span>
-        </div>
       </div>
 
       <aside className="control-panel">

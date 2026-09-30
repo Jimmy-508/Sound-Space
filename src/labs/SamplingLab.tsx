@@ -6,12 +6,12 @@ import { formatBytes } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 
 const sampleRates = [8000, 22050, 44100, 48000, 96000];
+const samplePointCounts = [9, 18, 30, 36, 60];
 const bitDepths = [8, 16, 24, 32];
 const quantizeBits = [1, 2, 4, 8, 16, 24];
 
 export function SamplingLab() {
   const [tab, setTab] = useState<SamplingTab>('sample');
-  const [sampleCount, setSampleCount] = useState(16);
   const [sampleRateIndex, setSampleRateIndex] = useState(2);
   const [bitDepthIndex, setBitDepthIndex] = useState(1);
   const [quantizeBitIndex, setQuantizeBitIndex] = useState(2);
@@ -19,6 +19,7 @@ export function SamplingLab() {
   const [seconds, setSeconds] = useState(60);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
   const sampleRate = sampleRates[sampleRateIndex];
+  const sampleCount = samplePointCounts[sampleRateIndex];
   const bitDepth = bitDepths[bitDepthIndex];
   const quantizeBit = quantizeBits[quantizeBitIndex];
   const bytes = sampleRate * (bitDepth / 8) * channels * seconds;
@@ -37,10 +38,6 @@ export function SamplingLab() {
           sampleCount={sampleCount}
           bitDepth={quantizeBit}
         />
-        <div className="stage-caption">
-          <strong>數位取樣實驗室</strong>
-          <span>{tab === 'sample' ? '取樣越密集，記錄到的聲音資訊越完整。' : tab === 'quantize' ? '量化位元數越高，振幅記錄越精細。' : '資料核心會隨檔案大小變亮。'}</span>
-        </div>
         {tab === 'size' && (
           <div
             className="data-core"
@@ -72,7 +69,6 @@ export function SamplingLab() {
 
         {tab === 'sample' && (
           <>
-            <RangeControl label="取樣點密度" value={sampleCount} min={4} max={32} step={4} display={`${sampleCount} 點`} onChange={setSampleCount} />
             <RangeControl
               label="取樣頻率"
               value={sampleRateIndex}
@@ -83,7 +79,6 @@ export function SamplingLab() {
               ariaValueText={`取樣頻率 ${sampleRate} Hz`}
               onChange={setSampleRateIndex}
             />
-            <p className="quiet">畫面用少量取樣點示範概念，不會真的畫出每秒數萬個點。</p>
           </>
         )}
 

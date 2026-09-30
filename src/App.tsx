@@ -20,14 +20,16 @@ export default function App() {
   return (
     <main className="app-shell">
       <nav className="top-nav" aria-label="主要導覽">
-        <button type="button" className={activeLab === 'home' ? 'active' : ''} onClick={() => setActiveLab('home')}>
-          <Home size={18} />首頁
-        </button>
-        {labs.map((lab) => (
-          <button key={lab.id} type="button" className={activeLab === lab.id ? 'active' : ''} onClick={() => setActiveLab(lab.id)}>
-            {lab.icon}{lab.title}
+        <div className="top-nav-track">
+          <button type="button" className={activeLab === 'home' ? 'active' : ''} onClick={() => setActiveLab('home')}>
+            <Home size={18} />首頁
           </button>
-        ))}
+          {labs.map((lab) => (
+            <button key={lab.id} type="button" className={activeLab === lab.id ? 'active' : ''} onClick={() => setActiveLab(lab.id)}>
+              {lab.icon}{lab.title}
+            </button>
+          ))}
+        </div>
       </nav>
 
       {activeLab === 'home' && (

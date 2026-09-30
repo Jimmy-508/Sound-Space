@@ -1,4 +1,4 @@
-import { Play, StopCircle } from 'lucide-react';
+import { Play, Radio, StopCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAudioEngine } from '../audio/useAudioEngine';
 import { RangeControl } from '../components/RangeControl';
@@ -12,6 +12,9 @@ const waveOptions: Array<{ value: Waveform; label: string }> = [
   { value: 'square', label: '方波' },
   { value: 'triangle', label: '三角波' },
 ];
+const frequencyMin = 120;
+const frequencyMax = 4000;
+const frequencySliderMax = 1000;
 
 export function WaveLab() {
   const audio = useAudioEngine();
@@ -20,16 +23,13 @@ export function WaveLab() {
   const [waveform, setWaveform] = useState<Waveform>('sine');
   const [playing, setPlaying] = useState(false);
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
-  const [hint, setHint] = useState('振幅越大，聲音越大。');
 
   const dispatch: CommandHandler = (command) => {
     if (command.type === 'AMPLITUDE_SET') {
       setAmplitude(command.value);
-      setHint(command.value > amplitude ? '振幅變大，聲音也變大了！' : '振幅變小，聲音也變小了。');
     }
     if (command.type === 'FREQUENCY_SET') {
       setFrequency(command.value);
-      setHint(command.value > frequency ? '頻率變高，聲波變得更密集。' : '頻率變低，聲波變得比較疏。');
     }
     if (command.type === 'WAVEFORM_SET') setWaveform(command.value);
     if (command.type === 'POINTER_MOVE') setPointer({ x: command.x, y: command.y });
@@ -51,10 +51,6 @@ export function WaveLab() {
         onPointerMove={(event) => dispatch(createPointerCommand(event, event.currentTarget))}
       >
         <WaveCanvas amplitude={amplitude} frequency={frequency} waveform={waveform} pointer={pointer} />
-        <div className="stage-caption">
-          <strong>聲波實驗室</strong>
-          <span>{hint}</span>
-        </div>
       </div>
 
       <aside className="control-panel">
@@ -70,25 +66,33 @@ export function WaveLab() {
         />
         <RangeControl
           label="音調"
-          value={frequency}
-          min={120}
-          max={1200}
-          step={10}
+          value={frequencyToSlider(frequency)}
+          min={0}
+          max={frequencySliderMax}
+          step={1}
           display={`${frequency} Hz`}
           ariaValueText={`音調 ${frequency} Hz`}
-          onChange={(value) => dispatch({ type: 'FREQUENCY_SET', value })}
+          onChange={(value) => dispatch({ type: 'FREQUENCY_SET', value: sliderToFrequency(value) })}
         />
         <SegmentedControl label="波形" value={waveform} options={waveOptions} onChange={(value) => dispatch({ type: 'WAVEFORM_SET', value })} />
         <div className="button-row">
-          <button type="button" className="primary" onClick={() => dispatch({ type: 'PLAY' })}>
-            <Play size={19} />播放聲音
+          <button type="button" className={`primary ${playing ? 'playing' : ''}`} aria-pressed={playing} onClick={() => dispatch({ type: 'PLAY' })}>
+            {playing ? <Radio size={19} /> : <Play size={19} />}{playing ? '正在播放' : '播放聲音'}
           </button>
           <button type="button" onClick={() => dispatch({ type: 'STOP' })}>
             <StopCircle size={19} />停止聲音
           </button>
         </div>
-        <div className="status-pill">{playing ? '正在播放' : '尚未播放'}</div>
       </aside>
     </section>
   );
+}
+
+function frequencyToSlider(frequency: number) {
+  return Math.round(Math.log(frequency / frequencyMin) / Math.log(frequencyMax / frequencyMin) * frequencySliderMax);
+}
+
+function sliderToFrequency(value: number) {
+  const frequency = frequencyMin * (frequencyMax / frequencyMin) ** (value / frequencySliderMax);
+  return Math.min(frequencyMax, Math.max(frequencyMin, Math.round(frequency / 10) * 10));
 }
