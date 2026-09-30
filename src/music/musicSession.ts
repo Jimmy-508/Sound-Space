@@ -1,5 +1,3 @@
-export type MusicSpectrumMode = 'radial' | 'mirror' | 'orbital';
-
 export interface MusicSessionState {
   sourceUrl: string | null;
   fileName: string;
@@ -11,8 +9,9 @@ export interface MusicSessionState {
   zoom: number;
   viewStart: number;
   waveformData: Float32Array | null;
-  dnaSeed: number;
-  spectrumMode: MusicSpectrumMode;
+  pcmData: Float32Array | null;
+  sampleRate: number;
+  visualSeed: number;
 }
 
 export const initialMusicSession: MusicSessionState = {
@@ -26,15 +25,18 @@ export const initialMusicSession: MusicSessionState = {
   zoom: 1,
   viewStart: 0,
   waveformData: null,
-  dnaSeed: 1,
-  spectrumMode: 'radial',
+  pcmData: null,
+  sampleRate: 0,
+  visualSeed: 1,
 };
 
-export function createFileSeed(file: File) {
-  return hashText(`${file.name}|${file.size}|${file.type}|${file.lastModified}`);
+export function createVisualSeed(file: File) {
+  const entropy = new Uint32Array(1);
+  crypto.getRandomValues(entropy);
+  return hashText(`${file.name}|${file.size}|${file.type}|${file.lastModified}|${entropy[0]}|${performance.now()}`);
 }
 
-export function createDecodedMusicDna(file: File, duration: number, channel: Float32Array) {
+export function refineVisualSeed(baseSeed: number, file: File, duration: number, channel: Float32Array) {
   const stride = Math.max(1, Math.floor(channel.length / 2048));
   let energy = 0;
   let crossings = 0;
@@ -53,13 +55,8 @@ export function createDecodedMusicDna(file: File, duration: number, channel: Flo
 
   const rms = Math.sqrt(energy / Math.max(1, samples));
   const texture = weightedChange / Math.max(1, samples);
-  const signature = `${file.name}|${file.size}|${duration.toFixed(3)}|${rms.toFixed(5)}|${crossings}|${texture.toFixed(5)}`;
-  const seed = hashText(signature);
-  return { seed, mode: spectrumModeFromSeed(seed) };
-}
-
-export function spectrumModeFromSeed(seed: number): MusicSpectrumMode {
-  return (['radial', 'mirror', 'orbital'] as const)[seed % 3];
+  const signature = `${baseSeed}|${file.name}|${file.size}|${duration.toFixed(3)}|${rms.toFixed(5)}|${crossings}|${texture.toFixed(5)}`;
+  return hashText(signature);
 }
 
 function hashText(value: string) {

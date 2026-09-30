@@ -1,8 +1,8 @@
-import { Download, Pause, Play, StopCircle, ZoomIn, ZoomOut } from 'lucide-react';
+import { Download, Pause, Play, StopCircle } from 'lucide-react';
 import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from 'react';
 import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
-import { createDecodedMusicDna, type MusicSessionState } from '../music/musicSession';
+import { refineVisualSeed, type MusicSessionState } from '../music/musicSession';
 import type { PointerPoint } from '../types';
 import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
@@ -12,7 +12,7 @@ type ViewMode = 'wave' | 'spectrum';
 interface MusicLabProps {
   session: MusicSessionState;
   onSessionChange: (patch: Partial<MusicSessionState>) => void;
-  onReplaceFile: (file: File) => string;
+  onReplaceFile: (file: File) => { sourceUrl: string; visualSeed: number };
 }
 
 const audioAccept = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,.mp3,.wav,.m4a,.aac';
@@ -41,6 +41,9 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   const analyserDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const restoredSourceRef = useRef<string | null>(null);
   const loadVersionRef = useRef(0);
+  const touchPointersRef = useRef(new Map<number, { x: number; y: number; startX: number; startY: number }>());
+  const pinchRef = useRef<{ distance: number; zoom: number; anchorFraction: number } | null>(null);
+  const gesturePinchedRef = useRef(false);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
 
   useEffect(() => {
@@ -117,7 +120,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
 
     const loadVersion = loadVersionRef.current + 1;
     loadVersionRef.current = loadVersion;
-    const sourceUrl = onReplaceFile(file);
+    const { sourceUrl, visualSeed } = onReplaceFile(file);
     restoredSourceRef.current = sourceUrl;
     audio.src = sourceUrl;
     audio.load();
@@ -134,13 +137,14 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
       if (loadVersion !== loadVersionRef.current) return;
       const channel = buffer.getChannelData(0);
       const waveformData = createWaveformData(channel, 4096);
-      const dna = createDecodedMusicDna(file, buffer.duration, channel);
+      const pcmData = channel.slice();
       onSessionChange({
         duration: buffer.duration,
         current: 0,
         waveformData,
-        dnaSeed: dna.seed,
-        spectrumMode: dna.mode,
+        pcmData,
+        sampleRate: buffer.sampleRate,
+        visualSeed: refineVisualSeed(visualSeed, file, buffer.duration, channel),
         zoom: 1,
         viewStart: 0,
       });
@@ -190,30 +194,88 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     setPlaying(false);
   };
 
-  const maxZoom = getMaxZoom(session.duration);
-  const setZoom = (requested: number) => {
+  const maxZoom = getMaxZoom(session.duration, session.sampleRate);
+  const setZoomAt = (requested: number, anchorLocal: number, baseZoom = session.zoom, baseViewStart = session.viewStart) => {
     const zoom = Math.min(maxZoom, Math.max(1, requested));
-    const progress = session.duration ? session.current / session.duration : 0;
+    const safeAnchor = Math.min(1, Math.max(0, anchorLocal));
+    const anchorFraction = baseViewStart + safeAnchor / Math.max(1, baseZoom);
     const visible = 1 / zoom;
-    const viewStart = zoom <= 1 ? 0 : Math.min(1 - visible, Math.max(0, progress - visible * 0.35));
+    const viewStart = zoom <= 1 ? 0 : Math.min(1 - visible, Math.max(0, anchorFraction - safeAnchor * visible));
     onSessionChange({ zoom, viewStart });
   };
 
-  const seekFromPointer = (event: PointerEvent<HTMLDivElement>) => {
-    if (viewMode !== 'wave' || !session.duration || !session.sourceUrl) return;
-    if ((event.target as HTMLElement).closest('button')) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const local = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
+  const seekAtClientX = (clientX: number, surface: HTMLDivElement) => {
+    const rect = surface.getBoundingClientRect();
+    const local = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width)));
     const fraction = Math.min(1, session.viewStart + local / session.zoom);
     const time = fraction * session.duration;
     if (audioRef.current) audioRef.current.currentTime = time;
     onSessionChange({ current: time });
   };
 
+  const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (viewMode !== 'wave' || !session.duration || !session.sourceUrl) return;
+    if (event.pointerType !== 'touch') {
+      seekAtClientX(event.clientX, event.currentTarget);
+      return;
+    }
+    if (touchPointersRef.current.size === 0) gesturePinchedRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY });
+    if (touchPointersRef.current.size === 2) {
+      const [first, second] = [...touchPointersRef.current.values()];
+      const rect = event.currentTarget.getBoundingClientRect();
+      const midpoint = (first.x + second.x) / 2;
+      const anchorLocal = Math.min(1, Math.max(0, (midpoint - rect.left) / Math.max(1, rect.width)));
+      pinchRef.current = {
+        distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+        zoom: session.zoom,
+        anchorFraction: session.viewStart + anchorLocal / session.zoom,
+      };
+      gesturePinchedRef.current = true;
+    }
+  };
+
+  const pointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const tracked = touchPointersRef.current.get(event.pointerId);
+    if (!tracked) return;
+    tracked.x = event.clientX;
+    tracked.y = event.clientY;
+    if (touchPointersRef.current.size !== 2 || !pinchRef.current) return;
+    const [first, second] = [...touchPointersRef.current.values()];
+    const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+    const rect = event.currentTarget.getBoundingClientRect();
+    const midpointLocal = Math.min(1, Math.max(0, ((first.x + second.x) / 2 - rect.left) / Math.max(1, rect.width)));
+    const zoom = Math.min(maxZoom, Math.max(1, pinchRef.current.zoom * distance / pinchRef.current.distance));
+    const visible = 1 / zoom;
+    const viewStart = zoom <= 1 ? 0 : Math.min(1 - visible, Math.max(0, pinchRef.current.anchorFraction - midpointLocal * visible));
+    onSessionChange({ zoom, viewStart });
+  };
+
+  const pointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const tracked = touchPointersRef.current.get(event.pointerId);
+    if (!tracked) return;
+    const moved = Math.hypot(event.clientX - tracked.startX, event.clientY - tracked.startY) > 8;
+    if (!gesturePinchedRef.current && !moved && touchPointersRef.current.size === 1) {
+      seekAtClientX(event.clientX, event.currentTarget);
+    }
+    touchPointersRef.current.delete(event.pointerId);
+    if (touchPointersRef.current.size < 2) pinchRef.current = null;
+    if (touchPointersRef.current.size === 0) gesturePinchedRef.current = false;
+  };
+
+  const pointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    touchPointersRef.current.delete(event.pointerId);
+    if (touchPointersRef.current.size < 2) pinchRef.current = null;
+    if (touchPointersRef.current.size === 0) gesturePinchedRef.current = false;
+  };
+
   const zoomFromWheel = (event: WheelEvent<HTMLDivElement>) => {
     if (viewMode !== 'wave' || !session.sourceUrl || maxZoom <= 1) return;
     event.preventDefault();
-    setZoom(session.zoom * Math.exp(-event.deltaY * 0.002));
+    const rect = event.currentTarget.getBoundingClientRect();
+    const anchorLocal = (event.clientX - rect.left) / Math.max(1, rect.width);
+    setZoomAt(session.zoom * Math.exp(-event.deltaY * 0.0025), anchorLocal);
   };
 
   return (
@@ -231,32 +293,23 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
         onError={() => session.fileName && setError(unsupportedAudioMessage)}
         onEnded={() => setPlaying(false)}
       />
-      <div className="stage music-stage" onPointerDown={seekFromPointer} onWheel={zoomFromWheel}>
+      <div className="stage music-stage" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onWheel={zoomFromWheel}>
         <WaveCanvas
           amplitude={0.7}
           frequency={420}
           pointer={pointer}
           mode="music"
           musicData={viewMode === 'wave' ? session.waveformData : null}
+          musicPcmData={session.pcmData}
+          musicSampleRate={session.sampleRate}
           spectrumData={viewMode === 'spectrum' ? spectrumData : null}
           musicProgress={session.duration ? session.current / session.duration : 0}
           musicZoom={session.zoom}
           musicViewStart={session.viewStart}
           musicVolume={session.volume}
           musicTime={session.current}
-          musicDnaSeed={session.dnaSeed}
-          musicSpectrumMode={session.spectrumMode}
+          musicVisualSeed={session.visualSeed}
         />
-        {viewMode === 'wave' && session.sourceUrl && (
-          <div className="waveform-tools" aria-label="波形縮放">
-            <button type="button" title="縮小波形" aria-label="縮小波形" disabled={session.zoom <= 1.001} onClick={() => setZoom(session.zoom / 1.6)}>
-              <ZoomOut size={18} />
-            </button>
-            <button type="button" title="放大波形" aria-label="放大波形" disabled={session.zoom >= maxZoom - 0.001} onClick={() => setZoom(session.zoom * 1.6)}>
-              <ZoomIn size={18} />
-            </button>
-          </div>
-        )}
       </div>
 
       <aside className="control-panel">
@@ -323,8 +376,9 @@ function createWaveformData(channel: Float32Array, pointCount: number) {
   return samples;
 }
 
-function getMaxZoom(duration: number) {
-  return duration > 0 ? Math.max(1, Math.min(16, duration / 4)) : 1;
+function getMaxZoom(duration: number, sampleRate: number) {
+  const minimumVisibleDuration = Math.max(0.02, sampleRate > 0 ? 32 / sampleRate : 0.02);
+  return duration > 0 ? Math.max(1, duration / minimumVisibleDuration) : 1;
 }
 
 function isSupportedAudioFile(file: File) {

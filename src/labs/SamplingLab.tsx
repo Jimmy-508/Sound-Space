@@ -12,17 +12,19 @@ const quantizeBits = [1, 2, 4, 8, 16, 24];
 
 export function SamplingLab() {
   const [tab, setTab] = useState<SamplingTab>('sample');
-  const [sampleRateIndex, setSampleRateIndex] = useState(2);
+  const [sampleRateIndex, setSampleRateIndex] = useState(0);
+  const [sizeSampleRateIndex, setSizeSampleRateIndex] = useState(2);
   const [bitDepthIndex, setBitDepthIndex] = useState(1);
-  const [quantizeBitIndex, setQuantizeBitIndex] = useState(2);
+  const [quantizeBitIndex, setQuantizeBitIndex] = useState(0);
   const [channels, setChannels] = useState(2);
   const [seconds, setSeconds] = useState(60);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
   const sampleRate = sampleRates[sampleRateIndex];
+  const sizeSampleRate = sampleRates[sizeSampleRateIndex];
   const sampleCount = samplePointCounts[sampleRateIndex];
   const bitDepth = bitDepths[bitDepthIndex];
   const quantizeBit = quantizeBits[quantizeBitIndex];
-  const bytes = sampleRate * (bitDepth / 8) * channels * seconds;
+  const bytes = sizeSampleRate * (bitDepth / 8) * channels * seconds;
   const formatted = formatBytes(bytes);
   const levels = useMemo(() => 2 ** quantizeBit, [quantizeBit]);
   const coreIntensity = Math.min(1, Math.max(0, bytes / 70000000));
@@ -108,13 +110,13 @@ export function SamplingLab() {
           <>
             <RangeControl
               label="取樣頻率"
-              value={sampleRateIndex}
+              value={sizeSampleRateIndex}
               min={0}
               max={sampleRates.length - 1}
               step={1}
-              display={`${sampleRate.toLocaleString('zh-TW')} Hz`}
-              ariaValueText={`取樣頻率 ${sampleRate} Hz`}
-              onChange={setSampleRateIndex}
+              display={`${sizeSampleRate.toLocaleString('zh-TW')} Hz`}
+              ariaValueText={`取樣頻率 ${sizeSampleRate} Hz`}
+              onChange={setSizeSampleRateIndex}
             />
             <RangeControl
               label="量化位元數"
@@ -144,8 +146,8 @@ export function SamplingLab() {
             </div>
             <div className="formula">
               <strong>計算方式</strong>
-              <span>{sampleRate.toLocaleString('zh-TW')} × ({bitDepth} ÷ 8) × {channels} × {seconds}</span>
-              <small>{sampleRate.toLocaleString('zh-TW')}：每秒取樣次數｜{bitDepth} ÷ 8：每個樣本使用的位元組｜{channels}：聲道數｜{seconds}：秒數</small>
+              <span>{sizeSampleRate.toLocaleString('zh-TW')} × ({bitDepth} ÷ 8) × {channels} × {seconds}</span>
+              <small>{sizeSampleRate.toLocaleString('zh-TW')}：每秒取樣次數｜{bitDepth} ÷ 8：每個樣本使用的位元組｜{channels}：聲道數｜{seconds}：秒數</small>
             </div>
           </>
         )}

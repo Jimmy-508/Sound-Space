@@ -4,7 +4,7 @@ import { createPointerCommand } from './interaction/commandLayer';
 import { MusicLab } from './labs/MusicLab';
 import { SamplingLab } from './labs/SamplingLab';
 import { WaveLab } from './labs/WaveLab';
-import { createFileSeed, initialMusicSession, spectrumModeFromSeed, type MusicSessionState } from './music/musicSession';
+import { createVisualSeed, initialMusicSession, type MusicSessionState } from './music/musicSession';
 import type { LabId, PointerPoint } from './types';
 import { StarfieldBackground } from './visualization/StarfieldBackground';
 import { WaveCanvas } from './visualization/WaveCanvas';
@@ -28,7 +28,7 @@ export default function App() {
   const replaceMusicFile = useCallback((file: File) => {
     if (musicUrlRef.current) URL.revokeObjectURL(musicUrlRef.current);
     const sourceUrl = URL.createObjectURL(file);
-    const dnaSeed = createFileSeed(file);
+    const visualSeed = createVisualSeed(file);
     musicUrlRef.current = sourceUrl;
     setMusicSession((current) => ({
       ...initialMusicSession,
@@ -37,10 +37,9 @@ export default function App() {
       fileSize: file.size,
       fileType: file.type,
       volume: current.volume,
-      dnaSeed,
-      spectrumMode: spectrumModeFromSeed(dnaSeed),
+      visualSeed,
     }));
-    return sourceUrl;
+    return { sourceUrl, visualSeed };
   }, []);
 
   useEffect(() => () => {
