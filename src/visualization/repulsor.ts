@@ -10,4 +10,5 @@ export interface Repulsor {
   velocityY?: number;
   currentRadius?: number;
   decay?: number;
+  updatedAt?: number;
 }

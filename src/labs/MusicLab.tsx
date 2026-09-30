@@ -37,6 +37,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState('');
   const [repulsor, setRepulsor] = useState<Repulsor | null>(null);
+  const [creatureScale, setCreatureScale] = useState(1);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -44,7 +45,13 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   const restoredSourceRef = useRef<string | null>(null);
   const loadVersionRef = useRef(0);
   const touchPointersRef = useRef(new Map<number, { x: number; y: number; startX: number; startY: number }>());
-  const pinchRef = useRef<{ distance: number; zoom: number; anchorFraction: number } | null>(null);
+  const pinchRef = useRef<{
+    distance: number;
+    mode: ViewMode;
+    zoom?: number;
+    anchorFraction?: number;
+    creatureScale?: number;
+  } | null>(null);
   const gesturePinchedRef = useRef(false);
   const lastRepulsorPointRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
@@ -67,6 +74,9 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   useEffect(() => {
     setRepulsor(null);
     lastRepulsorPointRef.current = null;
+    touchPointersRef.current.clear();
+    pinchRef.current = null;
+    gesturePinchedRef.current = false;
   }, [viewMode]);
 
   useEffect(() => {
@@ -234,18 +244,32 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     setRepulsor({
       x,
       y,
-      radius: 0.2 + Math.min(0.12, speed * 0.025),
-      strength: 0.75 + Math.min(1.35, speed * 0.24),
+      radius: 0.34 + Math.min(0.22, speed * 0.04),
+      strength: 1.5 + Math.min(2.5, speed * 0.45),
       velocityX,
       velocityY,
       type: 'pointer',
+      updatedAt: now,
     });
     lastRepulsorPointRef.current = { x, y, time: now };
   };
 
   const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
-      if (event.pointerType === 'touch') event.currentTarget.setPointerCapture(event.pointerId);
+      if (event.pointerType === 'touch') {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY });
+        if (touchPointersRef.current.size === 2) {
+          const [first, second] = [...touchPointersRef.current.values()];
+          pinchRef.current = {
+            distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+            mode: 'spectrum',
+            creatureScale,
+          };
+          setRepulsor(null);
+          return;
+        }
+      }
       updateSpectrumRepulsor(event);
       return;
     }
@@ -264,6 +288,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
       const anchorLocal = Math.min(1, Math.max(0, (midpoint - rect.left) / Math.max(1, rect.width)));
       pinchRef.current = {
         distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+        mode: 'wave',
         zoom: session.zoom,
         anchorFraction: session.viewStart + anchorLocal / session.zoom,
       };
@@ -273,6 +298,18 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
 
   const pointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
+      const tracked = touchPointersRef.current.get(event.pointerId);
+      if (tracked) {
+        tracked.x = event.clientX;
+        tracked.y = event.clientY;
+      }
+      if (touchPointersRef.current.size === 2 && pinchRef.current?.mode === 'spectrum') {
+        const [first, second] = [...touchPointersRef.current.values()];
+        const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+        setCreatureScale(clampCreatureScale((pinchRef.current.creatureScale ?? creatureScale) * distance / pinchRef.current.distance));
+        setRepulsor(null);
+        return;
+      }
       updateSpectrumRepulsor(event);
       return;
     }
@@ -280,22 +317,24 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     if (!tracked) return;
     tracked.x = event.clientX;
     tracked.y = event.clientY;
-    if (touchPointersRef.current.size !== 2 || !pinchRef.current) return;
+    if (touchPointersRef.current.size !== 2 || pinchRef.current?.mode !== 'wave') return;
     const [first, second] = [...touchPointersRef.current.values()];
     const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
     const rect = event.currentTarget.getBoundingClientRect();
     const midpointLocal = Math.min(1, Math.max(0, ((first.x + second.x) / 2 - rect.left) / Math.max(1, rect.width)));
-    const zoom = Math.min(maxZoom, Math.max(1, pinchRef.current.zoom * distance / pinchRef.current.distance));
+    const zoom = Math.min(maxZoom, Math.max(1, (pinchRef.current.zoom ?? session.zoom) * distance / pinchRef.current.distance));
     const visible = 1 / zoom;
-    const viewStart = zoom <= 1 ? 0 : Math.min(1 - visible, Math.max(0, pinchRef.current.anchorFraction - midpointLocal * visible));
+    const viewStart = zoom <= 1 ? 0 : Math.min(1 - visible, Math.max(0, (pinchRef.current.anchorFraction ?? 0) - midpointLocal * visible));
     onSessionChange({ zoom, viewStart });
   };
 
   const pointerUp = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
       if (event.pointerType === 'touch') {
+        touchPointersRef.current.delete(event.pointerId);
         setRepulsor(null);
         lastRepulsorPointRef.current = null;
+        if (touchPointersRef.current.size < 2) pinchRef.current = null;
       }
       return;
     }
@@ -312,8 +351,10 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
 
   const pointerCancel = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
+      touchPointersRef.current.delete(event.pointerId);
       setRepulsor(null);
       lastRepulsorPointRef.current = null;
+      if (touchPointersRef.current.size < 2) pinchRef.current = null;
       return;
     }
     touchPointersRef.current.delete(event.pointerId);
@@ -322,7 +363,13 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   };
 
   const zoomFromWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (viewMode !== 'wave' || !session.sourceUrl || maxZoom <= 1) return;
+    if (!session.sourceUrl) return;
+    if (viewMode === 'spectrum') {
+      event.preventDefault();
+      setCreatureScale((current) => clampCreatureScale(current * Math.exp(-event.deltaY * 0.0018)));
+      return;
+    }
+    if (maxZoom <= 1) return;
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const anchorLocal = (event.clientX - rect.left) / Math.max(1, rect.width);
@@ -360,6 +407,8 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
           musicVolume={session.volume}
           musicTime={session.current}
           musicVisualSeed={session.visualSeed}
+          musicPlaying={playing}
+          creatureScale={creatureScale}
           repulsors={repulsor ? [repulsor] : []}
         />
       </div>
@@ -398,7 +447,22 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
         </div>
 
         <div className="progress-wrap">
-          <progress max={session.duration || 1} value={session.current} />
+          <input
+            className="timeline-slider"
+            type="range"
+            min={0}
+            max={session.duration || 1}
+            step={0.01}
+            value={Math.min(session.current, session.duration || 1)}
+            disabled={!session.sourceUrl}
+            aria-label="音樂播放位置"
+            aria-valuetext={`${formatTime(session.current)} / ${formatTime(session.duration)}`}
+            onChange={(event) => {
+              const time = Number(event.currentTarget.value);
+              if (audioRef.current) audioRef.current.currentTime = time;
+              onSessionChange({ current: time });
+            }}
+          />
           <span>{formatTime(session.current)} / {formatTime(session.duration)}</span>
         </div>
 
@@ -431,6 +495,10 @@ function createWaveformData(channel: Float32Array, pointCount: number) {
 function getMaxZoom(duration: number, sampleRate: number) {
   const minimumVisibleDuration = Math.max(0.02, sampleRate > 0 ? 32 / sampleRate : 0.02);
   return duration > 0 ? Math.max(1, duration / minimumVisibleDuration) : 1;
+}
+
+function clampCreatureScale(value: number) {
+  return Math.min(2, Math.max(0.6, value));
 }
 
 function isSupportedAudioFile(file: File) {
