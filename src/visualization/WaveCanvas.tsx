@@ -52,17 +52,27 @@ export function WaveCanvas({
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
     camera.position.z = 2;
 
-    const waveMaterial = new THREE.LineBasicMaterial({ color: 0x8fdfff, transparent: true, opacity: 0.95 });
-    const secondaryMaterial = new THREE.LineBasicMaterial({ color: 0x53a8ff, transparent: true, opacity: 0.52 });
+    const waveMaterial = new THREE.LineBasicMaterial({ color: 0x8fdfff, depthTest: false, transparent: true, opacity: 0.95 });
+    const secondaryMaterial = new THREE.LineBasicMaterial({ color: 0x53a8ff, depthTest: false, transparent: true, opacity: 0.52 });
     const pointMaterial = new THREE.PointsMaterial({
       color: 0xbef7ff,
+      depthTest: false,
       size: 0.025,
       transparent: true,
       opacity: 0.9,
       sizeAttenuation: false,
     });
+    const wavePointMaterial = new THREE.PointsMaterial({
+      color: 0xbef7ff,
+      depthTest: false,
+      size: 0.012,
+      transparent: true,
+      opacity: 0.58,
+      sizeAttenuation: false,
+    });
     const particleMaterial = new THREE.PointsMaterial({
       color: 0x4fbfff,
+      depthTest: false,
       size: 0.006,
       transparent: true,
       opacity: 0.5,
@@ -75,10 +85,16 @@ export function WaveCanvas({
     const particleGeometry = new THREE.BufferGeometry();
 
     const waveLine = new THREE.Line(waveGeometry, waveMaterial);
+    const wavePoints = new THREE.Points(waveGeometry, wavePointMaterial);
     const secondaryLine = new THREE.Line(secondaryGeometry, secondaryMaterial);
     const samplePoints = new THREE.Points(pointGeometry, pointMaterial);
     const particles = new THREE.Points(particleGeometry, particleMaterial);
-    scene.add(particles, secondaryLine, waveLine, samplePoints);
+    particles.renderOrder = 0;
+    secondaryLine.renderOrder = 1;
+    samplePoints.renderOrder = 2;
+    waveLine.renderOrder = 3;
+    wavePoints.renderOrder = 4;
+    scene.add(particles, secondaryLine, waveLine, wavePoints, samplePoints);
 
     const particlePositions = new Float32Array(360 * 3);
     for (let i = 0; i < 360; i += 1) {
@@ -90,7 +106,9 @@ export function WaveCanvas({
 
     const resize = () => {
       const rect = mount.getBoundingClientRect();
-      renderer.setSize(rect.width, rect.height, false);
+      const width = Math.max(1, Math.round(rect.width || mount.clientWidth));
+      const height = Math.max(1, Math.round(rect.height || mount.clientHeight));
+      renderer.setSize(width, height, false);
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -155,7 +173,9 @@ export function WaveCanvas({
       pointGeometry.setAttribute('position', new THREE.BufferAttribute(samples, 3));
       samplePoints.visible = current.mode === 'sample';
       secondaryLine.visible = current.mode === 'quantize' || current.mode === 'music';
+      wavePoints.visible = current.mode !== 'sample';
       waveMaterial.opacity = current.mode === 'home' ? 0.62 : 0.95;
+      wavePointMaterial.opacity = current.mode === 'home' ? 0.34 : 0.58;
     };
 
     animate();
@@ -172,6 +192,7 @@ export function WaveCanvas({
       waveMaterial.dispose();
       secondaryMaterial.dispose();
       pointMaterial.dispose();
+      wavePointMaterial.dispose();
       particleMaterial.dispose();
     };
   }, []);
