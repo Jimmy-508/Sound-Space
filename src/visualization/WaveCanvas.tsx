@@ -34,11 +34,9 @@ interface WaveCanvasProps {
 const wavePointLimit = 768;
 const samplePointLimit = 64;
 const spectrumBandCount = 64;
-const membranePointLimit = 72;
-const filamentLimit = 8;
-const filamentSegmentLimit = 32;
-const tendrilLimit = 6;
-const tendrilSegmentLimit = 28;
+const veilPointLimit = 72;
+const harmonicArcLimit = 5;
+const harmonicArcSegmentLimit = 36;
 const ribbonLimit = 3;
 const ribbonPointLimit = 52;
 const moteLimit = 36;
@@ -152,13 +150,12 @@ export function WaveCanvas({
     const wavePointMaterial = new THREE.PointsMaterial({ color: 0xbef7ff, depthTest: false, size: 1.2, transparent: true, opacity: 0.5, sizeAttenuation: false });
     const playheadMaterial = new THREE.LineBasicMaterial({ color: 0xf2bd62, depthTest: false, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending });
     const playheadMarkerMaterial = new THREE.PointsMaterial({ color: 0xffdda0, depthTest: false, size: 7, transparent: true, opacity: 0.98, sizeAttenuation: false, blending: THREE.AdditiveBlending });
-    const innerMembraneMaterial = new THREE.MeshBasicMaterial({ color: 0x8cecff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const outerMembraneMaterial = new THREE.MeshBasicMaterial({ color: 0x8a9eff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.055, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const spectralSkinMaterial = new THREE.MeshBasicMaterial({ color: 0x83edff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const innerVeilMaterial = new THREE.MeshBasicMaterial({ color: 0x8cecff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const outerVeilMaterial = new THREE.MeshBasicMaterial({ color: 0x8a9eff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.055, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const spectralVeilMaterial = new THREE.MeshBasicMaterial({ color: 0x83edff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
     const outerEdgeMaterial = new THREE.LineBasicMaterial({ color: 0x83edff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.62, blending: THREE.AdditiveBlending });
     const innerEdgeMaterial = new THREE.LineBasicMaterial({ color: 0xd5fbff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending });
-    const filamentMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending });
-    const tendrilMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.48, blending: THREE.AdditiveBlending });
+    const harmonicArcMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending });
     const ribbonMaterials = Array.from({ length: ribbonLimit }, (_, index) => new THREE.MeshBasicMaterial({ color: index === 1 ? 0x9c9cff : 0x83edff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
     const moteMaterial = new THREE.PointsMaterial({ color: 0xffe4a8, depthTest: false, size: 4, transparent: true, opacity: 0.86, sizeAttenuation: false, blending: THREE.AdditiveBlending });
     const particleMaterial = new THREE.PointsMaterial({ color: 0x65cfff, depthTest: false, size: 1.2, transparent: true, opacity: 0.34, sizeAttenuation: false, blending: THREE.AdditiveBlending });
@@ -170,20 +167,18 @@ export function WaveCanvas({
     const sampleStemPositions = new Float32Array(samplePointLimit * 2 * 3);
     const playheadPositions = new Float32Array(2 * 3);
     const playheadMarkerPositions = new Float32Array(3);
-    const innerMembranePositions = new Float32Array(membranePointLimit * 2 * 3);
-    const outerMembranePositions = new Float32Array(membranePointLimit * 2 * 3);
-    const spectralSkinPositions = new Float32Array(membranePointLimit * 2 * 3);
-    const outerEdgePositions = new Float32Array(membranePointLimit * 3);
-    const innerEdgePositions = new Float32Array(membranePointLimit * 3);
-    const innerMembraneColors = new Float32Array(membranePointLimit * 2 * 3);
-    const outerMembraneColors = new Float32Array(membranePointLimit * 2 * 3);
-    const spectralSkinColors = new Float32Array(membranePointLimit * 2 * 3);
-    const outerEdgeColors = new Float32Array(membranePointLimit * 3);
-    const innerEdgeColors = new Float32Array(membranePointLimit * 3);
-    const filamentPositions = new Float32Array(filamentLimit * filamentSegmentLimit * 2 * 3);
-    const tendrilPositions = new Float32Array(tendrilLimit * tendrilSegmentLimit * 2 * 3);
-    const filamentColors = new Float32Array(filamentLimit * filamentSegmentLimit * 2 * 3);
-    const tendrilColors = new Float32Array(tendrilLimit * tendrilSegmentLimit * 2 * 3);
+    const innerVeilPositions = new Float32Array(veilPointLimit * 2 * 3);
+    const outerVeilPositions = new Float32Array(veilPointLimit * 2 * 3);
+    const spectralVeilPositions = new Float32Array(veilPointLimit * 2 * 3);
+    const outerEdgePositions = new Float32Array(veilPointLimit * 3);
+    const innerEdgePositions = new Float32Array(veilPointLimit * 3);
+    const innerVeilColors = new Float32Array(veilPointLimit * 2 * 3);
+    const outerVeilColors = new Float32Array(veilPointLimit * 2 * 3);
+    const spectralVeilColors = new Float32Array(veilPointLimit * 2 * 3);
+    const outerEdgeColors = new Float32Array(veilPointLimit * 3);
+    const innerEdgeColors = new Float32Array(veilPointLimit * 3);
+    const harmonicArcPositions = new Float32Array(harmonicArcLimit * harmonicArcSegmentLimit * 2 * 3);
+    const harmonicArcColors = new Float32Array(harmonicArcLimit * harmonicArcSegmentLimit * 2 * 3);
     const ribbonPositions = Array.from({ length: ribbonLimit }, () => new Float32Array(ribbonPointLimit * 2 * 3));
     const ribbonColors = Array.from({ length: ribbonLimit }, () => new Float32Array(ribbonPointLimit * 2 * 3));
     const motePositions = new Float32Array(moteLimit * 3);
@@ -197,21 +192,19 @@ export function WaveCanvas({
     const stemGeometry = dynamicGeometry(sampleStemPositions);
     const playheadGeometry = dynamicGeometry(playheadPositions);
     const playheadMarkerGeometry = dynamicGeometry(playheadMarkerPositions);
-    const innerMembraneGeometry = dynamicBandGeometry(innerMembranePositions, membranePointLimit);
-    const outerMembraneGeometry = dynamicBandGeometry(outerMembranePositions, membranePointLimit);
-    const spectralSkinGeometry = dynamicBandGeometry(spectralSkinPositions, membranePointLimit);
+    const innerVeilGeometry = dynamicBandGeometry(innerVeilPositions, veilPointLimit);
+    const outerVeilGeometry = dynamicBandGeometry(outerVeilPositions, veilPointLimit);
+    const spectralVeilGeometry = dynamicBandGeometry(spectralVeilPositions, veilPointLimit);
     const outerEdgeGeometry = dynamicGeometry(outerEdgePositions);
     const innerEdgeGeometry = dynamicGeometry(innerEdgePositions);
-    const filamentGeometry = dynamicGeometry(filamentPositions);
-    const tendrilGeometry = dynamicGeometry(tendrilPositions);
+    const harmonicArcGeometry = dynamicGeometry(harmonicArcPositions);
     const moteGeometry = dynamicGeometry(motePositions);
-    innerMembraneGeometry.setAttribute('color', new THREE.BufferAttribute(innerMembraneColors, 3).setUsage(THREE.DynamicDrawUsage));
-    outerMembraneGeometry.setAttribute('color', new THREE.BufferAttribute(outerMembraneColors, 3).setUsage(THREE.DynamicDrawUsage));
-    spectralSkinGeometry.setAttribute('color', new THREE.BufferAttribute(spectralSkinColors, 3).setUsage(THREE.DynamicDrawUsage));
+    innerVeilGeometry.setAttribute('color', new THREE.BufferAttribute(innerVeilColors, 3).setUsage(THREE.DynamicDrawUsage));
+    outerVeilGeometry.setAttribute('color', new THREE.BufferAttribute(outerVeilColors, 3).setUsage(THREE.DynamicDrawUsage));
+    spectralVeilGeometry.setAttribute('color', new THREE.BufferAttribute(spectralVeilColors, 3).setUsage(THREE.DynamicDrawUsage));
     outerEdgeGeometry.setAttribute('color', new THREE.BufferAttribute(outerEdgeColors, 3).setUsage(THREE.DynamicDrawUsage));
     innerEdgeGeometry.setAttribute('color', new THREE.BufferAttribute(innerEdgeColors, 3).setUsage(THREE.DynamicDrawUsage));
-    filamentGeometry.setAttribute('color', new THREE.BufferAttribute(filamentColors, 3).setUsage(THREE.DynamicDrawUsage));
-    tendrilGeometry.setAttribute('color', new THREE.BufferAttribute(tendrilColors, 3).setUsage(THREE.DynamicDrawUsage));
+    harmonicArcGeometry.setAttribute('color', new THREE.BufferAttribute(harmonicArcColors, 3).setUsage(THREE.DynamicDrawUsage));
     const ribbonGeometries = ribbonPositions.map((positions, index) => {
       const geometry = dynamicBandGeometry(positions, ribbonPointLimit);
       geometry.setAttribute('color', new THREE.BufferAttribute(ribbonColors[index], 3).setUsage(THREE.DynamicDrawUsage));
@@ -231,13 +224,12 @@ export function WaveCanvas({
     sampleRings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     const playheadLine = new THREE.Line(playheadGeometry, playheadMaterial);
     const playheadMarker = new THREE.Points(playheadMarkerGeometry, playheadMarkerMaterial);
-    const innerMembrane = new THREE.Mesh(innerMembraneGeometry, innerMembraneMaterial);
-    const outerMembrane = new THREE.Mesh(outerMembraneGeometry, outerMembraneMaterial);
-    const spectralSkin = new THREE.Mesh(spectralSkinGeometry, spectralSkinMaterial);
+    const innerVeil = new THREE.Mesh(innerVeilGeometry, innerVeilMaterial);
+    const outerVeil = new THREE.Mesh(outerVeilGeometry, outerVeilMaterial);
+    const spectralVeil = new THREE.Mesh(spectralVeilGeometry, spectralVeilMaterial);
     const outerEdge = new THREE.Line(outerEdgeGeometry, outerEdgeMaterial);
     const innerEdge = new THREE.Line(innerEdgeGeometry, innerEdgeMaterial);
-    const filaments = new THREE.LineSegments(filamentGeometry, filamentMaterial);
-    const tendrils = new THREE.LineSegments(tendrilGeometry, tendrilMaterial);
+    const harmonicArcs = new THREE.LineSegments(harmonicArcGeometry, harmonicArcMaterial);
     const motes = new THREE.Points(moteGeometry, moteMaterial);
     const ribbons = ribbonGeometries.map((geometry, index) => new THREE.Mesh(geometry, ribbonMaterials[index]));
     const particles = new THREE.Points(particleGeometry, particleMaterial);
@@ -264,14 +256,13 @@ export function WaveCanvas({
     musicHalo.renderOrder = 1;
     secondaryLine.renderOrder = 2;
     ribbons[0].renderOrder = 1;
-    outerMembrane.renderOrder = 2;
+    outerVeil.renderOrder = 2;
     ribbons[1].renderOrder = 3;
-    spectralSkin.renderOrder = 4;
+    spectralVeil.renderOrder = 4;
     outerEdge.renderOrder = 5;
-    innerMembrane.renderOrder = 6;
+    innerVeil.renderOrder = 6;
     innerEdge.renderOrder = 7;
-    tendrils.renderOrder = 2.5;
-    filaments.renderOrder = 8;
+    harmonicArcs.renderOrder = 8;
     motes.renderOrder = 9;
     ribbons[2].renderOrder = 9.5;
     innerCore.renderOrder = 10;
@@ -289,14 +280,13 @@ export function WaveCanvas({
       particles,
       musicHalo,
       secondaryLine,
-      outerMembrane,
+      outerVeil,
       ribbons[0],
-      spectralSkin,
+      spectralVeil,
       outerEdge,
-      innerMembrane,
+      innerVeil,
       innerEdge,
-      tendrils,
-      filaments,
+      harmonicArcs,
       motes,
       ribbons[1],
       ribbons[2],
@@ -350,16 +340,19 @@ export function WaveCanvas({
     let previousRelativeEnergy = 0;
     let onsetPulse = 0;
     let rhythmImpulse = 0;
-    let outerPulse = 0;
-    let skinPulse = 0;
+    let veilPulse = 0;
+    let ribbonPulse = 0;
+    let motePulse = 0;
     let contractionPulse = 0;
     let rhythmClock = 0;
-    let pendingOuterPulse = 0;
-    let pendingOuterAt = -1;
-    let pendingSkinPulse = 0;
-    let pendingSkinAt = -1;
+    let pendingVeilPulse = 0;
+    let pendingVeilAt = -1;
+    let pendingRibbonPulse = 0;
+    let pendingRibbonAt = -1;
+    let pendingMotePulse = 0;
+    let pendingMoteAt = -1;
     let profileSeed = -1;
-    let creatureGenome = createCreatureGenome(musicVisualSeed);
+    let creatureGenome = createSpiritProfile(musicVisualSeed);
     let creatureX = creatureGenome.spawnX;
     let creatureY = creatureGenome.spawnY;
     let creatureVelocityX = Math.cos(creatureGenome.wanderPhase) * 0.025;
@@ -406,13 +399,12 @@ export function WaveCanvas({
     };
 
     const hideSpectrum = () => {
-      innerMembrane.visible = false;
-      outerMembrane.visible = false;
-      spectralSkin.visible = false;
+      innerVeil.visible = false;
+      outerVeil.visible = false;
+      spectralVeil.visible = false;
       outerEdge.visible = false;
       innerEdge.visible = false;
-      filaments.visible = false;
-      tendrils.visible = false;
+      harmonicArcs.visible = false;
       motes.visible = false;
       musicHalo.visible = false;
       innerCore.visible = false;
@@ -485,25 +477,33 @@ export function WaveCanvas({
       onsetPulse += (pulseTarget - onsetPulse) * (1 - Math.exp(-deltaTime * envelopeRate));
       const nextImpulse = Math.min(1, (relativeRise * 3 + variancePulse * (playing ? 0.22 : 0.04)) * creatureGenome.rhythmSensitivity);
       rhythmImpulse = Math.max(rhythmImpulse * Math.exp(-deltaTime * 8.5), nextImpulse);
-      if (nextImpulse > (playing ? 0.055 : 0.16) && nextImpulse >= pendingOuterPulse) {
+      if (nextImpulse > (playing ? 0.055 : 0.16) && nextImpulse >= pendingVeilPulse) {
         contractionPulse = Math.max(contractionPulse, nextImpulse);
-        pendingOuterPulse = nextImpulse;
-        pendingOuterAt = rhythmClock + creatureGenome.outerDelay;
-        pendingSkinPulse = nextImpulse;
-        pendingSkinAt = pendingOuterAt + creatureGenome.skinDelay;
+        pendingVeilPulse = nextImpulse;
+        pendingVeilAt = rhythmClock + creatureGenome.veilDelay;
+        pendingRibbonPulse = nextImpulse;
+        pendingRibbonAt = rhythmClock + creatureGenome.ribbonDelay;
+        pendingMotePulse = nextImpulse;
+        pendingMoteAt = rhythmClock + creatureGenome.moteDelay;
       }
       contractionPulse *= Math.exp(-deltaTime * 15);
-      outerPulse *= Math.exp(-deltaTime * 4.6);
-      skinPulse *= Math.exp(-deltaTime * 5.2);
-      if (pendingOuterAt >= 0 && rhythmClock >= pendingOuterAt) {
-        outerPulse = Math.max(outerPulse, pendingOuterPulse);
-        pendingOuterPulse = 0;
-        pendingOuterAt = -1;
+      veilPulse *= Math.exp(-deltaTime * 4.6);
+      ribbonPulse *= Math.exp(-deltaTime * 5.2);
+      motePulse *= Math.exp(-deltaTime * 6.2);
+      if (pendingVeilAt >= 0 && rhythmClock >= pendingVeilAt) {
+        veilPulse = Math.max(veilPulse, pendingVeilPulse);
+        pendingVeilPulse = 0;
+        pendingVeilAt = -1;
       }
-      if (pendingSkinAt >= 0 && rhythmClock >= pendingSkinAt) {
-        skinPulse = Math.max(skinPulse, pendingSkinPulse);
-        pendingSkinPulse = 0;
-        pendingSkinAt = -1;
+      if (pendingRibbonAt >= 0 && rhythmClock >= pendingRibbonAt) {
+        ribbonPulse = Math.max(ribbonPulse, pendingRibbonPulse);
+        pendingRibbonPulse = 0;
+        pendingRibbonAt = -1;
+      }
+      if (pendingMoteAt >= 0 && rhythmClock >= pendingMoteAt) {
+        motePulse = Math.max(motePulse, pendingMotePulse);
+        pendingMotePulse = 0;
+        pendingMoteAt = -1;
       }
       previousRelativeEnergy = normalizedPulse;
       previousOverallEnergy = overallEnergy;
@@ -515,7 +515,7 @@ export function WaveCanvas({
       positions[index * 3 + 2] = 0;
     };
 
-    const updateCreaturePhysics = (time: number, deltaTime: number, current: WaveCanvasProps) => {
+    const updateSpiritPhysics = (time: number, deltaTime: number, current: WaveCanvasProps) => {
       const motionScale = reducedMotion ? 0.24 : 1;
       const scale = current.creatureScale ?? 1;
       const activity = current.musicPlaying ? 0.16 + overallEnergy * 0.84 : 0.1;
@@ -655,7 +655,7 @@ export function WaveCanvas({
     };
 
 
-    const drawBioluminescentOrganism = (time: number, current: WaveCanvasProps) => {
+    const drawSoundSpirit = (time: number, current: WaveCanvasProps) => {
       const viewportAspect = Math.min(1, canvasHeight / canvasWidth);
       const scale = current.creatureScale ?? 1;
       const baseRadius = creatureGenome.bodyRadius * scale;
@@ -678,15 +678,15 @@ export function WaveCanvas({
       const fluxMotion = current.musicPlaying ? localVariance / Math.max(0.0035, adaptiveVariancePeak) * 0.018 : 0;
       const bassBulge = current.musicPlaying ? bassEnergy * creatureGenome.bassSensitivity * 0.11 : 0;
       const contraction = contractionPulse * 0.045 + startlePulse * 0.035;
-      const beatAccent = onsetPulse * 0.055 + outerPulse * 0.07;
+      const beatAccent = onsetPulse * 0.055 + veilPulse * 0.07;
       const coreDistance = baseRadius * creatureGenome.coreOffsetRatio;
       const coreX = creatureX + (flowX * coreDistance + normalX * creatureGenome.coreLateralOffset * baseRadius) * viewportAspect;
       const coreY = creatureY + flowY * coreDistance + normalY * creatureGenome.coreLateralOffset * baseRadius;
 
-      const sheetPositions = [innerMembranePositions, outerMembranePositions, spectralSkinPositions];
-      const sheetColors = [innerMembraneColors, outerMembraneColors, spectralSkinColors];
+      const sheetPositions = [innerVeilPositions, outerVeilPositions, spectralVeilPositions];
+      const sheetColors = [innerVeilColors, outerVeilColors, spectralVeilColors];
       for (let sheetIndex = 0; sheetIndex < 3; sheetIndex += 1) {
-        const sheet = creatureGenome.membraneSheets[sheetIndex];
+        const sheet = creatureGenome.veilLayers[sheetIndex];
         const positions = sheetPositions[sheetIndex];
         const colors = sheetColors[sheetIndex];
         const sheetFlow = flowAngle + sheet.orientation;
@@ -694,8 +694,8 @@ export function WaveCanvas({
         const sheetFlowY = Math.sin(sheetFlow);
         const sheetNormalX = -sheetFlowY;
         const sheetNormalY = sheetFlowX;
-        for (let index = 0; index < membranePointLimit; index += 1) {
-          const progress = index / (membranePointLimit - 1);
+        for (let index = 0; index < veilPointLimit; index += 1) {
+          const progress = index / (veilPointLimit - 1);
           const fade = Math.pow(Math.sin(progress * Math.PI), sheet.fadePower);
           const bandPosition = Math.min(spectrumBandCount - 1, progress * (spectrumBandCount - 1));
           const bandIndex = Math.floor(bandPosition);
@@ -770,78 +770,51 @@ export function WaveCanvas({
         }
       }
 
-      const filamentSegments = compact ? 20 : filamentSegmentLimit;
-      let filamentVertex = 0;
-      for (const filament of creatureGenome.filaments) {
-        const direction = flowAngle + filament.directionOffset;
-        const directionX = Math.cos(direction);
-        const directionY = Math.sin(direction);
-        const sideX = -directionY;
-        const sideY = directionX;
-        const startX = coreX + sideX * filament.lateralStart * baseRadius * viewportAspect;
-        const startY = coreY + sideY * filament.lateralStart * baseRadius;
-        const endX = coreX + (directionX * baseRadius * filament.length + sideX * baseRadius * filament.curvature) * viewportAspect;
-        const endY = coreY + directionY * baseRadius * filament.length + sideY * baseRadius * filament.curvature;
-        const controlSweep = (filament.curvature + Math.sin(time * 0.7 + filament.phase) * 0.16 * motionScale) * baseRadius;
-        let previousX = startX;
-        let previousY = startY;
-        for (let segment = 1; segment <= filamentSegments; segment += 1) {
-          const progress = segment / filamentSegments;
-          const point = cubicBezier(progress, startX, startY, startX + (directionX * filament.length * 0.32 + sideX * controlSweep) * baseRadius * viewportAspect, startY + (directionY * filament.length * 0.32 + sideY * controlSweep) * baseRadius, endX - directionX * baseRadius * filament.length * 0.22 * viewportAspect, endY - directionY * baseRadius * filament.length * 0.22, endX, endY);
-          const offset = filamentVertex * 3;
-          filamentPositions[offset] = previousX;
-          filamentPositions[offset + 1] = previousY;
-          filamentPositions[offset + 2] = filament.depth;
-          filamentPositions[offset + 3] = point.x;
-          filamentPositions[offset + 4] = point.y;
-          filamentPositions[offset + 5] = filament.depth;
-          const brightness = Math.pow(1 - progress, 0.8) * filament.brightness;
-          filamentColors[offset] = brightness;
-          filamentColors[offset + 1] = brightness;
-          filamentColors[offset + 2] = brightness;
-          filamentColors[offset + 3] = brightness * 0.94;
-          filamentColors[offset + 4] = brightness * 0.94;
-          filamentColors[offset + 5] = brightness * 0.94;
-          filamentVertex += 2;
-          previousX = point.x;
-          previousY = point.y;
-        }
-      }
-
-      const tendrilSegments = compact ? 18 : tendrilSegmentLimit;
-      let tendrilVertex = 0;
-      for (const tendril of creatureGenome.tendrils) {
-        const startAlong = baseRadius * tendril.anchorAlong;
-        const startSide = baseRadius * tendril.anchorSide;
+      const arcSegments = compact ? 24 : harmonicArcSegmentLimit;
+      let arcVertex = 0;
+      for (const arc of creatureGenome.harmonicArcs) {
+        const audioWave = Math.sin(time * (0.35 + midEnergy * 0.8) + arc.phase) * (0.08 + midEnergy * 0.13 + ribbonPulse * 0.1 + startlePulse * 0.14) * motionScale;
+        const startAlong = baseRadius * arc.startAlong;
+        const endAlong = baseRadius * arc.endAlong;
+        const startSide = baseRadius * arc.startSide;
+        const endSide = baseRadius * arc.endSide;
         const startX = creatureX + (flowX * startAlong + normalX * startSide) * viewportAspect;
         const startY = creatureY + flowY * startAlong + normalY * startSide;
+        const endX = creatureX + (flowX * endAlong + normalX * endSide) * viewportAspect;
+        const endY = creatureY + flowY * endAlong + normalY * endSide;
+        const bow = baseRadius * (arc.bow + audioWave);
         let previousX = startX;
         let previousY = startY;
-        for (let segment = 1; segment <= tendrilSegments; segment += 1) {
-          const progress = segment / tendrilSegments;
-          const flick = startlePulse * tendril.flick * Math.sin(progress * Math.PI);
-          const wave = Math.sin(time * (0.65 + trebleEnergy * 1.6) + tendril.phase + progress * 3.4) * tendril.curvature * motionScale;
-          const backward = baseRadius * tendril.length * progress + speed * 1.4 * progress * progress + flick * baseRadius;
-          const lateral = baseRadius * (tendril.anchorSide + wave * progress);
-          const x = creatureX + (-flowX * backward + normalX * lateral) * viewportAspect;
-          const y = creatureY - flowY * backward + normalY * lateral;
-          const offset = tendrilVertex * 3;
-          tendrilPositions[offset] = previousX;
-          tendrilPositions[offset + 1] = previousY;
-          tendrilPositions[offset + 2] = tendril.depth;
-          tendrilPositions[offset + 3] = x;
-          tendrilPositions[offset + 4] = y;
-          tendrilPositions[offset + 5] = tendril.depth;
-          const brightness = Math.pow(1 - progress, 1.3) * tendril.brightness;
-          tendrilColors[offset] = brightness;
-          tendrilColors[offset + 1] = brightness;
-          tendrilColors[offset + 2] = brightness;
-          tendrilColors[offset + 3] = brightness * 0.9;
-          tendrilColors[offset + 4] = brightness * 0.9;
-          tendrilColors[offset + 5] = brightness * 0.9;
-          tendrilVertex += 2;
-          previousX = x;
-          previousY = y;
+        for (let segment = 1; segment <= arcSegments; segment += 1) {
+          const progress = segment / arcSegments;
+          const point = cubicBezier(
+            progress,
+            startX,
+            startY,
+            startX + (flowX * arc.controlReach + normalX * bow) * baseRadius * viewportAspect,
+            startY + (flowY * arc.controlReach + normalY * bow) * baseRadius,
+            endX - (flowX * arc.controlReach - normalX * bow * 0.72) * baseRadius * viewportAspect,
+            endY - (flowY * arc.controlReach - normalY * bow * 0.72) * baseRadius,
+            endX,
+            endY,
+          );
+          const offset = arcVertex * 3;
+          harmonicArcPositions[offset] = previousX;
+          harmonicArcPositions[offset + 1] = previousY;
+          harmonicArcPositions[offset + 2] = arc.depth;
+          harmonicArcPositions[offset + 3] = point.x;
+          harmonicArcPositions[offset + 4] = point.y;
+          harmonicArcPositions[offset + 5] = arc.depth;
+          const brightness = Math.pow(Math.sin(progress * Math.PI), 0.72) * arc.brightness;
+          harmonicArcColors[offset] = brightness;
+          harmonicArcColors[offset + 1] = brightness;
+          harmonicArcColors[offset + 2] = brightness;
+          harmonicArcColors[offset + 3] = brightness;
+          harmonicArcColors[offset + 4] = brightness;
+          harmonicArcColors[offset + 5] = brightness;
+          arcVertex += 2;
+          previousX = point.x;
+          previousY = point.y;
         }
       }
 
@@ -849,31 +822,28 @@ export function WaveCanvas({
       for (let index = 0; index < activeMotes; index += 1) {
         const mote = creatureGenome.motes[index];
         const drift = Math.sin(time * mote.speed + mote.phase) * 0.16;
-        const along = baseRadius * (mote.along + drift + startlePulse * mote.scatter);
+        const along = baseRadius * (mote.along + drift + (startlePulse + motePulse * 0.35) * mote.scatter);
         const side = baseRadius * (mote.side + Math.cos(time * mote.speed * 0.73 + mote.phase) * 0.12);
         writeOrganicPoint(motePositions, index, creatureX + (flowX * along + normalX * side) * viewportAspect, creatureY + flowY * along + normalY * side);
       }
 
-      outerEdgeGeometry.setDrawRange(0, membranePointLimit);
-      innerEdgeGeometry.setDrawRange(0, membranePointLimit);
-      filamentGeometry.setDrawRange(0, filamentVertex);
-      tendrilGeometry.setDrawRange(0, tendrilVertex);
+      outerEdgeGeometry.setDrawRange(0, veilPointLimit);
+      innerEdgeGeometry.setDrawRange(0, veilPointLimit);
+      harmonicArcGeometry.setDrawRange(0, arcVertex);
       moteGeometry.setDrawRange(0, activeMotes);
-      innerMembraneGeometry.attributes.position.needsUpdate = true;
-      outerMembraneGeometry.attributes.position.needsUpdate = true;
-      spectralSkinGeometry.attributes.position.needsUpdate = true;
+      innerVeilGeometry.attributes.position.needsUpdate = true;
+      outerVeilGeometry.attributes.position.needsUpdate = true;
+      spectralVeilGeometry.attributes.position.needsUpdate = true;
       outerEdgeGeometry.attributes.position.needsUpdate = true;
       innerEdgeGeometry.attributes.position.needsUpdate = true;
-      filamentGeometry.attributes.position.needsUpdate = true;
-      tendrilGeometry.attributes.position.needsUpdate = true;
+      harmonicArcGeometry.attributes.position.needsUpdate = true;
       moteGeometry.attributes.position.needsUpdate = true;
-      innerMembraneGeometry.attributes.color.needsUpdate = true;
-      outerMembraneGeometry.attributes.color.needsUpdate = true;
-      spectralSkinGeometry.attributes.color.needsUpdate = true;
+      innerVeilGeometry.attributes.color.needsUpdate = true;
+      outerVeilGeometry.attributes.color.needsUpdate = true;
+      spectralVeilGeometry.attributes.color.needsUpdate = true;
       outerEdgeGeometry.attributes.color.needsUpdate = true;
       innerEdgeGeometry.attributes.color.needsUpdate = true;
-      filamentGeometry.attributes.color.needsUpdate = true;
-      tendrilGeometry.attributes.color.needsUpdate = true;
+      harmonicArcGeometry.attributes.color.needsUpdate = true;
       ribbonGeometries.forEach((geometry) => {
         geometry.attributes.position.needsUpdate = true;
         geometry.attributes.color.needsUpdate = true;
@@ -897,7 +867,7 @@ export function WaveCanvas({
     const drawSpectrum = (current: WaveCanvasProps, time: number, deltaTime: number) => {
       if (profileSeed !== current.musicVisualSeed) {
         profileSeed = current.musicVisualSeed ?? 1;
-        creatureGenome = createCreatureGenome(profileSeed);
+        creatureGenome = createSpiritProfile(profileSeed);
         creatureX = creatureGenome.spawnX;
         creatureY = creatureGenome.spawnY;
         creatureVelocityX = Math.cos(creatureGenome.wanderPhase) * 0.025;
@@ -914,24 +884,26 @@ export function WaveCanvas({
         spectralCentroid = 0;
         onsetPulse = 0;
         rhythmImpulse = 0;
-        outerPulse = 0;
-        skinPulse = 0;
+        veilPulse = 0;
+        ribbonPulse = 0;
+        motePulse = 0;
         contractionPulse = 0;
         rhythmClock = 0;
-        pendingOuterPulse = 0;
-        pendingOuterAt = -1;
-        pendingSkinPulse = 0;
-        pendingSkinAt = -1;
+        pendingVeilPulse = 0;
+        pendingVeilAt = -1;
+        pendingRibbonPulse = 0;
+        pendingRibbonAt = -1;
+        pendingMotePulse = 0;
+        pendingMoteAt = -1;
         startlePulse = 0;
         escapeUntil = 0;
         repulsorEscapeUntil = 0;
-        innerMembraneMaterial.color.setHex(creatureGenome.primaryHue);
-        outerMembraneMaterial.color.setHex(creatureGenome.secondaryHue);
-        spectralSkinMaterial.color.setHex(creatureGenome.primaryHue);
+        innerVeilMaterial.color.setHex(creatureGenome.primaryHue);
+        outerVeilMaterial.color.setHex(creatureGenome.secondaryHue);
+        spectralVeilMaterial.color.setHex(creatureGenome.primaryHue);
         outerEdgeMaterial.color.setHex(creatureGenome.primaryHue);
         innerEdgeMaterial.color.setHex(creatureGenome.highlightHue);
-        filamentMaterial.color.setHex(creatureGenome.highlightHue);
-        tendrilMaterial.color.setHex(creatureGenome.secondaryHue);
+        harmonicArcMaterial.color.setHex(creatureGenome.highlightHue);
         ribbonMaterials.forEach((material, index) => material.color.setHex(index === 1 ? creatureGenome.secondaryHue : index === 2 ? creatureGenome.highlightHue : creatureGenome.primaryHue));
         moteMaterial.color.setHex(creatureGenome.highlightHue);
         particleMaterial.color.setHex(creatureGenome.primaryHue);
@@ -939,29 +911,27 @@ export function WaveCanvas({
         coreMaterial.color.setHex(creatureGenome.highlightColor);
         corePetalMaterials.forEach((material, index) => material.color.setHex(index === 1 ? creatureGenome.highlightHue : creatureGenome.secondaryHue));
       }
-      updateCreaturePhysics(time, deltaTime, current);
-      drawBioluminescentOrganism(time, current);
+      updateSpiritPhysics(time, deltaTime, current);
+      drawSoundSpirit(time, current);
 
-      innerMembrane.visible = true;
-      outerMembrane.visible = true;
-      spectralSkin.visible = true;
+      innerVeil.visible = true;
+      outerVeil.visible = true;
+      spectralVeil.visible = true;
       outerEdge.visible = true;
       innerEdge.visible = true;
-      filaments.visible = true;
-      tendrils.visible = true;
+      harmonicArcs.visible = true;
       motes.visible = true;
       musicHalo.visible = true;
       innerCore.visible = true;
       corePetals.forEach((petal) => { petal.visible = true; });
       ribbons.forEach((ribbon) => { ribbon.visible = true; });
-      innerMembraneMaterial.opacity = 0.24 + bassEnergy * 0.16 + onsetPulse * 0.05;
-      outerMembraneMaterial.opacity = 0.2 + midEnergy * 0.14 + outerPulse * 0.08;
-      spectralSkinMaterial.opacity = 0.28 + trebleEnergy * 0.24 + skinPulse * 0.18;
-      outerEdgeMaterial.opacity = 0.78 + trebleEnergy * 0.18 + skinPulse * 0.04;
+      innerVeilMaterial.opacity = 0.24 + bassEnergy * 0.16 + onsetPulse * 0.05;
+      outerVeilMaterial.opacity = 0.2 + midEnergy * 0.14 + veilPulse * 0.08;
+      spectralVeilMaterial.opacity = 0.28 + trebleEnergy * 0.24 + ribbonPulse * 0.18;
+      outerEdgeMaterial.opacity = 0.78 + trebleEnergy * 0.18 + ribbonPulse * 0.04;
       innerEdgeMaterial.opacity = 0.5 + bassEnergy * 0.25 + onsetPulse * 0.12;
-      filamentMaterial.opacity = 0.82 + midEnergy * 0.16 + onsetPulse * 0.08;
-      tendrilMaterial.opacity = 0.62 + trebleEnergy * 0.24 + startlePulse * 0.12;
-      ribbonMaterials.forEach((material, index) => { material.opacity = 0.16 + index * 0.025 + midEnergy * 0.12 + onsetPulse * 0.04; });
+      harmonicArcMaterial.opacity = 0.68 + midEnergy * 0.2 + ribbonPulse * 0.1;
+      ribbonMaterials.forEach((material, index) => { material.opacity = 0.16 + index * 0.025 + midEnergy * 0.12 + ribbonPulse * 0.08; });
       moteMaterial.opacity = 0.82 + trebleEnergy * 0.16 + onsetPulse * 0.02;
       moteMaterial.size = 4.8 + trebleEnergy * (reducedMotion ? 1.2 : 4.5) + startlePulse * 1.5;
       haloMaterial.opacity = creatureGenome.glowIntensity * (0.24 + onsetPulse * 0.17 + overallEnergy * 0.09);
@@ -1207,9 +1177,9 @@ export function WaveCanvas({
       motionQuery.removeEventListener?.('change', updateMotionPreference);
       mount.removeChild(renderer.domElement);
       renderer.dispose();
-      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, innerMembraneGeometry, outerMembraneGeometry, spectralSkinGeometry, outerEdgeGeometry, innerEdgeGeometry, filamentGeometry, tendrilGeometry, moteGeometry, particleGeometry, sampleRingGeometry, ...ribbonGeometries].forEach((geometry) => geometry.dispose());
+      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, innerVeilGeometry, outerVeilGeometry, spectralVeilGeometry, outerEdgeGeometry, innerEdgeGeometry, harmonicArcGeometry, moteGeometry, particleGeometry, sampleRingGeometry, ...ribbonGeometries].forEach((geometry) => geometry.dispose());
       haloTexture.dispose();
-      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, innerMembraneMaterial, outerMembraneMaterial, spectralSkinMaterial, outerEdgeMaterial, innerEdgeMaterial, filamentMaterial, tendrilMaterial, moteMaterial, particleMaterial, haloMaterial, coreMaterial, ...corePetalMaterials, ...ribbonMaterials].forEach((material) => material.dispose());
+      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, innerVeilMaterial, outerVeilMaterial, spectralVeilMaterial, outerEdgeMaterial, innerEdgeMaterial, harmonicArcMaterial, moteMaterial, particleMaterial, haloMaterial, coreMaterial, ...corePetalMaterials, ...ribbonMaterials].forEach((material) => material.dispose());
     };
   }, []);
 
@@ -1269,7 +1239,7 @@ function logarithmicBin(index: number, bandCount: number, binCount: number) {
   return Math.min(binCount - 1, Math.max(1, Math.round(Math.exp(index / bandCount * Math.log(binCount)))));
 }
 
-function createCreatureGenome(seed: number) {
+function createSpiritProfile(seed: number) {
   const random = seededRandom(seed);
   const paletteFamilies = [
     { primary: 0x66e4ff, secondary: 0x997cff, highlight: 0xffdfad },
@@ -1279,52 +1249,49 @@ function createCreatureGenome(seed: number) {
   ];
   const palette = paletteFamilies[Math.floor(random() * paletteFamilies.length)];
   const flowDirection = random() * Math.PI * 2;
-  const filamentCount = 4 + Math.floor(random() * 4);
-  const tendrilCount = 2 + Math.floor(random() * 5);
-  const moteCount = 4 + Math.floor(random() * 9);
-  const membraneSheets = Array.from({ length: 3 }, (_, index) => ({
-    orientation: (index - 1) * (0.16 + random() * 0.16) + (random() - 0.5) * 0.14,
-    fadePower: 0.72 + random() * 0.72,
-    balance: 0.42 + random() * 0.18,
-    length: 1.45 + index * 0.16 + random() * 0.42,
-    curvature: (random() > 0.5 ? 1 : -1) * (0.1 + random() * 0.28),
-    curveFrequency: 0.72 + random() * 0.7,
-    width: 0.3 + random() * 0.24,
-    lowerWidth: 0.58 + random() * 0.38,
+  const moteCount = 8 + Math.floor(random() * 5);
+  const veilLayers = Array.from({ length: 3 }, (_, index) => ({
+    orientation: [-0.2, 0.04, 0.24][index] + (random() - 0.5) * 0.08,
+    fadePower: 0.9 + random() * 0.28,
+    balance: [0.5, 0.47, 0.53][index] + (random() - 0.5) * 0.05,
+    length: [1.62, 1.84, 1.7][index] * (0.94 + random() * 0.12),
+    curvature: [-0.24, 0.18, -0.13][index] * (0.86 + random() * 0.28),
+    curveFrequency: [0.9, 1.18, 0.82][index] + (random() - 0.5) * 0.12,
+    width: [0.42, 0.5, 0.35][index] * (0.92 + random() * 0.16),
+    lowerWidth: [0.72, 0.82, 0.66][index] + (random() - 0.5) * 0.08,
     phase: random() * Math.PI * 2,
     driftRate: (random() > 0.5 ? 1 : -1) * (0.08 + random() * 0.16),
     spectrumSensitivity: 0.55 + random() * 0.7,
     depth: -0.045 + index * 0.04,
   }));
   const ribbons = Array.from({ length: ribbonLimit }, (_, index) => ({
-    balance: 0.38 + random() * 0.24,
-    length: 1.7 + random() * 0.9,
-    curvature: (random() > 0.5 ? 1 : -1) * (0.24 + random() * 0.48),
-    width: 0.035 + random() * 0.055,
-    waveCount: 0.8 + random() * 0.8,
+    balance: [0.44, 0.52, 0.47][index] + (random() - 0.5) * 0.06,
+    length: [2.4, 2.05, 2.65][index] * (0.94 + random() * 0.12),
+    curvature: [-0.56, 0.48, -0.34][index] * (0.88 + random() * 0.24),
+    width: [0.065, 0.05, 0.042][index] * (0.9 + random() * 0.2),
+    waveCount: [1.15, 0.92, 1.42][index] + (random() - 0.5) * 0.12,
     phase: random() * Math.PI * 2,
     driftRate: (random() > 0.5 ? 1 : -1) * (0.06 + random() * 0.12),
     brightness: 0.48 + random() * 0.38,
     depth: index === 0 ? -0.09 : index === 1 ? -0.015 : 0.08,
   }));
-  const filaments = Array.from({ length: filamentCount }, (_, index) => ({
-    directionOffset: (random() - 0.5) * (index === 0 ? 1.25 : 0.8),
-    lateralStart: (random() - 0.5) * 0.32,
-    curvature: (random() > 0.5 ? 1 : -1) * (0.14 + random() * 0.48),
-    length: 0.62 + random() * 0.86,
+  const arcTemplates = [
+    [-0.92, 0.86, -0.38, 0.42, 0.5],
+    [-0.74, 1.08, 0.28, -0.3, -0.58],
+    [-1.02, 0.58, 0.08, 0.52, 0.36],
+    [-0.48, 1.16, -0.5, 0.04, -0.4],
+    [-0.84, 0.72, 0.46, -0.5, 0.62],
+  ];
+  const harmonicArcs = arcTemplates.map((template, index) => ({
+    startAlong: template[0] + (random() - 0.5) * 0.1,
+    endAlong: template[1] + (random() - 0.5) * 0.1,
+    startSide: template[2] + (random() - 0.5) * 0.08,
+    endSide: template[3] + (random() - 0.5) * 0.08,
+    bow: template[4] * (0.9 + random() * 0.2),
+    controlReach: 0.42 + random() * 0.14,
     phase: random() * Math.PI * 2,
     depth: index % 3 === 0 ? -0.055 : index % 3 === 1 ? 0.015 : 0.075,
-    brightness: 0.58 + random() * 0.4,
-  }));
-  const tendrils = Array.from({ length: tendrilCount }, (_, index) => ({
-    anchorAlong: -0.28 + random() * 0.42,
-    anchorSide: (index / Math.max(1, tendrilCount - 1) - 0.5) * 0.82 + (random() - 0.5) * 0.16,
-    curvature: (random() > 0.5 ? 1 : -1) * (0.1 + random() * 0.36),
-    length: 0.88 + random() * 0.92,
-    phase: random() * Math.PI * 2,
-    flick: 0.32 + random() * 0.44,
-    depth: index % 2 === 0 ? -0.075 : 0.045,
-    brightness: 0.46 + random() * 0.36,
+    brightness: 0.5 + random() * 0.28,
   }));
   const motes = Array.from({ length: moteCount }, () => ({
     along: -1.3 + random() * 2.25,
@@ -1335,15 +1302,14 @@ function createCreatureGenome(seed: number) {
   }));
 
   return {
-    bodyRadius: 0.16 + random() * 0.055,
-    bodyAsymmetry: 0.16 + random() * 0.26,
+    bodyRadius: 0.17 + random() * 0.03,
+    bodyAsymmetry: 0.22 + random() * 0.1,
     flowDirection,
-    coreOffsetRatio: 0.15 + random() * 0.2,
-    coreLateralOffset: (random() - 0.5) * 0.22,
-    membraneSheets,
+    coreOffsetRatio: 0.1 + random() * 0.15,
+    coreLateralOffset: (random() - 0.5) * 0.14,
+    veilLayers,
     ribbons,
-    filaments,
-    tendrils,
+    harmonicArcs,
     moteCount,
     motes,
     trailDensity: 70 + Math.floor(random() * 91),
@@ -1355,8 +1321,9 @@ function createCreatureGenome(seed: number) {
     idleBreathDepth: 0.018 + random() * 0.018,
     breathPhase: random() * Math.PI * 2,
     rotationTendency: (random() > 0.5 ? 1 : -1) * (0.025 + random() * 0.06),
-    outerDelay: 0.04 + random() * 0.05,
-    skinDelay: 0.02 + random() * 0.04,
+    veilDelay: 0.04 + random() * 0.04,
+    ribbonDelay: 0.07 + random() * 0.06,
+    moteDelay: 0.1 + random() * 0.06,
     glowIntensity: 0.72 + random() * 0.28,
     wanderSpeed: 0.18 + random() * 0.28,
     wanderPhase: random() * Math.PI * 2,
