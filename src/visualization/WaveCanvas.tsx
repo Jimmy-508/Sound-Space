@@ -166,6 +166,108 @@ export function WaveCanvas({
     const moteMaterial = new THREE.PointsMaterial({ color: 0xffe4a8, depthTest: false, size: 4, transparent: true, opacity: 0.86, sizeAttenuation: false, blending: THREE.AdditiveBlending });
     const particleMaterial = new THREE.PointsMaterial({ color: 0x65cfff, depthTest: false, size: 1.2, transparent: true, opacity: 0.34, sizeAttenuation: false, blending: THREE.AdditiveBlending });
 
+    const spiritTexture = new THREE.TextureLoader().load(new URL('assets/sound-spirit-master.png', document.baseURI).href);
+    spiritTexture.colorSpace = THREE.SRGBColorSpace;
+    spiritTexture.minFilter = THREE.LinearFilter;
+    spiritTexture.magFilter = THREE.LinearFilter;
+    const spiritVertexShader = `
+      varying vec2 vUv;
+      uniform float uTime;
+      uniform float uLife;
+      uniform float uStroke;
+      uniform float uPart;
+      void main() {
+        vUv = uv;
+        vec3 transformed = position;
+        if (uPart == 1.0) {
+          float span = clamp((0.49 - uv.x) / 0.16, 0.0, 1.0);
+          float wave = sin(uTime * (0.8 + uLife * 1.4) - span * 2.2) * uStroke;
+          transformed.y += wave * span * 0.052;
+          transformed.x -= wave * span * 0.024;
+          transformed.z -= abs(wave) * span * 0.06;
+        } else if (uPart == 2.0) {
+          float span = clamp((uv.x - 0.52) / 0.15, 0.0, 1.0);
+          float wave = sin(uTime * (0.8 + uLife * 1.4) - span * 2.2 + 0.56) * uStroke * 1.05;
+          transformed.y -= wave * span * 0.048;
+          transformed.x += wave * span * 0.022;
+          transformed.z += wave * span * 0.065;
+        } else if (uPart == 0.0) {
+          float bodyProgress = clamp((0.7 - uv.y) / 0.43, 0.0, 1.0);
+          transformed.x += sin(uTime * 0.45 + bodyProgress * 2.1) * (0.004 + uLife * 0.012) * bodyProgress;
+          transformed.y += sin(uTime * 0.62 + bodyProgress) * uLife * 0.004;
+        }
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+      }
+    `;
+    const spiritFragmentShader = `
+      varying vec2 vUv;
+      uniform sampler2D uTexture;
+      uniform float uPart;
+      uniform float uOpacity;
+      uniform float uLife;
+      uniform float uBass;
+      uniform float uTreble;
+      float ellipseMask(vec2 point, vec2 center, vec2 radius) {
+        vec2 normalized = (point - center) / radius;
+        return 1.0 - smoothstep(0.72, 1.08, length(normalized));
+      }
+      float segmentDistance(vec2 point, vec2 start, vec2 end) {
+        vec2 line = end - start;
+        float position = clamp(dot(point - start, line) / dot(line, line), 0.0, 1.0);
+        return length(point - (start + line * position));
+      }
+      void main() {
+        vec4 source = texture2D(uTexture, vUv);
+        float luminance = max(source.r, max(source.g, source.b));
+        float imageAlpha = smoothstep(0.035, 0.19, luminance) * source.a;
+        float bounds = smoothstep(0.33, 0.38, vUv.x) * (1.0 - smoothstep(0.73, 0.77, vUv.x));
+        bounds *= smoothstep(0.23, 0.28, vUv.y) * (1.0 - smoothstep(0.76, 0.81, vUv.y));
+        float body = 1.0 - smoothstep(0.055, 0.115, segmentDistance(vUv, vec2(0.47, 0.71), vec2(0.68, 0.28)));
+        body = max(body, ellipseMask(vUv, vec2(0.47, 0.7), vec2(0.065, 0.085)));
+        float leftWing = ellipseMask(vUv, vec2(0.43, 0.54), vec2(0.11, 0.14));
+        float rightWing = ellipseMask(vUv, vec2(0.57, 0.61), vec2(0.095, 0.115));
+        float mask = uPart == 0.0 ? body : uPart == 1.0 ? leftWing : uPart == 2.0 ? rightWing : bounds;
+        float energy = uLife * 0.42 + uBass * 0.2 + uTreble * 0.12;
+        vec3 color = source.rgb * (0.92 + energy);
+        color += vec3(0.08, 0.28, 0.42) * uTreble * imageAlpha;
+        float alpha = imageAlpha * mask * uOpacity;
+        if (alpha < 0.004) discard;
+        gl_FragColor = vec4(color, alpha);
+      }
+    `;
+    const createSpiritMaterial = (part: number, opacity: number) => new THREE.ShaderMaterial({
+      uniforms: {
+        uTexture: { value: spiritTexture },
+        uTime: { value: 0 },
+        uLife: { value: 0 },
+        uStroke: { value: 0.3 },
+        uBass: { value: 0 },
+        uTreble: { value: 0 },
+        uPart: { value: part },
+        uOpacity: { value: opacity },
+      },
+      vertexShader: spiritVertexShader,
+      fragmentShader: spiritFragmentShader,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      blending: part === 3 ? THREE.AdditiveBlending : THREE.NormalBlending,
+      side: THREE.DoubleSide,
+    });
+    const spiritMaterials = [createSpiritMaterial(0, 1.15), createSpiritMaterial(1, 1.05), createSpiritMaterial(2, 1.05), createSpiritMaterial(3, 0.16)];
+    const spiritPlaneGeometry = new THREE.PlaneGeometry(1.2, 0.8, compact ? 28 : 48, compact ? 18 : 32);
+    const spiritMeshes = spiritMaterials.map((material) => new THREE.Mesh(spiritPlaneGeometry, material));
+    const approvedSpirit = new THREE.Group();
+    spiritMeshes.forEach((mesh, index) => {
+      mesh.renderOrder = 4 + index;
+      approvedSpirit.add(mesh);
+    });
+    spiritMeshes[0].position.z = 0.02;
+    spiritMeshes[1].position.z = -0.035;
+    spiritMeshes[2].position.z = 0.045;
+    spiritMeshes[3].scale.set(1.07, 1.07, 1);
+    approvedSpirit.visible = false;
+
     const wavePositions = new Float32Array(wavePointLimit * 3);
     const waveColors = new Float32Array(wavePointLimit * 3);
     const secondaryPositions = new Float32Array(wavePointLimit * 3);
@@ -295,6 +397,7 @@ export function WaveCanvas({
     playheadMarker.renderOrder = 16;
     scene.add(
       particles,
+      approvedSpirit,
       musicHalo,
       secondaryLine,
       energyWake,
@@ -420,6 +523,7 @@ export function WaveCanvas({
     };
 
     const hideSpectrum = () => {
+      approvedSpirit.visible = false;
       bodySurface.visible = false;
       bodyInner.visible = false;
       bodyGlow.visible = false;
@@ -901,6 +1005,50 @@ export function WaveCanvas({
       });
     };
 
+    const drawApprovedSpirit = (time: number, current: WaveCanvasProps) => {
+      const viewportAspect = Math.min(1, canvasHeight / canvasWidth);
+      const scale = current.creatureScale ?? 1;
+      const speed = Math.hypot(creatureVelocityX, creatureVelocityY);
+      const movementHeading = speed > 0.002 ? Math.atan2(creatureVelocityY, creatureVelocityX) : creatureHeading;
+      const sourceHeading = 2.54;
+      const breathing = reducedMotion ? 0 : Math.sin(time * 0.68 + creatureGenome.breathPhase) * 0.018;
+      const presence = 0.96 + breathing + lifeEnergy * 0.08 + onsetPulse * 0.025;
+      const turn = Math.atan2(Math.sin(movementHeading - sourceHeading), Math.cos(movementHeading - sourceHeading));
+
+      approvedSpirit.visible = true;
+      approvedSpirit.position.set(creatureX, creatureY, 0);
+      approvedSpirit.rotation.z = (reducedMotion ? 0 : Math.sin(time * 0.24 + creatureGenome.wanderPhase) * 0.018) + turn * 0.008;
+      approvedSpirit.scale.set(viewportAspect * scale * presence * 1.65, scale * presence * 1.65, 1);
+
+      const wingStroke = (reducedMotion ? 0.12 : 0.25) + lifeEnergy * 0.48 + ribbonPulse * 0.18 - startlePulse * 0.08;
+      spiritMaterials.forEach((material, index) => {
+        material.uniforms.uTime.value = time;
+        material.uniforms.uLife.value = lifeEnergy;
+        material.uniforms.uStroke.value = wingStroke;
+        material.uniforms.uBass.value = bassEnergy;
+        material.uniforms.uTreble.value = trebleEnergy;
+        material.uniforms.uOpacity.value = index === 3
+          ? 0.09 + lifeEnergy * 0.12 + onsetPulse * 0.05
+          : 0.98 + lifeEnergy * 0.12;
+      });
+
+      const activeMotes = Math.min(compact ? 7 : moteLimit, creatureGenome.moteCount);
+      for (let index = 0; index < activeMotes; index += 1) {
+        const mote = creatureGenome.motes[index];
+        const orbit = time * mote.speed * (0.3 + lifeEnergy * 0.7) + mote.phase;
+        const radius = 0.15 + Math.abs(mote.side) * 0.05 + trebleEnergy * 0.035;
+        const scatter = motePulse * mote.scatter * 0.035;
+        writeOrganicPoint(
+          motePositions,
+          index,
+          creatureX + Math.cos(orbit) * (radius + scatter) * viewportAspect * scale,
+          creatureY + Math.sin(orbit * 0.82) * (radius * 0.72 + scatter) * scale,
+        );
+      }
+      moteGeometry.setDrawRange(0, activeMotes);
+      moteGeometry.attributes.position.needsUpdate = true;
+    };
+
     const drawSpectrum = (current: WaveCanvasProps, time: number, deltaTime: number) => {
       if (profileSeed !== current.musicVisualSeed) {
         profileSeed = current.musicVisualSeed ?? 1;
@@ -956,19 +1104,19 @@ export function WaveCanvas({
         corePetalMaterials.forEach((material, index) => material.color.setHex(index % 3 === 0 ? creatureGenome.highlightHue : index % 3 === 1 ? creatureGenome.secondaryHue : creatureGenome.primaryHue));
       }
       updateSpiritPhysics(time, deltaTime, current);
-      drawSoundSpirit(time, deltaTime, current);
+      drawApprovedSpirit(time, current);
 
-      bodySurface.visible = true;
-      bodyInner.visible = true;
-      bodyGlow.visible = true;
-      wings.forEach((wing) => { wing.visible = true; });
-      wingEdges.forEach((edge) => { edge.visible = true; });
-      energyFlows.forEach((flow) => { flow.visible = true; });
-      energyWake.visible = true;
+      bodySurface.visible = false;
+      bodyInner.visible = false;
+      bodyGlow.visible = false;
+      wings.forEach((wing) => { wing.visible = false; });
+      wingEdges.forEach((edge) => { edge.visible = false; });
+      energyFlows.forEach((flow) => { flow.visible = false; });
+      energyWake.visible = false;
       motes.visible = true;
-      musicHalo.visible = true;
-      innerCore.visible = true;
-      corePetals.forEach((petal) => { petal.visible = true; });
+      musicHalo.visible = false;
+      innerCore.visible = false;
+      corePetals.forEach((petal) => { petal.visible = false; });
       bodySurfaceMaterial.opacity = 0.045 + lifeEnergy * 0.025 + bassEnergy * 0.02;
       bodyInnerMaterial.opacity = 0.026 + lifeEnergy * 0.034 + bassEnergy * 0.024;
       bodyGlowMaterial.opacity = 0.012 + lifeEnergy * 0.032 + veilPulse * 0.018;
@@ -1221,9 +1369,10 @@ export function WaveCanvas({
       motionQuery.removeEventListener?.('change', updateMotionPreference);
       mount.removeChild(renderer.domElement);
       renderer.dispose();
-      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, bodySurfaceGeometry, bodyInnerGeometry, bodyGlowGeometry, moteGeometry, particleGeometry, sampleRingGeometry, wakeGeometry, ...wingGeometries, ...wingEdgeGeometries, ...energyFlowGeometries].forEach((geometry) => geometry.dispose());
+      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, bodySurfaceGeometry, bodyInnerGeometry, bodyGlowGeometry, moteGeometry, particleGeometry, sampleRingGeometry, wakeGeometry, spiritPlaneGeometry, ...wingGeometries, ...wingEdgeGeometries, ...energyFlowGeometries].forEach((geometry) => geometry.dispose());
       haloTexture.dispose();
-      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, bodySurfaceMaterial, bodyInnerMaterial, bodyGlowMaterial, moteMaterial, particleMaterial, haloMaterial, coreMaterial, wakeMaterial, ...corePetalMaterials, ...wingMaterials, ...wingEdgeMaterials, ...energyFlowMaterials].forEach((material) => material.dispose());
+      spiritTexture.dispose();
+      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, bodySurfaceMaterial, bodyInnerMaterial, bodyGlowMaterial, moteMaterial, particleMaterial, haloMaterial, coreMaterial, wakeMaterial, ...spiritMaterials, ...corePetalMaterials, ...wingMaterials, ...wingEdgeMaterials, ...energyFlowMaterials].forEach((material) => material.dispose());
     };
   }, []);
 
