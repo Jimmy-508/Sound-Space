@@ -2,7 +2,8 @@ import { Download, Pause, Play, StopCircle } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from 'react';
 import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
-import { refineVisualSeed, type MusicSessionState } from '../music/musicSession';
+import type { MusicSessionState } from '../music/musicSession';
+import { audioAccept, type MusicAudioController } from '../music/useMusicAudioController';
 import type { PointerPoint } from '../types';
 import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
@@ -13,38 +14,13 @@ type ViewMode = 'wave' | 'spectrum';
 interface MusicLabProps {
   session: MusicSessionState;
   onSessionChange: (patch: Partial<MusicSessionState>) => void;
-  onReplaceFile: (file: File) => { sourceUrl: string; visualSeed: number };
+  controller: MusicAudioController;
 }
 
-const audioAccept = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,.mp3,.wav,.m4a,.aac';
-const supportedAudioExtensions = ['.mp3', '.wav', '.m4a', '.aac'];
-const supportedAudioMimeTypes = [
-  'audio/mpeg',
-  'audio/mp3',
-  'audio/wav',
-  'audio/x-wav',
-  'audio/wave',
-  'audio/mp4',
-  'audio/m4a',
-  'audio/x-m4a',
-  'audio/aac',
-];
-const unsupportedAudioMessage = '這個音訊格式目前無法在此瀏覽器播放，請改用其他 MP3、WAV 或 M4A 檔案。';
-
-export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabProps) {
+export function MusicLab({ session, onSessionChange, controller }: MusicLabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('wave');
-  const [spectrumData, setSpectrumData] = useState<Uint8Array | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [error, setError] = useState('');
   const [repulsor, setRepulsor] = useState<Repulsor | null>(null);
   const [creatureScale, setCreatureScale] = useState(1);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const contextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const gainRef = useRef<GainNode | null>(null);
-  const analyserDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
-  const restoredSourceRef = useRef<string | null>(null);
-  const loadVersionRef = useRef(0);
   const touchPointersRef = useRef(new Map<number, { x: number; y: number; startX: number; startY: number; startTime: number }>());
   const pinchRef = useRef<{
     distance: number;
@@ -60,24 +36,6 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = 1;
-    const gain = gainRef.current;
-    const context = contextRef.current;
-    if (gain && context) gain.gain.setTargetAtTime(session.volume, context.currentTime, 0.018);
-  }, [session.volume]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !session.sourceUrl) return;
-    if (audio.src !== session.sourceUrl) {
-      audio.src = session.sourceUrl;
-      audio.load();
-    }
-  }, [session.sourceUrl]);
-
-  useEffect(() => {
     setRepulsor(null);
     lastRepulsorPointRef.current = null;
     touchPointersRef.current.clear();
@@ -85,30 +43,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     gesturePinchedRef.current = false;
   }, [viewMode]);
 
-  useEffect(() => {
-    let frame = 0;
-    let lastProgressUpdate = 0;
-    let lastSpectrumUpdate = 0;
-    const tick = () => {
-      const audio = audioRef.current;
-      const analyser = analyserRef.current;
-      const now = performance.now();
-      if (audio && restoredSourceRef.current === session.sourceUrl && now - lastProgressUpdate >= 100) {
-        onSessionChange({ current: audio.currentTime });
-        lastProgressUpdate = now;
-      }
-      if (analyser && now - lastSpectrumUpdate >= 32) {
-        const data = analyserDataRef.current ?? new Uint8Array(analyser.frequencyBinCount);
-        analyserDataRef.current = data;
-        analyser.getByteFrequencyData(data);
-        setSpectrumData(data.slice());
-        lastSpectrumUpdate = now;
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => cancelAnimationFrame(frame);
-  }, [onSessionChange, session.sourceUrl]);
+  useEffect(() => () => cancelAnimationFrame(scaleAnimationRef.current), []);
 
   useEffect(() => {
     if (!session.duration || session.zoom <= 1) {
@@ -123,111 +58,6 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     next = Math.min(1 - visible, Math.max(0, next));
     if (Math.abs(next - session.viewStart) > 0.001) onSessionChange({ viewStart: next });
   }, [session.current, session.duration, session.viewStart, session.zoom, onSessionChange]);
-
-  useEffect(() => () => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      onSessionChange({ current: audio.currentTime });
-    }
-    analyserRef.current?.disconnect();
-    gainRef.current?.disconnect();
-    cancelAnimationFrame(scaleAnimationRef.current);
-    void contextRef.current?.close();
-  }, [onSessionChange]);
-
-  const loadFile = async (file: File) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (!isSupportedAudioFile(file)) {
-      setError(unsupportedAudioMessage);
-      return;
-    }
-
-    const loadVersion = loadVersionRef.current + 1;
-    loadVersionRef.current = loadVersion;
-    const { sourceUrl, visualSeed } = onReplaceFile(file);
-    restoredSourceRef.current = sourceUrl;
-    audio.src = sourceUrl;
-    audio.load();
-    setPlaying(false);
-    setSpectrumData(null);
-    setError('');
-
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const AudioCtor = window.AudioContext || window.webkitAudioContext;
-      const context = contextRef.current ?? new AudioCtor();
-      contextRef.current = context;
-      const buffer = await context.decodeAudioData(arrayBuffer.slice(0));
-      if (loadVersion !== loadVersionRef.current) return;
-      const channel = buffer.getChannelData(0);
-      const waveformData = createWaveformData(channel, 4096);
-      const pcmData = channel.slice();
-      onSessionChange({
-        duration: buffer.duration,
-        current: 0,
-        waveformData,
-        pcmData,
-        sampleRate: buffer.sampleRate,
-        visualSeed: refineVisualSeed(visualSeed, file, buffer.duration, channel),
-        zoom: 1,
-        viewStart: 0,
-      });
-    } catch {
-      if (loadVersion === loadVersionRef.current) setError(unsupportedAudioMessage);
-    }
-  };
-
-  const ensureAnalyser = async () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (analyserRef.current) {
-      if (contextRef.current?.state === 'suspended') await contextRef.current.resume();
-      return;
-    }
-    const AudioCtor = window.AudioContext || window.webkitAudioContext;
-    const context = contextRef.current ?? new AudioCtor();
-    contextRef.current = context;
-    if (context.state === 'suspended') await context.resume();
-    const source = context.createMediaElementSource(audio);
-    const analyser = context.createAnalyser();
-    const gain = context.createGain();
-    analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.72;
-    gain.gain.value = session.volume;
-    audio.volume = 1;
-    source.connect(analyser);
-    analyser.connect(gain);
-    gain.connect(context.destination);
-    analyserRef.current = analyser;
-    gainRef.current = gain;
-  };
-
-  const play = async () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (session.duration && audio.currentTime >= session.duration - 0.02) audio.currentTime = 0;
-    await ensureAnalyser();
-    await audio.play();
-    setPlaying(true);
-  };
-
-  const pause = () => {
-    const audio = audioRef.current;
-    audio?.pause();
-    if (audio) onSessionChange({ current: audio.currentTime });
-    setPlaying(false);
-  };
-
-  const stop = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.pause();
-    audio.currentTime = 0;
-    onSessionChange({ current: 0, viewStart: 0 });
-    setPlaying(false);
-  };
 
   const maxZoom = getMaxZoom(session.duration, session.sampleRate);
   const setZoomAt = (requested: number, anchorLocal: number, baseZoom = session.zoom, baseViewStart = session.viewStart) => {
@@ -244,8 +74,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     const local = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width)));
     const fraction = Math.min(1, session.viewStart + local / session.zoom);
     const time = fraction * session.duration;
-    if (audioRef.current) audioRef.current.currentTime = time;
-    onSessionChange({ current: time });
+    controller.seek(time);
   };
 
   const updateSpectrumRepulsor = (event: PointerEvent<HTMLDivElement>) => {
@@ -438,19 +267,6 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
 
   return (
     <section className="lab-layout">
-      <audio
-        ref={audioRef}
-        onLoadedMetadata={(event) => {
-          const audio = event.currentTarget;
-          if (restoredSourceRef.current !== session.sourceUrl) {
-            audio.currentTime = Math.min(session.current, audio.duration || session.current);
-            restoredSourceRef.current = session.sourceUrl;
-          }
-          onSessionChange({ duration: audio.duration });
-        }}
-        onError={() => session.fileName && setError(unsupportedAudioMessage)}
-        onEnded={() => setPlaying(false)}
-      />
       <div
         className="stage music-stage"
         onPointerDown={pointerDown}
@@ -474,13 +290,13 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
           musicData={viewMode === 'wave' ? session.waveformData : null}
           musicPcmData={session.pcmData}
           musicSampleRate={session.sampleRate}
-          spectrumData={spectrumData}
+          spectrumData={controller.spectrumData}
           musicProgress={session.duration ? session.current / session.duration : 0}
           musicZoom={session.zoom}
           musicViewStart={session.viewStart}
           musicTime={session.current}
           musicVisualSeed={session.visualSeed}
-          musicPlaying={playing}
+          musicPlaying={controller.playing}
           creatureScale={creatureScale}
           repulsors={repulsor ? [repulsor] : []}
         />
@@ -496,25 +312,25 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
             onChange={(event) => {
               const file = event.currentTarget.files?.[0];
               if (!file) return;
-              void loadFile(file);
+              void controller.loadFile(file);
               event.currentTarget.value = '';
             }}
           />
         </label>
-        {error && <p className="error-message">{error}</p>}
+        {controller.error && <p className="error-message">{controller.error}</p>}
         <p className="quiet compact-note">支援 MP3、WAV、M4A</p>
 
         <SegmentedControl label="觀察內容" value={viewMode} options={[{ value: 'wave', label: '聲音波形' }, { value: 'spectrum', label: '頻譜' }]} onChange={setViewMode} />
         <RangeControl label="音量" value={Math.round(session.volume * 100)} min={0} max={100} step={1} display={`${Math.round(session.volume * 100)}%`} onChange={(value) => onSessionChange({ volume: value / 100 })} />
 
         <div className="button-row">
-          <button type="button" className="primary" onClick={() => void play()} disabled={!session.fileName}>
+          <button type="button" className="primary" onClick={() => void controller.play()} disabled={!session.fileName}>
             <Play size={19} />播放
           </button>
-          <button type="button" onClick={pause} disabled={!session.fileName}>
+          <button type="button" onClick={controller.pause} disabled={!session.fileName}>
             <Pause size={19} />暫停
           </button>
-          <button type="button" onClick={stop} disabled={!session.fileName}>
+          <button type="button" onClick={controller.stop} disabled={!session.fileName}>
             <StopCircle size={19} />停止
           </button>
         </div>
@@ -533,8 +349,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
             style={{ '--timeline-progress': `${session.duration ? session.current / session.duration * 100 : 0}%` } as CSSProperties}
             onChange={(event) => {
               const time = Number(event.currentTarget.value);
-              if (audioRef.current) audioRef.current.currentTime = time;
-              onSessionChange({ current: time });
+              controller.seek(time);
             }}
           />
           <span>{formatTime(session.current)} / {formatTime(session.duration)}</span>
@@ -550,22 +365,6 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   );
 }
 
-function createWaveformData(channel: Float32Array, pointCount: number) {
-  const samples = new Float32Array(pointCount);
-  const bucketSize = Math.max(1, Math.floor(channel.length / pointCount));
-  for (let index = 0; index < pointCount; index += 1) {
-    const start = index * bucketSize;
-    const end = Math.min(channel.length, start + bucketSize);
-    let peak = 0;
-    for (let sourceIndex = start; sourceIndex < end; sourceIndex += 1) {
-      const value = channel[sourceIndex] ?? 0;
-      if (Math.abs(value) > Math.abs(peak)) peak = value;
-    }
-    samples[index] = peak;
-  }
-  return samples;
-}
-
 function getMaxZoom(duration: number, sampleRate: number) {
   const minimumVisibleDuration = Math.max(0.02, sampleRate > 0 ? 32 / sampleRate : 0.02);
   return duration > 0 ? Math.max(1, duration / minimumVisibleDuration) : 1;
@@ -573,12 +372,4 @@ function getMaxZoom(duration: number, sampleRate: number) {
 
 function clampCreatureScale(value: number) {
   return Math.min(2, Math.max(0.6, value));
-}
-
-function isSupportedAudioFile(file: File) {
-  const name = file.name.toLowerCase();
-  const type = file.type.toLowerCase();
-  const extensionAllowed = supportedAudioExtensions.some((extension) => name.endsWith(extension));
-  const mimeAllowed = supportedAudioMimeTypes.includes(type);
-  return extensionAllowed || mimeAllowed;
 }

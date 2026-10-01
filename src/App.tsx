@@ -6,6 +6,7 @@ import { MusicLab } from './labs/MusicLab';
 import { SamplingLab } from './labs/SamplingLab';
 import { WaveLab } from './labs/WaveLab';
 import { createVisualSeed, initialMusicSession, type MusicSessionState } from './music/musicSession';
+import { useMusicAudioController } from './music/useMusicAudioController';
 import type { LabId, PointerPoint } from './types';
 import { StarfieldBackground } from './visualization/StarfieldBackground';
 import { VisualImpulseLayer, type VisualImpulseHandle } from './visualization/VisualImpulseLayer';
@@ -46,6 +47,12 @@ export default function App() {
     return { sourceUrl, visualSeed };
   }, []);
 
+  const musicController = useMusicAudioController({
+    session: musicSession,
+    onSessionChange: updateMusicSession,
+    onReplaceFile: replaceMusicFile,
+  });
+
   useEffect(() => () => {
     if (musicUrlRef.current) URL.revokeObjectURL(musicUrlRef.current);
   }, []);
@@ -56,9 +63,15 @@ export default function App() {
 
   const playControlSound = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
-    const control = target.closest('button, .file-picker, input[type="range"]');
+    if (target.closest('input[type="range"], .control, .progress-wrap')) return;
+    const control = target.closest('button, .file-picker');
     if (!control || (control instanceof HTMLButtonElement && control.disabled)) return;
     void interactionSound.play();
+  };
+
+  const selectLab = (lab: LabId) => {
+    if (lab === 'wave' || lab === 'sampling') musicController.pause();
+    setActiveLab(lab);
   };
 
   const activateHomeImpulse = (event: MouseEvent<HTMLElement>) => {
@@ -71,14 +84,20 @@ export default function App() {
 
   return (
     <main className="app-shell" onClickCapture={playControlSound}>
+      <audio
+        ref={musicController.audioRef}
+        onLoadedMetadata={musicController.handleLoadedMetadata}
+        onError={musicController.handleAudioError}
+        onEnded={musicController.handleEnded}
+      />
       <StarfieldBackground />
       <nav className="top-nav" aria-label="主要導覽">
         <div className="top-nav-track">
-          <button type="button" className={activeLab === 'home' ? 'active' : ''} onClick={() => setActiveLab('home')}>
+          <button type="button" className={activeLab === 'home' ? 'active' : ''} onClick={() => selectLab('home')}>
             <Home size={18} />首頁
           </button>
           {labs.map((lab) => (
-            <button key={lab.id} type="button" className={activeLab === lab.id ? 'active' : ''} onClick={() => setActiveLab(lab.id)}>
+            <button key={lab.id} type="button" className={activeLab === lab.id ? 'active' : ''} onClick={() => selectLab(lab.id)}>
               {lab.icon}{lab.title}
             </button>
           ))}
@@ -106,6 +125,8 @@ export default function App() {
             homeSoundStartedAt={homePlayback?.startedAt ?? 0}
             homeSoundDuration={homePlayback?.duration ?? 0}
             homeSoundToken={homePlayback?.token ?? 0}
+            homeMusicData={musicController.timeDomainData}
+            homeMusicPlaying={musicController.playing}
           />
           <VisualImpulseLayer ref={visualImpulseRef} />
           <div className="home-content">
@@ -121,7 +142,7 @@ export default function App() {
         <MusicLab
           session={musicSession}
           onSessionChange={updateMusicSession}
-          onReplaceFile={replaceMusicFile}
+          controller={musicController}
         />
       )}
 
