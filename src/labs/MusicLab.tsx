@@ -371,5 +371,5 @@ function getMaxZoom(duration: number, sampleRate: number) {
 }
 
 function clampCreatureScale(value: number) {
-  return Math.min(2, Math.max(0.6, value));
+  return Math.min(2.4, Math.max(0.65, value));
 }
