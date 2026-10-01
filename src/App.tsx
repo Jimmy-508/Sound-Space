@@ -19,9 +19,11 @@ const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: stri
 ];
 
 export default function App() {
+  const previewParams = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search);
   const localSpiritPreview = typeof window !== 'undefined'
     && (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
-    && /^(A|B)$/.test(new URLSearchParams(window.location.search).get('spiritPass') ?? '');
+    && (/^(A|B)$/.test(previewParams.get('spiritPass') ?? '')
+      || /^(neutral|closeup|power|glide)$/.test(previewParams.get('spiritDebug') ?? ''));
   const [activeLab, setActiveLab] = useState<LabId>(localSpiritPreview ? 'music' : 'home');
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
   const [musicSession, setMusicSession] = useState<MusicSessionState>(initialMusicSession);

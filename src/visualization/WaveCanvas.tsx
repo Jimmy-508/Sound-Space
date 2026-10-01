@@ -150,9 +150,13 @@ export function WaveCanvas({
     const wakeMaterial = new THREE.MeshBasicMaterial({ color: 0x77dbff, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.11, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
     const moteMaterial = new THREE.PointsMaterial({ color: 0xffe4a8, depthTest: false, size: 4, transparent: true, opacity: 0.86, sizeAttenuation: false, blending: THREE.AdditiveBlending });
     const particleMaterial = new THREE.PointsMaterial({ color: 0x65cfff, depthTest: false, size: 1.2, transparent: true, opacity: 0.34, sizeAttenuation: false, blending: THREE.AdditiveBlending });
-    const previewPass = /^(A|B)$/.test(new URLSearchParams(window.location.search).get('spiritPass') ?? '')
-      && (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
-      ? new URLSearchParams(window.location.search).get('spiritPass')
+    const previewParams = new URLSearchParams(window.location.search);
+    const localPreview = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+    const previewPass = /^(A|B)$/.test(previewParams.get('spiritPass') ?? '') && localPreview
+      ? previewParams.get('spiritPass')
+      : null;
+    const spiritDebug = /^(neutral|closeup|power|glide)$/.test(previewParams.get('spiritDebug') ?? '') && localPreview
+      ? previewParams.get('spiritDebug')
       : null;
     const spiritRig = createMasterSpirit(compact);
     const unifiedSpirit = spiritRig.group;
@@ -637,19 +641,30 @@ export function WaveCanvas({
       const speed = Math.hypot(creatureVelocityX, creatureVelocityY);
       const movementHeading = speed > 0.002 ? Math.atan2(creatureVelocityY, creatureVelocityX) : creatureHeading;
       const turnDelta = Math.atan2(Math.sin(movementHeading - creatureGenome.orientation), Math.cos(movementHeading - creatureGenome.orientation));
-      const strokeRate = 0.48 + musicAwake * (0.12 + lifeEnergy * 0.72 + rhythmImpulse * 0.44 + bassEnergy * 0.25);
-      const cycle = time * strokeRate + creatureGenome.breathPhase;
-      const vitality = 0.2 + musicAwake * (0.12 + lifeEnergy * 0.34 + rhythmImpulse * 0.28 + bassEnergy * 0.2) + beatAccent * 0.1;
+      const vitality = 0.16 + musicAwake * (0.16 + lifeEnergy * 0.4) + spectralFlux * 0.12;
+      const strokeRate = 0.18 + musicAwake * (0.18 + lifeEnergy * 0.5 + rhythmImpulse * 0.16);
+      const strokePower = 0.2 + musicAwake * (0.15 + bassEnergy * 0.45 + beatAccent * 0.16);
+      const membraneTension = 0.28 + midEnergy * 0.52 + musicAwake * 0.12;
+      const energyFlow = 0.18 + musicAwake * (0.16 + lifeEnergy * 0.42 + midEnergy * 0.18);
+      const rimActivity = 0.15 + musicAwake * (0.12 + trebleEnergy * 0.52);
+      const debugPhase = spiritDebug === 'power' ? 0.41 : spiritDebug === 'glide' ? 0.7 : 0.08;
+      const cycle = spiritDebug ? debugPhase : (time * strokeRate + creatureGenome.breathPhase) % 1;
+      const phasePower = spiritDebug === 'power' ? 0.82 : spiritDebug === 'glide' ? 0.24 : strokePower;
 
       for (let sideIndex = 0; sideIndex < 2; sideIndex += 1) {
-        const sidePhase = sideIndex === 0 ? -0.12 : 0.18;
-        const amplitude = sideIndex === 0 ? 0.9 : 1.04;
+        const sidePhase = sideIndex === 0 ? -0.008 : 0.008;
         for (let zone = 0; zone < 5; zone += 1) {
-          const delayedCycle = cycle - zone * (0.13 + lifeEnergy * 0.025) + sidePhase;
-          const strokeCycle = Math.sin(delayedCycle) * 0.7 + Math.sin(delayedCycle * 0.5 - 0.75) * 0.3;
-          const target = strokeCycle * vitality * amplitude + turnDelta * (sideIndex === 0 ? -0.025 : 0.025);
-          const stiffness = 18 - zone * 2.4;
-          const damping = 7 - zone * 0.72;
+          const zoneProgress = zone / 4;
+          const delayedCycle = (cycle - zoneProgress * 0.055 + sidePhase + 1) % 1;
+          const phaseStroke = sampleSwimmingCycle(delayedCycle);
+          const idleUndulation = Math.sin(time * 0.36 - zoneProgress * 1.4 + sidePhase) * (0.018 + zoneProgress * 0.026);
+          const target = spiritDebug === 'neutral' || spiritDebug === 'closeup'
+            ? 0
+            : phaseStroke * phasePower * (0.18 + zoneProgress * 0.82)
+              + idleUndulation * (1 - musicAwake * 0.58)
+              + turnDelta * (sideIndex === 0 ? -0.012 : 0.012) * zoneProgress;
+          const stiffness = 20 - zone * 2.8;
+          const damping = 8.2 - zone * 0.82;
           wingVelocity[sideIndex][zone] += (target - wingSpring[sideIndex][zone]) * stiffness * deltaTime;
           wingVelocity[sideIndex][zone] *= Math.exp(-damping * deltaTime);
           wingSpring[sideIndex][zone] += wingVelocity[sideIndex][zone] * deltaTime;
@@ -657,12 +672,13 @@ export function WaveCanvas({
       }
 
       const rootStroke = (wingSpring[0][0] + wingSpring[1][0]) * 0.5;
-      const bodyFollow = rootStroke * 0.05 + Math.sin(cycle - 0.48) * (0.008 + lifeEnergy * 0.018) * motionScale;
-      const lowerFollow = Math.sin(cycle - 0.82) * (0.025 + vitality * 0.055) * motionScale;
+      const bodyFollow = spiritDebug ? 0 : rootStroke * 0.045 + Math.sin(time * 0.31) * (0.004 + vitality * 0.008) * motionScale;
+      const lowerFollow = spiritDebug ? 0 : Math.sin(time * 0.31 - 0.48) * (0.01 + vitality * 0.024) * motionScale;
       unifiedSpirit.visible = true;
-      unifiedSpirit.position.set(creatureX, creatureY, 0);
-      unifiedSpirit.rotation.z = previewPass ? -0.18 : creatureGenome.orientation - Math.PI * 0.5 + turnDelta * 0.08;
-      unifiedSpirit.scale.set(0.37 * viewportAspect * scale, 0.37 * scale, 1);
+      unifiedSpirit.position.set(spiritDebug ? 0 : creatureX, spiritDebug ? -0.03 : creatureY, 0);
+      unifiedSpirit.rotation.z = spiritDebug || previewPass ? 0 : THREE.MathUtils.clamp(turnDelta * musicAwake * 0.025, -0.035, 0.035);
+      const debugScale = spiritDebug === 'closeup' ? 0.64 : spiritDebug ? 0.47 : 0.37;
+      unifiedSpirit.scale.set(debugScale * viewportAspect * scale, debugScale * scale, 1);
       spiritRig.surfaces.forEach(({ mesh, finalMaterial, geometryMaterial }) => {
         mesh.material = previewPass === 'A' ? geometryMaterial : finalMaterial;
       });
@@ -675,18 +691,20 @@ export function WaveCanvas({
         material.uniforms.uTreble.value = trebleEnergy;
         material.uniforms.uBodyFollow.value = bodyFollow;
         material.uniforms.uLowerFollow.value = lowerFollow;
+        material.uniforms.uMembraneTension.value = membraneTension;
+        material.uniforms.uEnergyFlow.value = energyFlow;
+        material.uniforms.uRimActivity.value = rimActivity;
+        material.uniforms.uCycle.value = cycle;
       });
-      const wingMotion = previewPass ? 0 : 1;
+      const wingMotion = previewPass || spiritDebug === 'neutral' || spiritDebug === 'closeup' ? 0 : 1;
       spiritRig.leftWing.userData.materials.forEach((material: THREE.ShaderMaterial) => {
-        material.uniforms.uWingLift.value = wingSpring[0][2] * wingMotion;
+        material.uniforms.uWingA.value.set(wingSpring[0][0], wingSpring[0][1], wingSpring[0][2]).multiplyScalar(wingMotion);
+        material.uniforms.uWingB.value.set(wingSpring[0][3], wingSpring[0][4]).multiplyScalar(wingMotion);
       });
       spiritRig.rightWing.userData.materials.forEach((material: THREE.ShaderMaterial) => {
-        material.uniforms.uWingLift.value = wingSpring[1][2] * wingMotion;
+        material.uniforms.uWingA.value.set(wingSpring[1][0], wingSpring[1][1], wingSpring[1][2]).multiplyScalar(wingMotion);
+        material.uniforms.uWingB.value.set(wingSpring[1][3], wingSpring[1][4]).multiplyScalar(wingMotion);
       });
-      spiritRig.leftWing.rotation.y = wingSpring[0][2] * 0.42 * wingMotion;
-      spiritRig.leftWing.rotation.z = wingSpring[0][4] * 0.055 * wingMotion;
-      spiritRig.rightWing.rotation.y = -wingSpring[1][2] * 0.42 * wingMotion;
-      spiritRig.rightWing.rotation.z = -wingSpring[1][4] * 0.055 * wingMotion;
 
       const heartRate = 0.34 + musicAwake * (0.2 + lifeEnergy * 0.8 + rhythmImpulse * 0.55);
       spiritRig.heartLobes.forEach((lobe, index) => {
@@ -718,7 +736,7 @@ export function WaveCanvas({
         trailHistoryY[index] += (trailHistoryY[index - 1] - trailHistoryY[index]) * follow;
       }
 
-      const atmosphereVisible = previewPass === null;
+      const atmosphereVisible = previewPass === null && spiritDebug === null;
       for (let ribbonIndex = 0; ribbonIndex < wakeRibbonCount; ribbonIndex += 1) {
         const positions = wakePositions[ribbonIndex];
         const colors = wakeColors[ribbonIndex];
@@ -886,8 +904,8 @@ export function WaveCanvas({
 
     const drawWave = (time: number, deltaTime: number) => {
       const current = stateRef.current;
-      const spectrumActive = Boolean(previewPass) || (current.mode === 'music' && current.musicData === null && Boolean(current.musicPcmData?.length));
-      const musicReady = Boolean(previewPass) || (current.mode === 'music' && Boolean(current.musicPcmData?.length));
+      const spectrumActive = Boolean(previewPass || spiritDebug) || (current.mode === 'music' && current.musicData === null && Boolean(current.musicPcmData?.length));
+      const musicReady = Boolean(previewPass || spiritDebug) || (current.mode === 'music' && Boolean(current.musicPcmData?.length));
       if (musicReady) updateSpectrumLevels(current.spectrumData ?? silentSpectrumData, deltaTime, Boolean(current.musicPlaying));
       hideSamples();
       hideMusicWave();
@@ -1001,7 +1019,7 @@ export function WaveCanvas({
 
     const drawParticles = (time: number) => {
       const current = stateRef.current;
-      const spectrumActive = Boolean(previewPass) || (current.mode === 'music' && current.musicData === null && Boolean(current.musicPcmData?.length));
+      const spectrumActive = Boolean(previewPass || spiritDebug) || (current.mode === 'music' && current.musicData === null && Boolean(current.musicPcmData?.length));
       const motionScale = reducedMotion ? 0.18 : 1;
       const activeParticleCount = spectrumActive ? Math.min(compact ? 70 : particleCount, creatureGenome.trailDensity) : particleCount;
       particleGeometry.setDrawRange(0, activeParticleCount);
@@ -1034,7 +1052,7 @@ export function WaveCanvas({
           particlePositions[offset + 2] = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) * 2.8) * 0.08;
         }
       }
-      particleMaterial.opacity = previewPass ? 0 : spectrumActive
+      particleMaterial.opacity = previewPass || spiritDebug ? 0 : spectrumActive
         ? current.musicPlaying ? 0.08 + midEnergy * 0.16 + trebleEnergy * 0.3 + onsetPulse * 0.08 + startlePulse * 0.1 : 0.018
         : 0.32;
       particleMaterial.size = spectrumActive ? 2.5 + trebleEnergy * (reducedMotion ? 1.2 : 4.8) + onsetPulse * 1.8 + startlePulse * 1.4 : 1.2;
@@ -1118,6 +1136,8 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
     body: new THREE.MeshBasicMaterial({ color: 0xdaf5f7, side: THREE.DoubleSide, depthTest: false }),
     wing: new THREE.MeshBasicMaterial({ color: 0xa9dbe6, side: THREE.DoubleSide, depthTest: false }),
     veil: new THREE.MeshBasicMaterial({ color: 0x78b9ce, side: THREE.DoubleSide, depthTest: false }),
+    spectral: new THREE.MeshBasicMaterial({ color: 0x829ee8, side: THREE.DoubleSide, depthTest: false }),
+    detail: new THREE.MeshBasicMaterial({ color: 0xd0f8ff, side: THREE.DoubleSide, depthTest: false }),
     heart: new THREE.MeshBasicMaterial({ color: 0xffb596, side: THREE.DoubleSide, depthTest: false }),
   };
   materials.push(...Object.values(geometryMaterials));
@@ -1150,14 +1170,47 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
     const wingGroup = side < 0 ? leftWing : rightWing;
     const mainGeometry = createMasterWingGeometry(side, false, compact);
     const veilGeometry = createMasterWingGeometry(side, true, compact);
-    const mainMaterial = createMasterSpiritMaterial(side < 0 ? 0x72b8ef : 0x83dcf0, 0.3, 1);
-    const veilMaterial = createMasterSpiritMaterial(side < 0 ? 0xa67ce8 : 0x7ed8e8, 0.18, 2);
-    mainMaterial.uniforms.uWingSide.value = side;
-    veilMaterial.uniforms.uWingSide.value = side;
-    wingGroup.userData.materials.push(mainMaterial, veilMaterial);
-    addSurface(wingGroup, mainGeometry, mainMaterial, geometryMaterials.wing, 3);
-    addSurface(wingGroup, veilGeometry, veilMaterial, geometryMaterials.veil, 3.4);
-    addMasterWingLines(wingGroup, side, compact, geometries, materials, energyMaterials);
+    const addWingSurface = (
+      geometry: THREE.BufferGeometry,
+      color: number,
+      opacity: number,
+      kind: number,
+      geometryMaterial: THREE.MeshBasicMaterial,
+      order: number,
+      delay: number,
+    ) => {
+      const material = createMasterSpiritMaterial(color, opacity, kind);
+      material.uniforms.uWingSide.value = side;
+      material.uniforms.uLayerDelay.value = delay;
+      wingGroup.userData.materials.push(material);
+      return addSurface(wingGroup, geometry, material, geometryMaterial, order);
+    };
+
+    addWingSurface(mainGeometry, 0xb9f5ff, 0.34, 1, geometryMaterials.wing, 3, 0);
+    addWingSurface(veilGeometry, 0x91dcff, 0.2, 2, geometryMaterials.veil, 3.35, 0.065);
+    addWingSurface(createWingRootBlendGeometry(side, compact), 0xd8fbff, 0.28, 7, geometryMaterials.wing, 3.7, 0.025);
+
+    const spectralRegions = [
+      [0.13, 0.58, 0.22, 0.84],
+      [0.36, 0.82, -0.3, 0.38],
+      [0.58, 0.96, -0.82, -0.12],
+    ] as const;
+    spectralRegions.forEach(([start, end, lower, upper], index) => {
+      const geometry = createWingRegionGeometry(side, start, end, lower, upper, compact, index);
+      addWingSurface(geometry, 0x675cff, 0.27, 4, geometryMaterials.spectral, 4.2 + index * 0.04, 0.095 + index * 0.012);
+    });
+
+    for (let index = 0; index < 5; index += 1) {
+      const geometry = createWingVeinGeometry(side, index, false, compact);
+      addWingSurface(geometry, 0x3c8dff, 0.42, 5, geometryMaterials.detail, 6, 0.035 + index * 0.006);
+    }
+    const secondaryCount = compact ? 3 : 5;
+    for (let index = 0; index < secondaryCount; index += 1) {
+      const geometry = createWingVeinGeometry(side, index, true, compact);
+      addWingSurface(geometry, 0x745ee8, 0.26, 5.5, geometryMaterials.detail, 6.1, 0.065 + index * 0.006);
+    }
+    addWingSurface(createWingRimGeometry(side, compact, 0.012), 0xd9faff, 0.74, 6, geometryMaterials.detail, 6.4, 0.035);
+    addWingSurface(createWingRimGeometry(side, compact, 0.026), 0x9b8cff, 0.2, 6.5, geometryMaterials.spectral, 6.2, 0.05);
   }
 
   const internalPathControls = [
@@ -1235,67 +1288,155 @@ function createMasterWingGeometry(side: -1 | 1, inner: boolean, compact: boolean
   const rows = compact ? 34 : 56;
   const columns = compact ? 22 : 34;
   const positions = new Float32Array(rows * columns * 3);
+  const wingCoordinates = new Float32Array(rows * columns * 2);
   for (let row = 0; row < rows; row += 1) {
     const span = row / (rows - 1);
-    const spanScale = inner ? 0.9 : 1;
     for (let column = 0; column < columns; column += 1) {
       const chord = column / (columns - 1) * 2 - 1;
-      const distance = (0.735 * Math.pow(span, 0.62) - 0.12 * span * span
-        + 0.145 * Math.pow(Math.sin(Math.PI * span), 1.25) * (1 - chord * chord)) * spanScale;
-      const centerVertical = 0.53 - 0.117 * Math.pow(span, 1.5) + (inner ? 0.0074 : 0);
-      const halfChord = 0.195 * (1 - span * 0.08);
-      const depth = Math.pow(Math.sin(Math.PI * span), 0.8) * (1 - chord * chord) * 0.108
-        + (inner ? -0.032 : 0);
+      const point = sampleWingRest(side, span, chord, inner);
       const offset = (row * columns + column) * 3;
-      positions[offset] = side * distance;
-      positions[offset + 1] = centerVertical + chord * halfChord;
-      positions[offset + 2] = depth;
+      positions[offset] = point.x;
+      positions[offset + 1] = point.y;
+      positions[offset + 2] = point.z;
+      const wingOffset = (row * columns + column) * 2;
+      wingCoordinates[wingOffset] = span;
+      wingCoordinates[wingOffset + 1] = chord;
     }
   }
+  return finalizeWingSurface(positions, wingCoordinates, rows, columns);
+}
+
+function sampleWingRest(side: -1 | 1, span: number, chord: number, inner = false) {
+  const safeSpan = Math.min(1, Math.max(0, span));
+  const membraneScale = inner ? 0.91 : 1;
+  const roundedTip = 0.066 * Math.pow(Math.abs(chord), 1.7) * smoothstep(0.58, 1, safeSpan);
+  const distance = (0.735 * Math.pow(safeSpan, 0.62) - 0.12 * safeSpan * safeSpan
+    + 0.17 * Math.pow(Math.sin(Math.PI * safeSpan), 1.2) * (1 - chord * chord)
+    - roundedTip) * membraneScale;
+  const centerVertical = 0.53 + Math.sin(Math.PI * safeSpan) * 0.038 - 0.13 * Math.pow(safeSpan, 1.45)
+    + (inner ? 0.008 : 0);
+  const halfChord = 0.195 * (1 - safeSpan * 0.1);
+  const lowerScoop = -0.024 * Math.sin(Math.PI * safeSpan) * (1 - chord * chord) * (0.55 - chord * 0.45);
+  const depth = Math.pow(Math.sin(Math.PI * safeSpan), 0.78) * (1 - chord * chord) * 0.118
+    + Math.sin(safeSpan * Math.PI * 1.5) * chord * 0.012
+    + (inner ? -0.034 : 0);
+  return new THREE.Vector3(side * distance, centerVertical + chord * halfChord + lowerScoop, depth);
+}
+
+function finalizeWingSurface(
+  positions: Float32Array,
+  wingCoordinates: Float32Array,
+  rows: number,
+  columns: number,
+  masks?: Float32Array,
+) {
   const geometry = dynamicSurfaceGeometry(positions, rows, columns);
+  geometry.setAttribute('restPosition', new THREE.BufferAttribute(positions.slice(), 3));
+  geometry.setAttribute('wingCoord', new THREE.BufferAttribute(wingCoordinates, 2));
+  geometry.setAttribute('wingMask', new THREE.BufferAttribute(masks ?? new Float32Array(rows * columns).fill(1), 1));
   geometry.computeVertexNormals();
   return geometry;
 }
 
-function addMasterWingLines(
-  group: THREE.Group,
-  side: -1 | 1,
-  compact: boolean,
-  geometries: THREE.BufferGeometry[],
-  materials: THREE.Material[],
-  energyMaterials: THREE.LineBasicMaterial[],
-) {
-  const lineMaterial = createEnergyLineMaterial(side < 0 ? 0xb89eff : 0x9cecff, 0.26);
-  materials.push(lineMaterial);
-  energyMaterials.push(lineMaterial);
-  for (let index = 0; index < 6; index += 1) {
-    const chord = -0.82 + index * 0.328;
-    const endSpan = 0.72 + Math.sin((index + 1) * 1.7) * 0.18;
-    const controls = [
-      [0, 0.018, 0.53 + chord * 0.025],
-      [side * 0.18, 0.072, 0.53 + chord * 0.075],
-      [side * 0.42, 0.09, 0.51 + chord * 0.14],
-      [side * (0.57 + endSpan * 0.13), 0.025, 0.48 + chord * 0.19],
-    ];
-    const geometry = createMasterPathGeometry(controls, compact ? 22 : 42, true);
-    const line = new THREE.Line(geometry, lineMaterial);
-    line.renderOrder = 6;
-    group.add(line);
-    geometries.push(geometry);
+function createWingRootBlendGeometry(side: -1 | 1, compact: boolean) {
+  const rows = compact ? 12 : 18;
+  const columns = compact ? 14 : 20;
+  const positions = new Float32Array(rows * columns * 3);
+  const coordinates = new Float32Array(rows * columns * 2);
+  const masks = new Float32Array(rows * columns);
+  for (let row = 0; row < rows; row += 1) {
+    const span = row / (rows - 1) * 0.34;
+    const blend = smoothstep(0, 0.3, span);
+    for (let column = 0; column < columns; column += 1) {
+      const chord = column / (columns - 1) * 2 - 1;
+      const point = sampleWingRest(side, span, chord * (0.7 + blend * 0.3));
+      point.x -= side * (1 - blend) * 0.13;
+      point.z -= (1 - blend) * 0.018;
+      const vertex = row * columns + column;
+      positions.set([point.x, point.y, point.z], vertex * 3);
+      coordinates.set([span, chord], vertex * 2);
+      masks[vertex] = Math.pow(Math.max(0, Math.sin((chord + 1) * Math.PI * 0.5)), 0.55)
+        * (1 - smoothstep(0.27, 0.34, span));
+    }
   }
-  const rimControls = [
-    [side * 0.542, -0.004, 0.572],
-    [side * 0.683, 0.056, 0.434],
-    [side * 0.524, -0.004, 0.182],
-  ];
-  const rimGeometry = createMasterPathGeometry(rimControls, compact ? 28 : 52, true);
-  const rimMaterial = createEnergyLineMaterial(0xd4f8ff, 0.42);
-  const rim = new THREE.Line(rimGeometry, rimMaterial);
-  rim.renderOrder = 6.5;
-  group.add(rim);
-  geometries.push(rimGeometry);
-  materials.push(rimMaterial);
-  energyMaterials.push(rimMaterial);
+  return finalizeWingSurface(positions, coordinates, rows, columns, masks);
+}
+
+function createWingRegionGeometry(
+  side: -1 | 1,
+  spanStart: number,
+  spanEnd: number,
+  chordLower: number,
+  chordUpper: number,
+  compact: boolean,
+  region: number,
+) {
+  const rows = compact ? 12 : 18;
+  const columns = compact ? 9 : 13;
+  const positions = new Float32Array(rows * columns * 3);
+  const coordinates = new Float32Array(rows * columns * 2);
+  const masks = new Float32Array(rows * columns);
+  for (let row = 0; row < rows; row += 1) {
+    const localSpan = row / (rows - 1);
+    const span = THREE.MathUtils.lerp(spanStart, spanEnd, localSpan);
+    for (let column = 0; column < columns; column += 1) {
+      const localChord = column / (columns - 1);
+      const curve = Math.sin(localSpan * Math.PI) * (region - 1) * 0.055;
+      const chord = THREE.MathUtils.lerp(chordLower, chordUpper, localChord) + curve;
+      const point = sampleWingRest(side, span, chord, true);
+      point.z += 0.012 + region * 0.005;
+      const vertex = row * columns + column;
+      positions.set([point.x, point.y, point.z], vertex * 3);
+      coordinates.set([span, chord], vertex * 2);
+      const edgeFade = Math.sin(localSpan * Math.PI) * Math.sin(localChord * Math.PI);
+      masks[vertex] = Math.pow(Math.max(0, edgeFade), 0.62);
+    }
+  }
+  return finalizeWingSurface(positions, coordinates, rows, columns, masks);
+}
+
+function createWingVeinGeometry(side: -1 | 1, index: number, secondary: boolean, compact: boolean) {
+  const pointCount = compact ? 18 : 30;
+  const positions = new Float32Array(pointCount * 2 * 3);
+  const coordinates = new Float32Array(pointCount * 2 * 2);
+  const startSpan = secondary ? 0.3 + index * 0.055 : 0.025;
+  const endSpan = secondary ? 0.66 + index * 0.055 : 0.72 + index * 0.052;
+  const startChord = secondary ? -0.48 + index * 0.22 : (index - 2) * 0.035;
+  const endChord = secondary ? -0.7 + index * 0.34 : -0.78 + index * 0.39;
+  const width = secondary ? 0.0042 : 0.0065;
+  for (let pointIndex = 0; pointIndex < pointCount; pointIndex += 1) {
+    const progress = pointIndex / (pointCount - 1);
+    const span = THREE.MathUtils.lerp(startSpan, Math.min(0.96, endSpan), progress);
+    const curvature = Math.sin(progress * Math.PI) * (secondary ? 0.1 : 0.075) * (index % 2 === 0 ? -1 : 1);
+    const chord = THREE.MathUtils.lerp(startChord, endChord, progress) + curvature;
+    const point = sampleWingRest(side, span, chord);
+    point.z += secondary ? 0.012 : 0.014;
+    for (let edge = 0; edge < 2; edge += 1) {
+      const vertex = pointIndex * 2 + edge;
+      const edgeOffset = edge === 0 ? -width : width;
+      positions.set([point.x, point.y + edgeOffset, point.z], vertex * 3);
+      coordinates.set([span, chord], vertex * 2);
+    }
+  }
+  return finalizeWingSurface(positions, coordinates, pointCount, 2);
+}
+
+function createWingRimGeometry(side: -1 | 1, compact: boolean, width: number) {
+  const pointCount = compact ? 28 : 48;
+  const positions = new Float32Array(pointCount * 2 * 3);
+  const coordinates = new Float32Array(pointCount * 2 * 2);
+  for (let pointIndex = 0; pointIndex < pointCount; pointIndex += 1) {
+    const chord = pointIndex / (pointCount - 1) * 2 - 1;
+    const span = 0.988 - (1 - chord * chord) * 0.012;
+    const point = sampleWingRest(side, span, chord);
+    point.z += 0.016;
+    for (let edge = 0; edge < 2; edge += 1) {
+      const vertex = pointIndex * 2 + edge;
+      positions.set([point.x - side * width * edge, point.y, point.z], vertex * 3);
+      coordinates.set([span - edge * 0.015, chord], vertex * 2);
+    }
+  }
+  return finalizeWingSurface(positions, coordinates, pointCount, 2);
 }
 
 function createMasterPathGeometry(controls: number[][], divisions: number, wingLocal = false) {
@@ -1331,33 +1472,74 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uTreble: { value: 0 },
       uBodyFollow: { value: 0 },
       uLowerFollow: { value: 0 },
-      uWingLift: { value: 0 },
+      uWingA: { value: new THREE.Vector3() },
+      uWingB: { value: new THREE.Vector2() },
       uWingSide: { value: 0 },
+      uLayerDelay: { value: 0 },
+      uMembraneTension: { value: 0.3 },
+      uEnergyFlow: { value: 0.2 },
+      uRimActivity: { value: 0.15 },
+      uCycle: { value: 0 },
     },
     vertexShader: `
+      attribute vec3 restPosition;
+      attribute vec2 wingCoord;
+      attribute float wingMask;
       uniform float uBodyFollow;
       uniform float uLowerFollow;
       uniform float uKind;
       uniform float uTime;
       uniform float uLife;
-      uniform float uWingLift;
+      uniform vec3 uWingA;
+      uniform vec2 uWingB;
       uniform float uWingSide;
+      uniform float uLayerDelay;
+      uniform float uMembraneTension;
+      uniform float uCycle;
       varying vec3 vLocal;
       varying vec3 vNormalView;
       varying vec3 vViewPosition;
+      varying float vSpan;
+      varying float vChord;
+      varying float vWingMask;
+      float zoneStroke(float span) {
+        if (span < 0.25) return mix(uWingA.x, uWingA.y, span * 4.0);
+        if (span < 0.5) return mix(uWingA.y, uWingA.z, (span - 0.25) * 4.0);
+        if (span < 0.75) return mix(uWingA.z, uWingB.x, (span - 0.5) * 4.0);
+        return mix(uWingB.x, uWingB.y, (span - 0.75) * 4.0);
+      }
       void main() {
         vec3 transformed = position;
+        float wingSurface = step(0.5, uKind) * (1.0 - step(2.5, uKind))
+          + step(3.5, uKind) * (1.0 - step(7.5, uKind));
         if (uKind < 0.5) {
           float lower = 1.0 - smoothstep(-0.2, 0.35, position.y);
-          transformed.x += uBodyFollow * 0.65 + uLowerFollow * lower;
+          float upper = smoothstep(0.16, 0.66, position.y) * (1.0 - smoothstep(0.76, 0.96, position.y));
+          transformed.x += uBodyFollow * upper * 0.46 + uLowerFollow * lower;
           transformed.z += sin(position.y * 8.0 - uTime * 0.42) * (0.0025 + uLife * 0.004);
         }
-        if (uKind > 0.5 && uKind < 2.5) {
-          float span = clamp(abs(position.x) / 0.74, 0.0, 1.0);
-          float travelingWave = sin(span * 5.2 - uTime * (0.72 + uLife * 1.35) + uWingSide * 0.35);
-          float delayedLift = uWingLift * smoothstep(0.02, 0.92, span);
-          transformed.z += delayedLift * (0.055 + span * 0.12) + travelingWave * span * (0.004 + uLife * 0.012);
-          transformed.y += travelingWave * span * span * (0.002 + uLife * 0.007);
+        if (wingSurface > 0.5) {
+          transformed = restPosition;
+          float span = clamp(wingCoord.x, 0.0, 1.0);
+          float chord = clamp(wingCoord.y, -1.0, 1.0);
+          float delayedSpan = clamp(span - uLayerDelay * (0.35 + span * 0.65), 0.0, 1.0);
+          float stroke = zoneStroke(delayedSpan);
+          float rootBlend = smoothstep(0.02, 0.32, span);
+          float tipWeight = smoothstep(0.34, 1.0, span);
+          float travelingRipple = sin(span * 8.0 - uTime * (0.34 + uLife * 0.7) + uWingSide * 0.12 - uLayerDelay * 9.0);
+          float figureEight = sin(uCycle * 6.28318 + span * 1.7) * cos(uCycle * 6.28318 * 2.0 + span);
+          transformed.z += rootBlend * stroke * (0.045 + span * 0.14);
+          transformed.z += travelingRipple * tipWeight * (0.003 + uLife * 0.008);
+          transformed.y += figureEight * tipWeight * (0.004 + abs(stroke) * 0.012);
+          transformed.y -= abs(stroke) * (1.0 - chord * chord) * sin(span * 3.14159) * (0.028 + uMembraneTension * 0.052);
+          transformed.x -= sign(transformed.x) * abs(stroke) * tipWeight * (0.014 + span * 0.048);
+          vSpan = span;
+          vChord = chord;
+          vWingMask = wingMask;
+        } else {
+          vSpan = 0.0;
+          vChord = 0.0;
+          vWingMask = 1.0;
         }
         vLocal = transformed;
         vNormalView = normalize(normalMatrix * normal);
@@ -1376,21 +1558,48 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uniform float uBass;
       uniform float uMid;
       uniform float uTreble;
+      uniform float uEnergyFlow;
+      uniform float uRimActivity;
+      uniform float uCycle;
       varying vec3 vLocal;
       varying vec3 vNormalView;
       varying vec3 vViewPosition;
+      varying float vSpan;
+      varying float vChord;
+      varying float vWingMask;
       void main() {
         vec3 viewDirection = normalize(-vViewPosition);
         float fresnel = pow(1.0 - abs(dot(normalize(vNormalView), viewDirection)), 1.55);
         float tissue = 0.86 + sin(vLocal.y * 18.0 + vLocal.x * 11.0 - uTime * (0.28 + uLife * 0.65)) * 0.14;
-        float wing = step(0.5, uKind) * (1.0 - step(2.5, uKind));
-        float heart = step(2.5, uKind);
+        float wing = step(0.5, uKind) * (1.0 - step(2.5, uKind))
+          + step(3.5, uKind) * (1.0 - step(7.5, uKind));
+        float heart = step(2.5, uKind) * (1.0 - step(3.5, uKind));
+        float spectral = step(3.5, uKind) * (1.0 - step(4.5, uKind));
+        float vein = step(4.5, uKind) * (1.0 - step(5.8, uKind));
+        float rim = step(5.8, uKind) * (1.0 - step(6.8, uKind));
+        float rootBlend = step(6.8, uKind) * (1.0 - step(7.5, uKind));
         float depthGlow = exp(-abs(vLocal.z) * (heart > 0.5 ? 8.0 : 4.0));
-        vec3 coolLight = vec3(0.16, 0.55, 0.82) * fresnel * (0.34 + wing * 0.45);
+        vec3 pearl = vec3(0.78, 0.97, 1.0);
+        vec3 cyan = vec3(0.22, 0.78, 1.0);
+        vec3 blue = vec3(0.2, 0.42, 1.0);
+        vec3 violet = vec3(0.52, 0.34, 0.96);
+        vec3 magenta = vec3(0.92, 0.38, 0.82);
+        vec3 wingPalette = mix(pearl, cyan, smoothstep(0.02, 0.3, vSpan));
+        wingPalette = mix(wingPalette, blue, smoothstep(0.3, 0.58, vSpan));
+        wingPalette = mix(wingPalette, violet, smoothstep(0.58, 0.82, vSpan));
+        wingPalette = mix(wingPalette, magenta, smoothstep(0.82, 1.0, vSpan));
+        float iridescence = fresnel * (0.45 + 0.25 * sin(vSpan * 9.0 + vChord * 3.0 + uTime * 0.16));
+        wingPalette = mix(wingPalette, mix(cyan, violet, fresnel), iridescence * (0.18 + uTreble * 0.2));
+        float energyPulse = 0.5 + 0.5 * sin(vSpan * 12.0 - uTime * (1.1 + uEnergyFlow * 2.2) - uCycle * 6.28318);
+        float warmRoot = (1.0 - smoothstep(0.02, 0.24, vSpan)) * energyPulse * uEnergyFlow;
+        vec3 coolLight = wingPalette * wing * (0.5 + fresnel * 0.75 + spectral * 0.28 + vein * 0.48 + rim * (0.42 + uRimActivity));
         vec3 warmLight = vec3(1.0, 0.5, 0.22) * heart * (0.4 + uBass * 0.65 + uMusicAwake * 0.18);
-        vec3 finalColor = uColor * (0.72 + depthGlow * 0.32 + uLife * 0.12) + coolLight + warmLight;
-        finalColor += vec3(0.2, 0.68, 0.9) * uTreble * wing * 0.12;
-        float alpha = uOpacity * tissue * (0.54 + fresnel * 0.75 + depthGlow * 0.2 + heart * 0.35 + uMid * wing * 0.08);
+        vec3 finalColor = uColor * (0.65 + depthGlow * 0.28 + uLife * 0.1) + coolLight + warmLight;
+        finalColor += vec3(1.0, 0.7, 0.32) * warmRoot * (vein + rootBlend + spectral * 0.35);
+        finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.08 + rim * 0.2);
+        float detailAlpha = 1.0 + spectral * 0.2 + vein * (0.32 + energyPulse * uEnergyFlow * 0.48) + rim * (0.42 + uRimActivity * 0.48);
+        float featheredMask = mix(1.0, vWingMask, clamp(spectral + rootBlend, 0.0, 1.0));
+        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.46 + fresnel * 0.78 + depthGlow * 0.18 + heart * 0.36 + uMid * wing * 0.08);
         if (alpha < 0.008) discard;
         gl_FragColor = vec4(finalColor, alpha);
       }
@@ -1398,7 +1607,7 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
     transparent: true,
     depthTest: false,
     depthWrite: false,
-    blending: kind === 3 ? THREE.AdditiveBlending : THREE.NormalBlending,
+    blending: kind === 3 || (kind >= 4 && kind < 7) ? THREE.AdditiveBlending : THREE.NormalBlending,
     side: THREE.DoubleSide,
   });
 }
@@ -1477,6 +1686,14 @@ function createHeartLobeGeometry(compact: boolean, index: number) {
 function smoothstep(edgeStart: number, edgeEnd: number, value: number) {
   const progress = Math.min(1, Math.max(0, (value - edgeStart) / Math.max(0.00001, edgeEnd - edgeStart)));
   return progress * progress * (3 - 2 * progress);
+}
+
+function sampleSwimmingCycle(phase: number) {
+  const normalized = ((phase % 1) + 1) % 1;
+  if (normalized < 0.22) return THREE.MathUtils.lerp(0, 0.18, smoothstep(0, 0.22, normalized));
+  if (normalized < 0.48) return THREE.MathUtils.lerp(0.18, -1, smoothstep(0.22, 0.48, normalized));
+  if (normalized < 0.72) return THREE.MathUtils.lerp(-1, -0.2, smoothstep(0.48, 0.72, normalized));
+  return THREE.MathUtils.lerp(-0.2, 0, smoothstep(0.72, 1, normalized));
 }
 
 function sampleCatmullSpine(controls: Float32Array, progress: number, target: { x: number; y: number }) {
