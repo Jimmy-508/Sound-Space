@@ -29,13 +29,12 @@ interface WaveCanvasProps {
 const wavePointLimit = 768;
 const samplePointLimit = 64;
 const spectrumBandCount = 64;
-const organicPointLimit = 144;
-const nucleusPointLimit = 48;
-const innerMembranePointLimit = 112;
-const tendrilLimit = 12;
-const tendrilSegmentLimit = 10;
-const internalFilamentLimit = 4;
-const internalFilamentSegmentLimit = 8;
+const shieldPointLimit = 192;
+const totemStrokeLimit = 16;
+const totemStrokeSegmentLimit = 22;
+const totemRingLimit = 4;
+const totemRingSegmentLimit = 40;
+const totemNodeLimit = 24;
 const particleCount = 220;
 const silentSpectrumData = new Uint8Array(512);
 
@@ -121,7 +120,7 @@ export function WaveCanvas({
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
     camera.position.z = 2;
 
-    const waveMaterial = new THREE.LineBasicMaterial({ color: 0x79cbea, depthTest: false, transparent: true, opacity: 0.72 });
+    const waveMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.72 });
     const secondaryMaterial = new THREE.LineBasicMaterial({ color: 0x4d94e6, depthTest: false, transparent: true, opacity: 0.32 });
     const pointMaterial = new THREE.PointsMaterial({ color: 0xffffff, depthTest: false, size: 4.5, transparent: true, opacity: 1, sizeAttenuation: false });
     const pointGlowMaterial = new THREE.PointsMaterial({ color: 0x58dfff, depthTest: false, size: 15, transparent: true, opacity: 0.19, sizeAttenuation: false, blending: THREE.AdditiveBlending });
@@ -129,38 +128,39 @@ export function WaveCanvas({
     const stemMaterial = new THREE.LineBasicMaterial({ color: 0x76dcff, depthTest: false, transparent: true, opacity: 0.27, blending: THREE.AdditiveBlending });
     const ringMaterial = new THREE.MeshBasicMaterial({ color: 0x8cecff, depthTest: false, transparent: true, opacity: 0.38, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
     const wavePointMaterial = new THREE.PointsMaterial({ color: 0xbef7ff, depthTest: false, size: 1.2, transparent: true, opacity: 0.5, sizeAttenuation: false });
-    const playheadMaterial = new THREE.LineBasicMaterial({ color: 0xe6feff, depthTest: false, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
-    const playheadMarkerMaterial = new THREE.PointsMaterial({ color: 0xffffff, depthTest: false, size: 6, transparent: true, opacity: 0.96, sizeAttenuation: false, blending: THREE.AdditiveBlending });
-    const dnaPrimaryMaterial = new THREE.LineBasicMaterial({ color: 0x83edff, depthTest: false, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
-    const dnaSecondaryMaterial = new THREE.LineBasicMaterial({ color: 0x638cff, depthTest: false, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending });
-    const innerMembraneMaterial = new THREE.LineBasicMaterial({ color: 0x8edfff, depthTest: false, transparent: true, opacity: 0.24, blending: THREE.AdditiveBlending });
-    const dnaAccentMaterial = new THREE.LineBasicMaterial({ color: 0xb3a9ff, depthTest: false, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending });
-    const dnaSparkMaterial = new THREE.PointsMaterial({ color: 0xf4feff, depthTest: false, size: 3.8, transparent: true, opacity: 0.78, sizeAttenuation: false, blending: THREE.AdditiveBlending });
+    const playheadMaterial = new THREE.LineBasicMaterial({ color: 0xf2bd62, depthTest: false, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending });
+    const playheadMarkerMaterial = new THREE.PointsMaterial({ color: 0xffdda0, depthTest: false, size: 7, transparent: true, opacity: 0.98, sizeAttenuation: false, blending: THREE.AdditiveBlending });
+    const shieldMaterial = new THREE.LineBasicMaterial({ color: 0x83edff, depthTest: false, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending });
+    const totemStrokeMaterial = new THREE.LineBasicMaterial({ color: 0xb7f5ff, depthTest: false, transparent: true, opacity: 0.86, blending: THREE.AdditiveBlending });
+    const totemRingMaterial = new THREE.LineBasicMaterial({ color: 0x9c9cff, depthTest: false, transparent: true, opacity: 0.46, blending: THREE.AdditiveBlending });
+    const totemNodeMaterial = new THREE.PointsMaterial({ color: 0xffe4a8, depthTest: false, size: 4, transparent: true, opacity: 0.86, sizeAttenuation: false, blending: THREE.AdditiveBlending });
     const particleMaterial = new THREE.PointsMaterial({ color: 0x65cfff, depthTest: false, size: 1.2, transparent: true, opacity: 0.34, sizeAttenuation: false, blending: THREE.AdditiveBlending });
 
     const wavePositions = new Float32Array(wavePointLimit * 3);
+    const waveColors = new Float32Array(wavePointLimit * 3);
     const secondaryPositions = new Float32Array(wavePointLimit * 3);
     const samplePositions = new Float32Array(samplePointLimit * 3);
     const sampleStemPositions = new Float32Array(samplePointLimit * 2 * 3);
     const playheadPositions = new Float32Array(2 * 3);
     const playheadMarkerPositions = new Float32Array(3);
-    const dnaPrimaryPositions = new Float32Array((organicPointLimit + 1) * 3);
-    const dnaSecondaryPositions = new Float32Array((tendrilLimit * tendrilSegmentLimit + internalFilamentLimit * internalFilamentSegmentLimit) * 2 * 3);
-    const dnaAccentPositions = new Float32Array(nucleusPointLimit * 3);
-    const innerMembranePositions = new Float32Array(innerMembranePointLimit * 3);
+    const shieldPositions = new Float32Array(shieldPointLimit * 3);
+    const totemStrokePositions = new Float32Array(totemStrokeLimit * totemStrokeSegmentLimit * 2 * 3);
+    const totemRingPositions = new Float32Array(totemRingLimit * totemRingSegmentLimit * 2 * 3);
+    const totemNodePositions = new Float32Array(totemNodeLimit * 3);
     const particlePositions = new Float32Array(particleCount * 3);
     const particleSeeds = new Float32Array(particleCount * 3);
 
     const waveGeometry = dynamicGeometry(wavePositions);
+    waveGeometry.setAttribute('color', new THREE.BufferAttribute(waveColors, 3).setUsage(THREE.DynamicDrawUsage));
     const secondaryGeometry = dynamicGeometry(secondaryPositions);
     const pointGeometry = dynamicGeometry(samplePositions);
     const stemGeometry = dynamicGeometry(sampleStemPositions);
     const playheadGeometry = dynamicGeometry(playheadPositions);
     const playheadMarkerGeometry = dynamicGeometry(playheadMarkerPositions);
-    const dnaPrimaryGeometry = dynamicGeometry(dnaPrimaryPositions);
-    const dnaSecondaryGeometry = dynamicGeometry(dnaSecondaryPositions);
-    const dnaAccentGeometry = dynamicGeometry(dnaAccentPositions);
-    const innerMembraneGeometry = dynamicGeometry(innerMembranePositions);
+    const shieldGeometry = dynamicGeometry(shieldPositions);
+    const totemStrokeGeometry = dynamicGeometry(totemStrokePositions);
+    const totemRingGeometry = dynamicGeometry(totemRingPositions);
+    const totemNodeGeometry = dynamicGeometry(totemNodePositions);
     const particleGeometry = dynamicGeometry(particlePositions);
 
     const waveLine = new THREE.Line(waveGeometry, waveMaterial);
@@ -175,35 +175,33 @@ export function WaveCanvas({
     sampleRings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     const playheadLine = new THREE.Line(playheadGeometry, playheadMaterial);
     const playheadMarker = new THREE.Points(playheadMarkerGeometry, playheadMarkerMaterial);
-    const dnaPrimary = new THREE.Line(dnaPrimaryGeometry, dnaPrimaryMaterial);
-    const dnaSecondary = new THREE.LineSegments(dnaSecondaryGeometry, dnaSecondaryMaterial);
-    const dnaAccent = new THREE.LineLoop(dnaAccentGeometry, dnaAccentMaterial);
-    const innerMembrane = new THREE.LineLoop(innerMembraneGeometry, innerMembraneMaterial);
-    const dnaSparks = new THREE.Points(dnaAccentGeometry, dnaSparkMaterial);
+    const spectrumShield = new THREE.LineLoop(shieldGeometry, shieldMaterial);
+    const totemStrokes = new THREE.LineSegments(totemStrokeGeometry, totemStrokeMaterial);
+    const totemRings = new THREE.LineSegments(totemRingGeometry, totemRingMaterial);
+    const totemNodes = new THREE.Points(totemNodeGeometry, totemNodeMaterial);
     const particles = new THREE.Points(particleGeometry, particleMaterial);
 
     const haloTexture = createGlowTexture();
-    dnaSparkMaterial.map = haloTexture;
-    dnaSparkMaterial.alphaTest = 0.02;
+    playheadMarkerMaterial.map = haloTexture;
+    playheadMarkerMaterial.alphaTest = 0.02;
+    totemNodeMaterial.map = haloTexture;
+    totemNodeMaterial.alphaTest = 0.02;
     particleMaterial.map = haloTexture;
     particleMaterial.alphaTest = 0.02;
-    dnaSparkMaterial.needsUpdate = true;
+    playheadMarkerMaterial.needsUpdate = true;
+    totemNodeMaterial.needsUpdate = true;
     particleMaterial.needsUpdate = true;
     const haloMaterial = new THREE.SpriteMaterial({ map: haloTexture, color: 0x72dcff, depthTest: false, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
     const musicHalo = new THREE.Sprite(haloMaterial);
     musicHalo.position.set(0, -0.02, -0.2);
-    const nucleusMaterial = new THREE.SpriteMaterial({ map: haloTexture, color: 0xe9fdff, depthTest: false, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
-    const creatureNucleus = new THREE.Sprite(nucleusMaterial);
 
     particles.renderOrder = 0;
     musicHalo.renderOrder = 1;
-    creatureNucleus.renderOrder = 2;
     secondaryLine.renderOrder = 2;
-    dnaSecondary.renderOrder = 3;
-    innerMembrane.renderOrder = 4;
-    dnaAccent.renderOrder = 4;
-    dnaPrimary.renderOrder = 5;
-    dnaSparks.renderOrder = 6;
+    spectrumShield.renderOrder = 3;
+    totemRings.renderOrder = 4;
+    totemStrokes.renderOrder = 5;
+    totemNodes.renderOrder = 6;
     sampleStems.renderOrder = 7;
     waveLine.renderOrder = 8;
     wavePoints.renderOrder = 9;
@@ -216,13 +214,11 @@ export function WaveCanvas({
     scene.add(
       particles,
       musicHalo,
-      creatureNucleus,
       secondaryLine,
-      dnaSecondary,
-      innerMembrane,
-      dnaAccent,
-      dnaPrimary,
-      dnaSparks,
+      spectrumShield,
+      totemRings,
+      totemStrokes,
+      totemNodes,
       sampleStems,
       waveLine,
       wavePoints,
@@ -266,6 +262,7 @@ export function WaveCanvas({
     let previousRelativeEnergy = 0;
     let onsetPulse = 0;
     let rhythmImpulse = 0;
+    let shieldPulse = 0;
     let profileSeed = -1;
     let creatureGenome = createCreatureGenome(musicVisualSeed);
     let creatureX = creatureGenome.spawnX;
@@ -279,6 +276,9 @@ export function WaveCanvas({
     let escapeTargetX = 0;
     let escapeTargetY = 0;
     let escapeUntil = 0;
+    let repulsorEscapeX = 0;
+    let repulsorEscapeY = 0;
+    let repulsorEscapeUntil = 0;
 
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     let reducedMotion = motionQuery.matches;
@@ -311,19 +311,11 @@ export function WaveCanvas({
     };
 
     const hideSpectrum = () => {
-      dnaPrimary.visible = false;
-      dnaSecondary.visible = false;
-      innerMembrane.visible = false;
-      dnaAccent.visible = false;
-      dnaSparks.visible = false;
+      spectrumShield.visible = false;
+      totemStrokes.visible = false;
+      totemRings.visible = false;
+      totemNodes.visible = false;
       musicHalo.visible = false;
-      creatureNucleus.visible = false;
-      bassEnergy = 0;
-      midEnergy = 0;
-      trebleEnergy = 0;
-      overallEnergy = 0;
-      onsetPulse *= 0.9;
-      rhythmImpulse *= 0.86;
     };
 
     const updateSpectrumLevels = (data: Uint8Array, volume: number, deltaTime: number) => {
@@ -378,6 +370,7 @@ export function WaveCanvas({
       const envelopeRate = pulseTarget > onsetPulse ? 22 : 4.8;
       onsetPulse += (pulseTarget - onsetPulse) * (1 - Math.exp(-deltaTime * envelopeRate));
       rhythmImpulse = Math.max(rhythmImpulse * Math.exp(-deltaTime * 9), Math.min(1, relativeRise * 2.8));
+      shieldPulse += (onsetPulse - shieldPulse) * (1 - Math.exp(-deltaTime * 9.5));
       previousRelativeEnergy = normalizedPulse;
     };
 
@@ -392,6 +385,19 @@ export function WaveCanvas({
       const scale = current.creatureScale ?? 1;
       const activity = current.musicPlaying ? 0.16 + overallEnergy * 0.84 : 0.1;
       startlePulse *= Math.exp(-deltaTime * 5.6);
+      const visualRadius = creatureGenome.bodyRadius * scale;
+      const horizontalLimit = Math.max(0.18, 0.84 - visualRadius * 0.9);
+      const verticalLimit = Math.max(0.16, 0.72 - visualRadius * 0.82);
+      const horizontalEdge = Math.max(0, (Math.abs(creatureX) - (horizontalLimit - 0.12)) / 0.12);
+      const verticalEdge = Math.max(0, (Math.abs(creatureY) - (verticalLimit - 0.12)) / 0.12);
+      let inwardX = -Math.sign(creatureX || 1) * Math.min(1, horizontalEdge);
+      let inwardY = -Math.sign(creatureY || 1) * Math.min(1, verticalEdge);
+      const inwardLength = Math.hypot(inwardX, inwardY);
+      if (inwardLength > 0.001) {
+        inwardX /= inwardLength;
+        inwardY /= inwardLength;
+      }
+
       const wanderAngle = creatureGenome.wanderPhase
         + Math.sin(time * creatureGenome.wanderSpeed) * creatureGenome.turningTendency
         + Math.sin(time * 0.17 + creatureGenome.wanderPhase) * 0.65
@@ -399,36 +405,11 @@ export function WaveCanvas({
       const desiredSpeed = (0.018 + activity * creatureGenome.wanderSpeed * 0.16 + rhythmImpulse * 0.075) * motionScale;
       let accelerationX = (Math.cos(wanderAngle) * desiredSpeed - creatureVelocityX) * (0.55 + creatureGenome.turningTendency);
       let accelerationY = (Math.sin(wanderAngle) * desiredSpeed - creatureVelocityY) * (0.55 + creatureGenome.turningTendency);
-
-      const visualRadius = creatureGenome.bodyRadius * scale;
-      const horizontalLimit = Math.max(0.18, 0.84 - visualRadius * Math.max(1, creatureGenome.bodyElongation) * 0.72);
-      const verticalLimit = Math.max(0.16, 0.72 - visualRadius * 0.82);
       const insideEdgeZone = Math.abs(creatureX) > horizontalLimit || Math.abs(creatureY) > verticalLimit;
-      if (insideEdgeZone && time >= escapeUntil) {
-        const phase = creatureGenome.escapePhase + time * 1.618;
-        escapeTargetX = Math.abs(creatureX) > horizontalLimit
-          ? -Math.sign(creatureX || 1) * (0.08 + Math.abs(Math.sin(phase)) * 0.22)
-          : Math.sin(phase * 1.37) * horizontalLimit * 0.48;
-        escapeTargetY = Math.abs(creatureY) > verticalLimit
-          ? -Math.sign(creatureY || 1) * (0.07 + Math.abs(Math.cos(phase * 0.91)) * 0.2)
-          : Math.cos(phase * 1.11) * verticalLimit * 0.48;
-        escapeUntil = time + creatureGenome.escapeCommitment;
-      }
-      if (time < escapeUntil) {
-        const escapeX = escapeTargetX - creatureX;
-        const escapeY = escapeTargetY - creatureY;
-        const escapeDistance = Math.max(0.001, Math.hypot(escapeX, escapeY));
-        const escapeSpeed = 0.1 + visualRadius * 0.08;
-        accelerationX += (escapeX / escapeDistance * escapeSpeed - creatureVelocityX) * 2.6;
-        accelerationY += (escapeY / escapeDistance * escapeSpeed - creatureVelocityY) * 2.6;
-      } else {
-        if (creatureX > horizontalLimit) accelerationX -= (creatureX - horizontalLimit) * 3.4;
-        if (creatureX < -horizontalLimit) accelerationX += (-horizontalLimit - creatureX) * 3.4;
-        if (creatureY > verticalLimit) accelerationY -= (creatureY - verticalLimit) * 3.4;
-        if (creatureY < -verticalLimit) accelerationY += (-verticalLimit - creatureY) * 3.4;
-      }
 
       let nearestThreat = 0;
+      let repulsorAwayX = 0;
+      let repulsorAwayY = 0;
       for (const repulsor of current.repulsors ?? []) {
         const repulsorX = repulsor.x * 1.8 - 0.9;
         const repulsorY = (1 - repulsor.y) * 1.34 - 0.67;
@@ -439,35 +420,88 @@ export function WaveCanvas({
         const fallbackAngle = creatureHeading + Math.PI;
         const awayX = rawDistance < 0.006 ? Math.cos(fallbackAngle) : deltaX / distance;
         const awayY = rawDistance < 0.006 ? Math.sin(fallbackAngle) : deltaY / distance;
-        const collisionRadius = visualRadius * (0.72 + creatureGenome.bodyElongation * 0.18);
+        const collisionRadius = visualRadius * (0.9 + creatureGenome.shieldAsymmetry);
         const radius = repulsor.type === 'ripple' ? repulsor.currentRadius ?? repulsor.radius : repulsor.radius + collisionRadius;
         const rippleDistance = repulsor.type === 'ripple' ? Math.abs(Math.max(0, distance - collisionRadius) - radius) : distance;
         const influence = Math.max(0, 1 - rippleDistance / Math.max(0.06, repulsor.type === 'ripple' ? repulsor.radius : radius));
         if (influence <= 0) continue;
         const force = influence * influence * repulsor.strength * creatureGenome.avoidanceSensitivity * 1.35;
-        accelerationX += awayX * force;
-        accelerationY += awayY * force;
+        repulsorAwayX += awayX * force;
+        repulsorAwayY += awayY * force;
         const isNewRepulsorUpdate = repulsor.updatedAt !== undefined && repulsor.updatedAt !== lastRepulsorUpdate;
         if (isNewRepulsorUpdate) {
           const swipeSpeed = Math.hypot(repulsor.velocityX ?? 0, repulsor.velocityY ?? 0);
           const impulse = influence * (0.055 + Math.min(0.24, swipeSpeed * 0.075));
-          creatureVelocityX += awayX * impulse;
-          creatureVelocityY += awayY * impulse;
+          const safeAwayX = awayX + inwardX * Math.max(horizontalEdge, verticalEdge) * 0.9;
+          const safeAwayY = awayY + inwardY * Math.max(horizontalEdge, verticalEdge) * 0.9;
+          const safeLength = Math.max(0.001, Math.hypot(safeAwayX, safeAwayY));
+          creatureVelocityX += safeAwayX / safeLength * impulse;
+          creatureVelocityY += safeAwayY / safeLength * impulse;
+          repulsorEscapeX = safeAwayX / safeLength;
+          repulsorEscapeY = safeAwayY / safeLength;
+          repulsorEscapeUntil = time + creatureGenome.repulsorCommitment;
           startlePulse = Math.max(startlePulse, Math.min(1, influence * 0.72 + swipeSpeed * 0.2));
           lastRepulsorUpdate = repulsor.updatedAt ?? lastRepulsorUpdate;
         }
         if (repulsor.type === 'ripple' && influence > threatResponse + 0.16) {
           const rippleImpulse = influence * 0.13;
-          creatureVelocityX += awayX * rippleImpulse;
-          creatureVelocityY += awayY * rippleImpulse;
+          const safeAwayX = awayX + inwardX * Math.max(horizontalEdge, verticalEdge) * 0.9;
+          const safeAwayY = awayY + inwardY * Math.max(horizontalEdge, verticalEdge) * 0.9;
+          const safeLength = Math.max(0.001, Math.hypot(safeAwayX, safeAwayY));
+          creatureVelocityX += safeAwayX / safeLength * rippleImpulse;
+          creatureVelocityY += safeAwayY / safeLength * rippleImpulse;
+          repulsorEscapeX = safeAwayX / safeLength;
+          repulsorEscapeY = safeAwayY / safeLength;
+          repulsorEscapeUntil = time + creatureGenome.repulsorCommitment;
           startlePulse = Math.max(startlePulse, influence);
         }
         nearestThreat = Math.max(nearestThreat, influence);
       }
 
+      if (nearestThreat > 0) {
+        repulsorAwayX += inwardX * Math.max(horizontalEdge, verticalEdge) * 2.2;
+        repulsorAwayY += inwardY * Math.max(horizontalEdge, verticalEdge) * 2.2;
+        const awayLength = Math.max(0.001, Math.hypot(repulsorAwayX, repulsorAwayY));
+        const awayX = repulsorAwayX / awayLength;
+        const awayY = repulsorAwayY / awayLength;
+        const escapeSpeed = (0.15 + nearestThreat * 0.22 + startlePulse * 0.12) * motionScale;
+        accelerationX = (awayX * escapeSpeed - creatureVelocityX) * 6.2;
+        accelerationY = (awayY * escapeSpeed - creatureVelocityY) * 6.2;
+        repulsorEscapeX = awayX;
+        repulsorEscapeY = awayY;
+      } else if (insideEdgeZone) {
+        if (time >= escapeUntil) {
+          const phase = creatureGenome.escapePhase + time * 1.618;
+          escapeTargetX = Math.abs(creatureX) > horizontalLimit
+            ? -Math.sign(creatureX || 1) * (0.08 + Math.abs(Math.sin(phase)) * 0.22)
+            : Math.sin(phase * 1.37) * horizontalLimit * 0.48;
+          escapeTargetY = Math.abs(creatureY) > verticalLimit
+            ? -Math.sign(creatureY || 1) * (0.07 + Math.abs(Math.cos(phase * 0.91)) * 0.2)
+            : Math.cos(phase * 1.11) * verticalLimit * 0.48;
+          escapeUntil = time + creatureGenome.escapeCommitment;
+        }
+        const escapeX = escapeTargetX - creatureX + inwardX * 0.35;
+        const escapeY = escapeTargetY - creatureY + inwardY * 0.35;
+        const escapeLength = Math.max(0.001, Math.hypot(escapeX, escapeY));
+        const escapeSpeed = (0.12 + visualRadius * 0.08) * motionScale;
+        accelerationX = (escapeX / escapeLength * escapeSpeed - creatureVelocityX) * 3.8;
+        accelerationY = (escapeY / escapeLength * escapeSpeed - creatureVelocityY) * 3.8;
+      } else if (time < repulsorEscapeUntil) {
+        accelerationX = (repulsorEscapeX * 0.11 * motionScale - creatureVelocityX) * 2.4;
+        accelerationY = (repulsorEscapeY * 0.11 * motionScale - creatureVelocityY) * 2.4;
+      } else if (time < escapeUntil) {
+        const escapeX = escapeTargetX - creatureX;
+        const escapeY = escapeTargetY - creatureY;
+        const escapeLength = Math.max(0.001, Math.hypot(escapeX, escapeY));
+        accelerationX = (escapeX / escapeLength * 0.09 * motionScale - creatureVelocityX) * 2.2;
+        accelerationY = (escapeY / escapeLength * 0.09 * motionScale - creatureVelocityY) * 2.2;
+      }
+
       threatResponse += (nearestThreat - threatResponse) * (1 - Math.exp(-deltaTime * (nearestThreat > threatResponse ? 18 : 4.2)));
-      accelerationX += Math.cos(creatureHeading) * rhythmImpulse * creatureGenome.onsetSensitivity * 0.12;
-      accelerationY += Math.sin(creatureHeading) * rhythmImpulse * creatureGenome.onsetSensitivity * 0.12;
+      if (nearestThreat <= 0 && time >= repulsorEscapeUntil) {
+        accelerationX += Math.cos(creatureHeading) * rhythmImpulse * creatureGenome.onsetSensitivity * 0.12;
+        accelerationY += Math.sin(creatureHeading) * rhythmImpulse * creatureGenome.onsetSensitivity * 0.12;
+      }
       creatureVelocityX += accelerationX * deltaTime;
       creatureVelocityY += accelerationY * deltaTime;
       const maxSpeed = (0.1 + overallEnergy * 0.1 + threatResponse * 0.22 + startlePulse * 0.2 + (time < escapeUntil ? 0.08 : 0)) * motionScale;
@@ -485,20 +519,21 @@ export function WaveCanvas({
       }
     };
 
-    const drawSoundCreature = (time: number, current: WaveCanvasProps) => {
+    const drawTotemCreature = (time: number, current: WaveCanvasProps) => {
       const aspect = Math.min(1, canvasHeight / canvasWidth);
-      const audioPhase = current.musicTime ?? 0;
       const scale = current.creatureScale ?? 1;
       const baseRadius = creatureGenome.bodyRadius * scale;
-      const contraction = 1 - rhythmImpulse * creatureGenome.onsetSensitivity * 0.16 - startlePulse * 0.24;
-      const breath = 1 + Math.sin(time * 0.82 + creatureGenome.wanderPhase) * 0.045
-        + onsetPulse * creatureGenome.bassSensitivity * 0.24
-        + bassEnergy * 0.08;
-      const bodyRotation = creatureHeading + Math.sin(time * 0.31 + creatureGenome.wanderPhase) * 0.18
-        + midEnergy * creatureGenome.midSensitivity * 0.28;
+      const rhythmScale = (1 - rhythmImpulse * 0.035 - startlePulse * 0.18)
+        * (1 + onsetPulse * creatureGenome.pulseSensitivity * 0.18);
+      const rotation = creatureHeading * 0.22 + time * creatureGenome.rotationTendency
+        + Math.sin(time * 0.37 + creatureGenome.asymmetryPhase) * 0.16
+        + midEnergy * 0.22;
+      const coreOffset = creatureGenome.coreOffset * scale;
+      const coreX = creatureX + Math.cos(rotation + creatureGenome.coreOffsetAngle) * coreOffset * aspect;
+      const coreY = creatureY + Math.sin(rotation + creatureGenome.coreOffsetAngle) * coreOffset;
 
-      for (let index = 0; index <= organicPointLimit; index += 1) {
-        const t = index / organicPointLimit;
+      for (let index = 0; index < shieldPointLimit; index += 1) {
+        const t = index / shieldPointLimit;
         const angle = t * Math.PI * 2;
         const bandPosition = t * spectrumBandCount;
         const bandIndex = Math.floor(bandPosition) % spectrumBandCount;
@@ -506,122 +541,96 @@ export function WaveCanvas({
         const blend = bandPosition - Math.floor(bandPosition);
         const energy = spectrumLevels[bandIndex] * (1 - blend) + spectrumLevels[nextBandIndex] * blend;
         const peak = peakLevels[bandIndex] * (1 - blend) + peakLevels[nextBandIndex] * blend;
-        const asymmetry = Math.sin(angle + creatureGenome.asymmetryPhase) * creatureGenome.asymmetry;
-        const unevenLobes = Math.sin(angle * creatureGenome.lobeCount + creatureGenome.contourPhase + time * creatureGenome.membraneElasticity + audioPhase * 0.18) * creatureGenome.lobeDepth;
-        const secondaryContour = Math.sin(angle * creatureGenome.secondaryLobes - creatureGenome.contourPhase * 0.7 + time * 0.19) * creatureGenome.secondaryLobeDepth;
-        const offCenterMass = Math.cos(angle - creatureGenome.massAngle) * creatureGenome.massBias;
-        const surface = Math.sin(angle * (creatureGenome.lobeCount + 5) - time * (0.7 + trebleEnergy)) * trebleEnergy * creatureGenome.trebleSensitivity * baseRadius * 0.2;
-        const tail = Math.max(0, Math.cos(angle - creatureGenome.tailAngle)) ** 7 * creatureGenome.tailLength * scale * (0.55 + midEnergy * 0.8);
-        const forwardExtension = Math.max(0, Math.cos(angle)) ** 8 * scale * (0.018 + midEnergy * creatureGenome.midSensitivity * 0.07);
-        const radius = baseRadius * breath * contraction * (1 + asymmetry + unevenLobes + secondaryContour + offCenterMass)
-          + creatureGenome.membraneRipple * scale * Math.sin(angle * 3 + time * 0.6)
-          + surface + energy * scale * 0.045 + peak * scale * 0.018 + forwardExtension + tail;
-        const localX = Math.cos(angle) * radius * creatureGenome.bodyElongation;
-        const localY = Math.sin(angle) * radius;
-        const rotatedX = localX * Math.cos(bodyRotation) - localY * Math.sin(bodyRotation);
-        const rotatedY = localX * Math.sin(bodyRotation) + localY * Math.cos(bodyRotation);
-        writeOrganicPoint(dnaPrimaryPositions, index, creatureX + rotatedX * aspect, creatureY + rotatedY);
+        const broadShape = Math.sin(angle * creatureGenome.shieldLobes + creatureGenome.shieldPhase + time * 0.24) * creatureGenome.shieldAsymmetry;
+        const midShape = Math.sin(angle * (creatureGenome.shieldLobes + 2) - time * 0.42) * midEnergy * creatureGenome.midSensitivity * 0.085;
+        const edgeRipple = Math.sin(angle * (11 + creatureGenome.radialCount) + time * 2.1) * trebleEnergy * creatureGenome.trebleSensitivity * 0.032;
+        const spectrumPush = energy * creatureGenome.shieldSensitivity * 0.1 + peak * 0.025;
+        const radius = baseRadius * (1.18 + shieldPulse * creatureGenome.bassSensitivity * 0.24 + broadShape + midShape + edgeRipple)
+          + spectrumPush * scale;
+        shieldPositions[index * 3] = creatureX + Math.cos(angle) * radius * aspect;
+        shieldPositions[index * 3 + 1] = creatureY + Math.sin(angle) * radius;
+        shieldPositions[index * 3 + 2] = 0;
       }
 
-      for (let index = 0; index < innerMembranePointLimit; index += 1) {
-        const angle = index / innerMembranePointLimit * Math.PI * 2;
-        const flow = Math.sin(angle * creatureGenome.secondaryLobes - time * 0.42 + creatureGenome.contourPhase) * 0.055;
-        const radius = baseRadius * creatureGenome.innerMembraneScale * (1 + flow + Math.sin(angle + creatureGenome.massAngle) * creatureGenome.asymmetry * 0.42)
-          * (1 + onsetPulse * 0.1 - startlePulse * 0.12);
-        const localX = Math.cos(angle) * radius * (creatureGenome.bodyElongation * 0.9 + 0.1);
-        const localY = Math.sin(angle) * radius;
-        const rotatedX = localX * Math.cos(bodyRotation) - localY * Math.sin(bodyRotation);
-        const rotatedY = localX * Math.sin(bodyRotation) + localY * Math.cos(bodyRotation);
-        writeOrganicPoint(innerMembranePositions, index, creatureX + rotatedX * aspect, creatureY + rotatedY);
-      }
-
-      const activeTendrils = compact ? Math.min(7, creatureGenome.tendrilCount) : creatureGenome.tendrilCount;
-      const segments = compact ? 6 : tendrilSegmentLimit;
-      let tendrilVertex = 0;
-      for (let tendril = 0; tendril < activeTendrils; tendril += 1) {
-        const baseAngle = tendril / activeTendrils * Math.PI * 2 + creatureGenome.tendrilBias;
-        const tendrilHeading = bodyRotation - Math.sin(time * 0.7 + tendril) * (0.06 + startlePulse * 0.2);
-        let previousX = creatureX + Math.cos(baseAngle + tendrilHeading) * baseRadius * 0.78 * aspect;
-        let previousY = creatureY + Math.sin(baseAngle + tendrilHeading) * baseRadius * 0.78;
-        for (let segment = 1; segment <= segments; segment += 1) {
-          const progress = segment / segments;
-          const flick = Math.sin(time * (1.2 + trebleEnergy * 3.4) + tendril * 1.7 + progress * 5.2) * (0.018 + trebleEnergy * 0.055);
-          const trailX = -Math.cos(creatureHeading) * (threatResponse + startlePulse * 0.8) * progress * 0.16 * scale;
-          const trailY = -Math.sin(creatureHeading) * (threatResponse + startlePulse * 0.8) * progress * 0.16 * scale;
-          const length = creatureGenome.tendrilLength * scale * progress * (1 + onsetPulse * 0.18);
-          const angle = baseAngle + tendrilHeading + flick * creatureGenome.tendrilFlex;
-          const nextX = creatureX + Math.cos(angle) * (baseRadius * 0.78 + length) * aspect + trailX;
-          const nextY = creatureY + Math.sin(angle) * (baseRadius * 0.78 + length) + trailY;
-          const offset = tendrilVertex * 3;
-          dnaSecondaryPositions[offset] = previousX;
-          dnaSecondaryPositions[offset + 1] = previousY;
-          dnaSecondaryPositions[offset + 2] = 0;
-          dnaSecondaryPositions[offset + 3] = nextX;
-          dnaSecondaryPositions[offset + 4] = nextY;
-          dnaSecondaryPositions[offset + 5] = 0;
-          tendrilVertex += 2;
+      const activeStrokeCount = Math.min(compact ? 10 : totemStrokeLimit, creatureGenome.motifs.length);
+      const strokeSegments = compact ? 14 : totemStrokeSegmentLimit;
+      let strokeVertex = 0;
+      for (let stroke = 0; stroke < activeStrokeCount; stroke += 1) {
+        const motif = creatureGenome.motifs[stroke];
+        let previousX = coreX;
+        let previousY = coreY;
+        for (let segment = 1; segment <= strokeSegments; segment += 1) {
+          const progress = segment / strokeSegments;
+          const loopProgress = motif.returnBias * Math.sin(progress * Math.PI) + (1 - motif.returnBias) * progress;
+          const radius = baseRadius * rhythmScale * (motif.innerRadius + motif.length * loopProgress);
+          const curl = motif.direction * creatureGenome.curvature * motif.curvature * progress * Math.PI;
+          const knot = Math.sin(progress * Math.PI * motif.waveCount + motif.phase + time * 0.32) * motif.waveDepth;
+          const angle = rotation + motif.angle + curl + knot + creatureGenome.asymmetry * Math.sin(stroke * 1.7) * 0.35;
+          const nextX = coreX + Math.cos(angle) * radius * aspect;
+          const nextY = coreY + Math.sin(angle) * radius;
+          const offset = strokeVertex * 3;
+          totemStrokePositions[offset] = previousX;
+          totemStrokePositions[offset + 1] = previousY;
+          totemStrokePositions[offset + 2] = 0;
+          totemStrokePositions[offset + 3] = nextX;
+          totemStrokePositions[offset + 4] = nextY;
+          totemStrokePositions[offset + 5] = 0;
+          strokeVertex += 2;
           previousX = nextX;
           previousY = nextY;
         }
       }
 
-      const nucleusAngle = bodyRotation + creatureGenome.nucleusAngle;
-      const nucleusDrift = Math.sin(time * 0.63 + creatureGenome.contourPhase) * 0.012 * scale;
-      const nucleusX = creatureX + Math.cos(nucleusAngle) * (creatureGenome.nucleusOffset * scale + nucleusDrift) * aspect;
-      const nucleusY = creatureY + Math.sin(nucleusAngle) * (creatureGenome.nucleusOffset * scale + nucleusDrift);
-      const nucleusPulse = creatureGenome.nucleusSize * scale * (1 + onsetPulse * 0.42 - rhythmImpulse * 0.16 - startlePulse * 0.3);
-      for (let index = 0; index < nucleusPointLimit; index += 1) {
-        const angle = index / nucleusPointLimit * Math.PI * 2;
-        const ripple = 1 + Math.sin(angle * creatureGenome.nucleusLobes + time * 1.4) * creatureGenome.nucleusIrregularity;
-        const localX = Math.cos(angle) * nucleusPulse * creatureGenome.nucleusStretch * ripple;
-        const localY = Math.sin(angle) * nucleusPulse * ripple;
-        const rotatedX = localX * Math.cos(nucleusAngle) - localY * Math.sin(nucleusAngle);
-        const rotatedY = localX * Math.sin(nucleusAngle) + localY * Math.cos(nucleusAngle);
-        writeOrganicPoint(dnaAccentPositions, index, nucleusX + rotatedX * aspect, nucleusY + rotatedY);
-      }
-
-      const activeFilaments = compact ? 2 : creatureGenome.internalFilamentCount;
-      for (let filament = 0; filament < activeFilaments; filament += 1) {
-        const targetAngle = bodyRotation + creatureGenome.filamentBias + filament / Math.max(1, activeFilaments) * Math.PI * 2;
-        let previousX = nucleusX;
-        let previousY = nucleusY;
-        for (let segment = 1; segment <= internalFilamentSegmentLimit; segment += 1) {
-          const progress = segment / internalFilamentSegmentLimit;
-          const bend = Math.sin(time * 0.8 + filament * 2.1 + progress * 4.4) * creatureGenome.filamentFlow * progress;
-          const nextX = nucleusX + Math.cos(targetAngle + bend) * baseRadius * progress * 0.66 * aspect;
-          const nextY = nucleusY + Math.sin(targetAngle + bend) * baseRadius * progress * 0.66;
-          const offset = tendrilVertex * 3;
-          dnaSecondaryPositions[offset] = previousX;
-          dnaSecondaryPositions[offset + 1] = previousY;
-          dnaSecondaryPositions[offset + 2] = 0;
-          dnaSecondaryPositions[offset + 3] = nextX;
-          dnaSecondaryPositions[offset + 4] = nextY;
-          dnaSecondaryPositions[offset + 5] = 0;
-          tendrilVertex += 2;
-          previousX = nextX;
-          previousY = nextY;
+      const activeRingCount = Math.min(totemRingLimit, creatureGenome.innerRingCount);
+      let ringVertex = 0;
+      for (let ring = 0; ring < activeRingCount; ring += 1) {
+        const ringRadius = baseRadius * rhythmScale * (0.18 + ring * 0.13 + creatureGenome.ringSpacing);
+        const coverage = creatureGenome.ringCoverage[ring];
+        for (let segment = 0; segment < totemRingSegmentLimit; segment += 1) {
+          const progress = segment / totemRingSegmentLimit;
+          if (progress > coverage) continue;
+          const nextProgress = Math.min(coverage, (segment + 1) / totemRingSegmentLimit);
+          const angle = rotation * (ring % 2 === 0 ? 0.7 : -0.45) + creatureGenome.ringPhases[ring] + progress * Math.PI * 2;
+          const nextAngle = rotation * (ring % 2 === 0 ? 0.7 : -0.45) + creatureGenome.ringPhases[ring] + nextProgress * Math.PI * 2;
+          const wobble = 1 + Math.sin(angle * (ring + 2) + time * 0.4) * creatureGenome.asymmetry * 0.16;
+          const nextWobble = 1 + Math.sin(nextAngle * (ring + 2) + time * 0.4) * creatureGenome.asymmetry * 0.16;
+          const offset = ringVertex * 3;
+          totemRingPositions[offset] = coreX + Math.cos(angle) * ringRadius * wobble * aspect;
+          totemRingPositions[offset + 1] = coreY + Math.sin(angle) * ringRadius * wobble;
+          totemRingPositions[offset + 2] = 0;
+          totemRingPositions[offset + 3] = coreX + Math.cos(nextAngle) * ringRadius * nextWobble * aspect;
+          totemRingPositions[offset + 4] = coreY + Math.sin(nextAngle) * ringRadius * nextWobble;
+          totemRingPositions[offset + 5] = 0;
+          ringVertex += 2;
         }
       }
 
-      dnaPrimaryGeometry.setDrawRange(0, organicPointLimit + 1);
-      dnaSecondaryGeometry.setDrawRange(0, tendrilVertex);
-      dnaAccentGeometry.setDrawRange(0, nucleusPointLimit);
-      innerMembraneGeometry.setDrawRange(0, innerMembranePointLimit);
-      dnaPrimaryGeometry.attributes.position.needsUpdate = true;
-      dnaSecondaryGeometry.attributes.position.needsUpdate = true;
-      dnaAccentGeometry.attributes.position.needsUpdate = true;
-      innerMembraneGeometry.attributes.position.needsUpdate = true;
+      const activeNodeCount = Math.min(totemNodeLimit, creatureGenome.nodeCount);
+      for (let node = 0; node < activeNodeCount; node += 1) {
+        const motif = creatureGenome.motifs[node % activeStrokeCount];
+        const progress = 0.34 + (node % 4) * 0.16;
+        const loopProgress = motif.returnBias * Math.sin(progress * Math.PI) + (1 - motif.returnBias) * progress;
+        const radius = baseRadius * rhythmScale * (motif.innerRadius + motif.length * loopProgress);
+        const angle = rotation + motif.angle + motif.direction * creatureGenome.curvature * motif.curvature * progress * Math.PI
+          + Math.sin(progress * Math.PI * motif.waveCount + motif.phase) * motif.waveDepth;
+        writeOrganicPoint(totemNodePositions, node, coreX + Math.cos(angle) * radius * aspect, coreY + Math.sin(angle) * radius);
+      }
 
-      musicHalo.position.set(creatureX, creatureY, -0.2);
-      const haloScale = baseRadius * (2.45 + onsetPulse * 0.7 + startlePulse * 0.18);
-      musicHalo.scale.set(haloScale * creatureGenome.bodyElongation, haloScale, 1);
-      creatureNucleus.position.set(nucleusX, nucleusY, 0.05);
-      creatureNucleus.scale.set(nucleusPulse * 2.7 * creatureGenome.nucleusStretch, nucleusPulse * 2.45, 1);
-      nucleusMaterial.rotation = nucleusAngle;
-      nucleusMaterial.opacity = 0.12 + onsetPulse * 0.32 + bassEnergy * 0.08;
+      shieldGeometry.setDrawRange(0, shieldPointLimit);
+      totemStrokeGeometry.setDrawRange(0, strokeVertex);
+      totemRingGeometry.setDrawRange(0, ringVertex);
+      totemNodeGeometry.setDrawRange(0, activeNodeCount);
+      shieldGeometry.attributes.position.needsUpdate = true;
+      totemStrokeGeometry.attributes.position.needsUpdate = true;
+      totemRingGeometry.attributes.position.needsUpdate = true;
+      totemNodeGeometry.attributes.position.needsUpdate = true;
+
+      musicHalo.position.set(coreX, coreY, -0.2);
+      const haloScale = baseRadius * rhythmScale * (1.7 + shieldPulse * 0.36);
+      musicHalo.scale.set(haloScale, haloScale, 1);
     };
 
-    const drawSpectrum = (data: Uint8Array, current: WaveCanvasProps, time: number, deltaTime: number) => {
+    const drawSpectrum = (current: WaveCanvasProps, time: number, deltaTime: number) => {
       if (profileSeed !== current.musicVisualSeed) {
         profileSeed = current.musicVisualSeed ?? 1;
         creatureGenome = createCreatureGenome(profileSeed);
@@ -636,34 +645,31 @@ export function WaveCanvas({
         previousRelativeEnergy = 0;
         onsetPulse = 0;
         rhythmImpulse = 0;
+        shieldPulse = 0;
         startlePulse = 0;
         escapeUntil = 0;
-        dnaPrimaryMaterial.color.setHex(creatureGenome.membraneColor);
-        dnaSecondaryMaterial.color.setHex(creatureGenome.tendrilColor);
-        innerMembraneMaterial.color.setHex(creatureGenome.innerMembraneColor);
-        dnaAccentMaterial.color.setHex(creatureGenome.nucleusColor);
-        dnaSparkMaterial.color.setHex(creatureGenome.sparkColor);
+        repulsorEscapeUntil = 0;
+        shieldMaterial.color.setHex(creatureGenome.shieldColor);
+        totemStrokeMaterial.color.setHex(creatureGenome.coreColor);
+        totemRingMaterial.color.setHex(creatureGenome.accentColor);
+        totemNodeMaterial.color.setHex(creatureGenome.nodeColor);
         particleMaterial.color.setHex(creatureGenome.particleColor);
         haloMaterial.color.setHex(creatureGenome.glowColor);
-        nucleusMaterial.color.setHex(creatureGenome.nucleusColor);
       }
-      updateSpectrumLevels(data, current.musicVolume ?? 0.8, deltaTime);
       updateCreaturePhysics(time, deltaTime, current);
-      drawSoundCreature(time, current);
+      drawTotemCreature(time, current);
 
-      dnaPrimary.visible = true;
-      dnaSecondary.visible = true;
-      innerMembrane.visible = true;
-      dnaAccent.visible = true;
-      dnaSparks.visible = !reducedMotion;
+      spectrumShield.visible = true;
+      totemStrokes.visible = true;
+      totemRings.visible = true;
+      totemNodes.visible = !reducedMotion;
       musicHalo.visible = true;
-      creatureNucleus.visible = true;
-      dnaPrimaryMaterial.opacity = 0.62 + midEnergy * 0.3 + onsetPulse * 0.08;
-      dnaSecondaryMaterial.opacity = 0.25 + trebleEnergy * 0.48 + threatResponse * 0.16;
-      innerMembraneMaterial.opacity = 0.18 + midEnergy * 0.18 + onsetPulse * 0.12;
-      dnaAccentMaterial.opacity = 0.48 + bassEnergy * 0.4;
-      dnaSparkMaterial.opacity = 0.14 + trebleEnergy * 0.55 + onsetPulse * 0.18;
-      haloMaterial.opacity = creatureGenome.glowIntensity * (0.08 + bassEnergy * 0.22 + onsetPulse * 0.08);
+      shieldMaterial.opacity = 0.44 + midEnergy * 0.24 + trebleEnergy * 0.18 + shieldPulse * 0.16;
+      totemStrokeMaterial.opacity = 0.68 + onsetPulse * 0.26 + startlePulse * 0.08;
+      totemRingMaterial.opacity = 0.3 + midEnergy * 0.18 + onsetPulse * 0.12;
+      totemNodeMaterial.opacity = 0.5 + trebleEnergy * 0.28 + onsetPulse * 0.2;
+      totemNodeMaterial.size = 3.2 + creatureGenome.strokeThickness * 1.4 + onsetPulse * 3.2;
+      haloMaterial.opacity = creatureGenome.glowIntensity * (0.05 + onsetPulse * 0.15 + overallEnergy * 0.06);
     };
 
     const drawMusicWave = (current: WaveCanvasProps) => {
@@ -694,11 +700,16 @@ export function WaveCanvas({
         wavePositions[index * 3] = x;
         wavePositions[index * 3 + 1] = y;
         wavePositions[index * 3 + 2] = 0;
+        const played = sourceT <= displayedProgress;
+        waveColors[index * 3] = played ? 0.7 : 0.27;
+        waveColors[index * 3 + 1] = played ? 0.92 : 0.68;
+        waveColors[index * 3 + 2] = played ? 1 : 0.86;
       }
 
       const localProgress = (displayedProgress - displayedViewStart) / visibleFraction;
       waveGeometry.setDrawRange(0, pointTotal);
       waveGeometry.attributes.position.needsUpdate = true;
+      waveGeometry.attributes.color.needsUpdate = true;
       waveMaterial.opacity = 0.9;
       secondaryLine.visible = false;
 
@@ -721,12 +732,16 @@ export function WaveCanvas({
       }
       playheadLine.visible = playheadVisible;
       playheadMarker.visible = playheadVisible;
+      playheadMarkerMaterial.size = 7 + onsetPulse * 7;
+      playheadMarkerMaterial.opacity = 0.86 + onsetPulse * 0.14;
       return true;
     };
 
     const drawWave = (time: number, deltaTime: number) => {
       const current = stateRef.current;
       const spectrumActive = current.mode === 'music' && current.musicData === null && Boolean(current.musicPcmData?.length);
+      const musicReady = current.mode === 'music' && Boolean(current.musicPcmData?.length);
+      if (musicReady) updateSpectrumLevels(current.spectrumData ?? silentSpectrumData, current.musicVolume ?? 0.8, deltaTime);
       hideSamples();
       hideMusicWave();
 
@@ -734,7 +749,7 @@ export function WaveCanvas({
         waveLine.visible = false;
         wavePoints.visible = false;
         secondaryLine.visible = false;
-        drawSpectrum(current.spectrumData ?? silentSpectrumData, current, time, deltaTime);
+        drawSpectrum(current, time, deltaTime);
         return;
       }
 
@@ -753,6 +768,9 @@ export function WaveCanvas({
         wavePositions[index * 3] = x;
         wavePositions[index * 3 + 1] = y;
         wavePositions[index * 3 + 2] = 0;
+        waveColors[index * 3] = 0.48;
+        waveColors[index * 3 + 1] = 0.8;
+        waveColors[index * 3 + 2] = 0.92;
         secondaryPositions[index * 3] = x;
         secondaryPositions[index * 3 + 1] = current.mode === 'quantize' ? quantize(y, current.bitDepth ?? 4) : y * 0.52 - 0.34;
         secondaryPositions[index * 3 + 2] = 0;
@@ -760,6 +778,7 @@ export function WaveCanvas({
       waveGeometry.setDrawRange(0, pointTotal);
       secondaryGeometry.setDrawRange(0, pointTotal);
       waveGeometry.attributes.position.needsUpdate = true;
+      waveGeometry.attributes.color.needsUpdate = true;
       secondaryGeometry.attributes.position.needsUpdate = true;
 
       if (current.mode === 'sample') {
@@ -863,9 +882,9 @@ export function WaveCanvas({
       motionQuery.removeEventListener?.('change', updateMotionPreference);
       mount.removeChild(renderer.domElement);
       renderer.dispose();
-      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, dnaPrimaryGeometry, dnaSecondaryGeometry, dnaAccentGeometry, innerMembraneGeometry, particleGeometry, sampleRingGeometry].forEach((geometry) => geometry.dispose());
+      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, shieldGeometry, totemStrokeGeometry, totemRingGeometry, totemNodeGeometry, particleGeometry, sampleRingGeometry].forEach((geometry) => geometry.dispose());
       haloTexture.dispose();
-      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, dnaPrimaryMaterial, dnaSecondaryMaterial, innerMembraneMaterial, dnaAccentMaterial, dnaSparkMaterial, particleMaterial, haloMaterial, nucleusMaterial].forEach((material) => material.dispose());
+      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, shieldMaterial, totemStrokeMaterial, totemRingMaterial, totemNodeMaterial, particleMaterial, haloMaterial].forEach((material) => material.dispose());
     };
   }, []);
 
@@ -889,45 +908,69 @@ function logarithmicBin(index: number, bandCount: number, binCount: number) {
 
 function createCreatureGenome(seed: number) {
   const random = seededRandom(seed);
-  const palette = [0x84edff, 0x6bd6ff, 0x9cc8ff, 0xaaa6ff, 0xd8f8ff];
-  const pickColor = () => palette[Math.floor(random() * palette.length)];
+  const paletteFamilies = [
+    [0x75e7ff, 0xc8faff, 0x879cff, 0xffdfa3, 0x68caee, 0x76dfff],
+    [0xa18cff, 0xe0d7ff, 0x71bfff, 0xffd6af, 0x8b82e8, 0x9c8cff],
+    [0x62e5d0, 0xbafbef, 0x5da9e9, 0xffe0a8, 0x58c9c2, 0x64ddcf],
+    [0xf1c978, 0xffedbf, 0x8ed9e8, 0xfff3d1, 0xd6ae69, 0xe8ca83],
+    [0xd18ad8, 0xf6d9f3, 0x8aa8f2, 0xffdfb0, 0xbc78c9, 0xca8edb],
+    [0xcceeff, 0xf5fdff, 0xa9b3ff, 0xffe7b2, 0x9fd5ee, 0xd8f5ff],
+  ];
+  const palette = paletteFamilies[Math.floor(random() * paletteFamilies.length)];
+  const symmetryTendency = 0.34 + random() * 0.58;
+  const radialCount = 3 + Math.floor(random() * 7);
+  const loopCount = 1 + Math.floor(random() * 4);
+  const filamentCount = 2 + Math.floor(random() * 7);
+  const ornamentDensity = 0.35 + random() * 0.65;
+  const motifCount = Math.min(totemStrokeLimit, radialCount + filamentCount + Math.floor(random() * 3));
+  const motifs = Array.from({ length: motifCount }, (_, index) => {
+    const regularAngle = index / Math.max(1, motifCount) * Math.PI * 2;
+    const randomAngle = random() * Math.PI * 2;
+    return {
+      angle: regularAngle * symmetryTendency + randomAngle * (1 - symmetryTendency),
+      length: 0.34 + random() * 0.52,
+      innerRadius: random() * 0.16,
+      curvature: 0.28 + random() * 1.08,
+      direction: random() > 0.5 ? 1 : -1,
+      returnBias: random() * 0.86,
+      waveCount: 1 + Math.floor(random() * 4),
+      waveDepth: 0.03 + random() * 0.16,
+      phase: random() * Math.PI * 2,
+    };
+  });
   return {
-    bodyRadius: 0.16 + random() * 0.075,
-    bodyElongation: 0.82 + random() * 0.62,
-    asymmetry: 0.13 + random() * 0.2,
+    bodyRadius: 0.17 + random() * 0.07,
+    symmetryTendency,
+    radialCount,
+    loopCount,
+    filamentCount,
+    motifs,
+    curvature: 0.45 + random() * 0.85,
+    innerRingCount: Math.max(1, Math.round(loopCount * (0.62 + ornamentDensity * 0.38))),
+    ringSpacing: random() * 0.07,
+    ringCoverage: Array.from({ length: totemRingLimit }, () => 0.56 + random() * 0.44),
+    ringPhases: Array.from({ length: totemRingLimit }, () => random() * Math.PI * 2),
+    nodeCount: 3 + Math.floor(ornamentDensity * 13 + random() * 5),
+    coreOffset: 0.02 + random() * 0.08,
+    coreOffsetAngle: random() * Math.PI * 2,
+    strokeThickness: 0.65 + random() * 1.1,
+    ornamentDensity,
+    rotationTendency: (random() > 0.5 ? 1 : -1) * (0.035 + random() * 0.095),
+    pulseSensitivity: 0.7 + random() * 0.52,
+    shieldSensitivity: 0.7 + random() * 0.65,
+    shieldLobes: 3 + Math.floor(random() * 7),
+    shieldAsymmetry: 0.035 + random() * 0.08,
+    shieldPhase: random() * Math.PI * 2,
+    asymmetry: 0.08 + random() * 0.22,
     asymmetryPhase: random() * Math.PI * 2,
-    contourPhase: random() * Math.PI * 2,
-    lobeDepth: 0.08 + random() * 0.11,
-    secondaryLobes: 2 + Math.floor(random() * 4),
-    secondaryLobeDepth: 0.035 + random() * 0.065,
-    massBias: 0.08 + random() * 0.13,
-    massAngle: random() * Math.PI * 2,
-    tailLength: 0.025 + random() * 0.085,
-    tailAngle: random() * Math.PI * 2,
-    innerMembraneScale: 0.52 + random() * 0.2,
-    membraneElasticity: 0.45 + random() * 0.85,
-    membraneRipple: 0.012 + random() * 0.032,
-    lobeCount: 3 + Math.floor(random() * 7),
-    tendrilCount: 5 + Math.floor(random() * 8),
-    tendrilLength: 0.08 + random() * 0.18,
-    tendrilFlex: 1.8 + random() * 3.2,
-    tendrilBias: random() * Math.PI * 2,
-    nucleusSize: 0.026 + random() * 0.032,
-    nucleusOffset: 0.07 + random() * 0.095,
-    nucleusAngle: random() * Math.PI * 2,
-    nucleusStretch: 0.72 + random() * 0.9,
-    nucleusIrregularity: 0.1 + random() * 0.14,
-    nucleusLobes: 3 + Math.floor(random() * 4),
-    internalFilamentCount: 2 + Math.floor(random() * 3),
-    filamentBias: random() * Math.PI * 2,
-    filamentFlow: 0.12 + random() * 0.24,
     glowIntensity: 0.65 + random() * 0.35,
-    particleCount: 110 + Math.floor(random() * 111),
+    particleCount: 90 + Math.floor(random() * 111),
     particleOrbit: (random() > 0.5 ? 1 : -1) * (0.55 + random() * 0.95),
     wanderSpeed: 0.18 + random() * 0.32,
     wanderPhase: random() * Math.PI * 2,
     turningTendency: 0.35 + random() * 0.8,
     escapeCommitment: 0.8 + random() * 1.2,
+    repulsorCommitment: 0.5 + random() * 0.7,
     escapePhase: random() * Math.PI * 2,
     bassSensitivity: 0.7 + random() * 0.65,
     midSensitivity: 0.7 + random() * 0.7,
@@ -936,13 +979,12 @@ function createCreatureGenome(seed: number) {
     avoidanceSensitivity: 0.85 + random() * 0.75,
     spawnX: (random() - 0.5) * 0.45,
     spawnY: (random() - 0.5) * 0.34,
-    membraneColor: pickColor(),
-    innerMembraneColor: pickColor(),
-    tendrilColor: pickColor(),
-    nucleusColor: random() > 0.4 ? 0xe9fdff : pickColor(),
-    sparkColor: random() > 0.35 ? 0xf4feff : pickColor(),
-    particleColor: pickColor(),
-    glowColor: pickColor(),
+    shieldColor: palette[0],
+    coreColor: palette[1],
+    accentColor: palette[2],
+    nodeColor: palette[3],
+    particleColor: palette[4],
+    glowColor: palette[5],
   };
 }
 

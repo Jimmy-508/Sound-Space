@@ -1,5 +1,5 @@
 import { Download, Pause, Play, StopCircle } from 'lucide-react';
-import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from 'react';
 import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { refineVisualSeed, type MusicSessionState } from '../music/musicSession';
@@ -391,7 +391,16 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
         onError={() => session.fileName && setError(unsupportedAudioMessage)}
         onEnded={() => setPlaying(false)}
       />
-      <div className="stage music-stage" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onPointerLeave={() => viewMode === 'spectrum' && setRepulsor(null)} onWheel={zoomFromWheel}>
+      <div
+        className="stage music-stage"
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
+        onPointerCancel={pointerCancel}
+        onPointerLeave={() => viewMode === 'spectrum' && setRepulsor(null)}
+        onContextMenu={(event) => event.preventDefault()}
+        onWheel={zoomFromWheel}
+      >
         <WaveCanvas
           amplitude={0.7}
           frequency={420}
@@ -400,7 +409,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
           musicData={viewMode === 'wave' ? session.waveformData : null}
           musicPcmData={session.pcmData}
           musicSampleRate={session.sampleRate}
-          spectrumData={viewMode === 'spectrum' ? spectrumData : null}
+          spectrumData={spectrumData}
           musicProgress={session.duration ? session.current / session.duration : 0}
           musicZoom={session.zoom}
           musicViewStart={session.viewStart}
@@ -457,6 +466,7 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
             disabled={!session.sourceUrl}
             aria-label="音樂播放位置"
             aria-valuetext={`${formatTime(session.current)} / ${formatTime(session.duration)}`}
+            style={{ '--timeline-progress': `${session.duration ? session.current / session.duration * 100 : 0}%` } as CSSProperties}
             onChange={(event) => {
               const time = Number(event.currentTarget.value);
               if (audioRef.current) audioRef.current.currentTime = time;
