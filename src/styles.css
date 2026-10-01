@@ -169,11 +169,25 @@ button:disabled {
   place-items: center;
   position: relative;
   overflow: hidden;
+  cursor: crosshair;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .home .wave-canvas {
   position: absolute;
   inset: 0;
+}
+
+.visual-impulse-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .home-content {
@@ -182,6 +196,7 @@ button:disabled {
   width: min(820px, 100%);
   padding: clamp(3rem, 9dvh, 7rem) 0 clamp(2rem, 8dvh, 6rem);
   text-align: center;
+  pointer-events: none;
 }
 
 .eyebrow {

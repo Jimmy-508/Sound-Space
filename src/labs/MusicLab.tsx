@@ -41,10 +41,11 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
   const analyserDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const restoredSourceRef = useRef<string | null>(null);
   const loadVersionRef = useRef(0);
-  const touchPointersRef = useRef(new Map<number, { x: number; y: number; startX: number; startY: number }>());
+  const touchPointersRef = useRef(new Map<number, { x: number; y: number; startX: number; startY: number; startTime: number }>());
   const pinchRef = useRef<{
     distance: number;
     mode: ViewMode;
@@ -54,12 +55,17 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   } | null>(null);
   const gesturePinchedRef = useRef(false);
   const lastRepulsorPointRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const lastTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const scaleAnimationRef = useRef(0);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.volume = session.volume;
+    audio.volume = 1;
+    const gain = gainRef.current;
+    const context = contextRef.current;
+    if (gain && context) gain.gain.setTargetAtTime(session.volume, context.currentTime, 0.018);
   }, [session.volume]);
 
   useEffect(() => {
@@ -125,6 +131,8 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
       onSessionChange({ current: audio.currentTime });
     }
     analyserRef.current?.disconnect();
+    gainRef.current?.disconnect();
+    cancelAnimationFrame(scaleAnimationRef.current);
     void contextRef.current?.close();
   }, [onSessionChange]);
 
@@ -173,18 +181,27 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
 
   const ensureAnalyser = async () => {
     const audio = audioRef.current;
-    if (!audio || analyserRef.current) return;
+    if (!audio) return;
+    if (analyserRef.current) {
+      if (contextRef.current?.state === 'suspended') await contextRef.current.resume();
+      return;
+    }
     const AudioCtor = window.AudioContext || window.webkitAudioContext;
     const context = contextRef.current ?? new AudioCtor();
     contextRef.current = context;
     if (context.state === 'suspended') await context.resume();
     const source = context.createMediaElementSource(audio);
     const analyser = context.createAnalyser();
+    const gain = context.createGain();
     analyser.fftSize = 1024;
     analyser.smoothingTimeConstant = 0.72;
+    gain.gain.value = session.volume;
+    audio.volume = 1;
     source.connect(analyser);
-    analyser.connect(context.destination);
+    analyser.connect(gain);
+    gain.connect(context.destination);
     analyserRef.current = analyser;
+    gainRef.current = gain;
   };
 
   const play = async () => {
@@ -254,11 +271,32 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     lastRepulsorPointRef.current = { x, y, time: now };
   };
 
+  const resetCreatureScale = () => {
+    cancelAnimationFrame(scaleAnimationRef.current);
+    setRepulsor(null);
+    lastRepulsorPointRef.current = null;
+    const from = creatureScale;
+    const startedAt = performance.now();
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / 280);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCreatureScale(from + (1 - from) * eased);
+      if (progress < 1) scaleAnimationRef.current = requestAnimationFrame(animate);
+    };
+    scaleAnimationRef.current = requestAnimationFrame(animate);
+  };
+
   const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
       if (event.pointerType === 'touch') {
         event.currentTarget.setPointerCapture(event.pointerId);
-        touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY });
+        touchPointersRef.current.set(event.pointerId, {
+          x: event.clientX,
+          y: event.clientY,
+          startX: event.clientX,
+          startY: event.clientY,
+          startTime: performance.now(),
+        });
         if (touchPointersRef.current.size === 2) {
           const [first, second] = [...touchPointersRef.current.values()];
           pinchRef.current = {
@@ -269,7 +307,9 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
           setRepulsor(null);
           return;
         }
+        return;
       }
+      if (event.detail > 1) return;
       updateSpectrumRepulsor(event);
       return;
     }
@@ -280,7 +320,13 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
     }
     if (touchPointersRef.current.size === 0) gesturePinchedRef.current = false;
     event.currentTarget.setPointerCapture(event.pointerId);
-    touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY });
+    touchPointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+      startTime: performance.now(),
+    });
     if (touchPointersRef.current.size === 2) {
       const [first, second] = [...touchPointersRef.current.values()];
       const rect = event.currentTarget.getBoundingClientRect();
@@ -310,7 +356,9 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
         setRepulsor(null);
         return;
       }
-      updateSpectrumRepulsor(event);
+      if (tracked && Math.hypot(tracked.x - tracked.startX, tracked.y - tracked.startY) > 6) {
+        updateSpectrumRepulsor(event);
+      }
       return;
     }
     const tracked = touchPointersRef.current.get(event.pointerId);
@@ -331,6 +379,18 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
   const pointerUp = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
       if (event.pointerType === 'touch') {
+        const tracked = touchPointersRef.current.get(event.pointerId);
+        const moved = tracked ? Math.hypot(event.clientX - tracked.startX, event.clientY - tracked.startY) : Infinity;
+        const now = performance.now();
+        if (tracked && moved <= 10 && now - tracked.startTime < 420 && touchPointersRef.current.size === 1 && !pinchRef.current) {
+          const previous = lastTapRef.current;
+          if (previous && now - previous.time < 340 && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 34) {
+            lastTapRef.current = null;
+            resetCreatureScale();
+          } else {
+            lastTapRef.current = { x: event.clientX, y: event.clientY, time: now };
+          }
+        }
         touchPointersRef.current.delete(event.pointerId);
         setRepulsor(null);
         lastRepulsorPointRef.current = null;
@@ -399,6 +459,11 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
         onPointerCancel={pointerCancel}
         onPointerLeave={() => viewMode === 'spectrum' && setRepulsor(null)}
         onContextMenu={(event) => event.preventDefault()}
+        onDoubleClick={(event) => {
+          if (viewMode !== 'spectrum') return;
+          event.preventDefault();
+          resetCreatureScale();
+        }}
         onWheel={zoomFromWheel}
       >
         <WaveCanvas
@@ -413,7 +478,6 @@ export function MusicLab({ session, onSessionChange, onReplaceFile }: MusicLabPr
           musicProgress={session.duration ? session.current / session.duration : 0}
           musicZoom={session.zoom}
           musicViewStart={session.viewStart}
-          musicVolume={session.volume}
           musicTime={session.current}
           musicVisualSeed={session.visualSeed}
           musicPlaying={playing}

@@ -1,5 +1,6 @@
 import { Calculator, Home, Music, Waves } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { interactionSound, type InteractionPlayback } from './audio/interactionSound';
 import { createPointerCommand } from './interaction/commandLayer';
 import { MusicLab } from './labs/MusicLab';
 import { SamplingLab } from './labs/SamplingLab';
@@ -7,6 +8,7 @@ import { WaveLab } from './labs/WaveLab';
 import { createVisualSeed, initialMusicSession, type MusicSessionState } from './music/musicSession';
 import type { LabId, PointerPoint } from './types';
 import { StarfieldBackground } from './visualization/StarfieldBackground';
+import { VisualImpulseLayer, type VisualImpulseHandle } from './visualization/VisualImpulseLayer';
 import { WaveCanvas } from './visualization/WaveCanvas';
 
 const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: string; icon: React.ReactNode }> = [
@@ -19,7 +21,9 @@ export default function App() {
   const [activeLab, setActiveLab] = useState<LabId>('home');
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
   const [musicSession, setMusicSession] = useState<MusicSessionState>(initialMusicSession);
+  const [homePlayback, setHomePlayback] = useState<InteractionPlayback | null>(null);
   const musicUrlRef = useRef<string | null>(null);
+  const visualImpulseRef = useRef<VisualImpulseHandle | null>(null);
 
   const updateMusicSession = useCallback((patch: Partial<MusicSessionState>) => {
     setMusicSession((current) => ({ ...current, ...patch }));
@@ -46,8 +50,27 @@ export default function App() {
     if (musicUrlRef.current) URL.revokeObjectURL(musicUrlRef.current);
   }, []);
 
+  useEffect(() => {
+    void interactionSound.preload();
+  }, []);
+
+  const playControlSound = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    const control = target.closest('button, .file-picker, input[type="range"]');
+    if (!control || (control instanceof HTMLButtonElement && control.disabled)) return;
+    void interactionSound.play();
+  };
+
+  const activateHomeImpulse = (event: MouseEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
+    const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / Math.max(1, rect.height)));
+    visualImpulseRef.current?.trigger(x, y);
+    void interactionSound.play().then((playback) => playback && setHomePlayback(playback));
+  };
+
   return (
-    <main className="app-shell">
+    <main className="app-shell" onClickCapture={playControlSound}>
       <StarfieldBackground />
       <nav className="top-nav" aria-label="主要導覽">
         <div className="top-nav-track">
@@ -65,6 +88,8 @@ export default function App() {
       {activeLab === 'home' && (
         <section
           className="home"
+          onClick={activateHomeImpulse}
+          onContextMenu={(event) => event.preventDefault()}
           onPointerMove={(event) => {
             const command = createPointerCommand(event, event.currentTarget);
             if (command.type === 'POINTER_MOVE') {
@@ -72,7 +97,17 @@ export default function App() {
             }
           }}
         >
-          <WaveCanvas amplitude={0.62} frequency={360} pointer={pointer} mode="home" />
+          <WaveCanvas
+            amplitude={0.62}
+            frequency={360}
+            pointer={pointer}
+            mode="home"
+            homeSoundEnvelope={homePlayback?.envelope ?? null}
+            homeSoundStartedAt={homePlayback?.startedAt ?? 0}
+            homeSoundDuration={homePlayback?.duration ?? 0}
+            homeSoundToken={homePlayback?.token ?? 0}
+          />
+          <VisualImpulseLayer ref={visualImpulseRef} />
           <div className="home-content">
             <p className="eyebrow">聲音數位化互動實驗室</p>
             <h1>Sound Space</h1>
