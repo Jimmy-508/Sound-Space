@@ -34,11 +34,11 @@ interface WaveCanvasProps {
 const wavePointLimit = 768;
 const samplePointLimit = 64;
 const spectrumBandCount = 64;
-const veilPointLimit = 72;
-const harmonicArcLimit = 5;
-const harmonicArcSegmentLimit = 36;
-const ribbonLimit = 3;
-const ribbonPointLimit = 52;
+const bodyRingCount = 34;
+const bodyRadialSegments = 14;
+const energyFlowCount = 3;
+const energyFlowPointCount = 38;
+const wakePointCount = 46;
 const moteLimit = 36;
 const particleCount = 220;
 const silentSpectrumData = new Uint8Array(512);
@@ -150,13 +150,19 @@ export function WaveCanvas({
     const wavePointMaterial = new THREE.PointsMaterial({ color: 0xbef7ff, depthTest: false, size: 1.2, transparent: true, opacity: 0.5, sizeAttenuation: false });
     const playheadMaterial = new THREE.LineBasicMaterial({ color: 0xf2bd62, depthTest: false, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending });
     const playheadMarkerMaterial = new THREE.PointsMaterial({ color: 0xffdda0, depthTest: false, size: 7, transparent: true, opacity: 0.98, sizeAttenuation: false, blending: THREE.AdditiveBlending });
-    const innerVeilMaterial = new THREE.MeshBasicMaterial({ color: 0xe8fbff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const outerVeilMaterial = new THREE.MeshBasicMaterial({ color: 0xbfeeff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.055, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const spectralVeilMaterial = new THREE.MeshBasicMaterial({ color: 0xf5ffff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const outerEdgeMaterial = new THREE.LineBasicMaterial({ color: 0x83edff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.62, blending: THREE.AdditiveBlending });
-    const innerEdgeMaterial = new THREE.LineBasicMaterial({ color: 0xd5fbff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending });
-    const harmonicArcMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending });
-    const ribbonMaterials = Array.from({ length: ribbonLimit }, (_, index) => new THREE.MeshBasicMaterial({ color: index === 2 ? 0x83edff : 0xd9f8ff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    const bodySurfaceMaterial = new THREE.MeshBasicMaterial({ color: 0x9ddff5, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.24, side: THREE.FrontSide });
+    const bodyInnerMaterial = new THREE.MeshBasicMaterial({ color: 0xdff8ff, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.18, side: THREE.FrontSide });
+    const bodyGlowMaterial = new THREE.MeshBasicMaterial({ color: 0x8edfff, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, side: THREE.FrontSide });
+    const wingMaterials = [
+      new THREE.MeshBasicMaterial({ color: 0x79cfee, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.2, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color: 0xa99bea, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
+    ];
+    const wingEdgeMaterials = [
+      new THREE.LineBasicMaterial({ color: 0x71ddff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.46, blending: THREE.AdditiveBlending }),
+      new THREE.LineBasicMaterial({ color: 0xc8f8ff, vertexColors: true, depthTest: false, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending }),
+    ];
+    const energyFlowMaterials = Array.from({ length: energyFlowCount }, (_, index) => new THREE.MeshBasicMaterial({ color: index === 1 ? 0xffe3b0 : 0xaeefff, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.24, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    const wakeMaterial = new THREE.MeshBasicMaterial({ color: 0x77dbff, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.11, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
     const moteMaterial = new THREE.PointsMaterial({ color: 0xffe4a8, depthTest: false, size: 4, transparent: true, opacity: 0.86, sizeAttenuation: false, blending: THREE.AdditiveBlending });
     const particleMaterial = new THREE.PointsMaterial({ color: 0x65cfff, depthTest: false, size: 1.2, transparent: true, opacity: 0.34, sizeAttenuation: false, blending: THREE.AdditiveBlending });
 
@@ -167,20 +173,24 @@ export function WaveCanvas({
     const sampleStemPositions = new Float32Array(samplePointLimit * 2 * 3);
     const playheadPositions = new Float32Array(2 * 3);
     const playheadMarkerPositions = new Float32Array(3);
-    const innerVeilPositions = new Float32Array(veilPointLimit * 2 * 3);
-    const outerVeilPositions = new Float32Array(veilPointLimit * 2 * 3);
-    const spectralVeilPositions = new Float32Array(veilPointLimit * 2 * 3);
-    const outerEdgePositions = new Float32Array(veilPointLimit * 3);
-    const innerEdgePositions = new Float32Array(veilPointLimit * 3);
-    const innerVeilColors = new Float32Array(veilPointLimit * 2 * 3);
-    const outerVeilColors = new Float32Array(veilPointLimit * 2 * 3);
-    const spectralVeilColors = new Float32Array(veilPointLimit * 2 * 3);
-    const outerEdgeColors = new Float32Array(veilPointLimit * 3);
-    const innerEdgeColors = new Float32Array(veilPointLimit * 3);
-    const harmonicArcPositions = new Float32Array(harmonicArcLimit * harmonicArcSegmentLimit * 2 * 3);
-    const harmonicArcColors = new Float32Array(harmonicArcLimit * harmonicArcSegmentLimit * 2 * 3);
-    const ribbonPositions = Array.from({ length: ribbonLimit }, () => new Float32Array(ribbonPointLimit * 2 * 3));
-    const ribbonColors = Array.from({ length: ribbonLimit }, () => new Float32Array(ribbonPointLimit * 2 * 3));
+    const bodyVertexCount = bodyRingCount * (bodyRadialSegments + 1);
+    const bodySurfacePositions = new Float32Array(bodyVertexCount * 3);
+    const bodyInnerPositions = new Float32Array(bodyVertexCount * 3);
+    const bodyGlowPositions = new Float32Array(bodyVertexCount * 3);
+    const bodySurfaceColors = new Float32Array(bodyVertexCount * 3);
+    const bodyInnerColors = new Float32Array(bodyVertexCount * 3);
+    const bodyGlowColors = new Float32Array(bodyVertexCount * 3);
+    const wingSpanSegments = compact ? 18 : 28;
+    const wingChordSegments = compact ? 6 : 10;
+    const wingVertexCount = (wingSpanSegments + 1) * (wingChordSegments + 1);
+    const wingPositions = [new Float32Array(wingVertexCount * 3), new Float32Array(wingVertexCount * 3)];
+    const wingColors = [new Float32Array(wingVertexCount * 3), new Float32Array(wingVertexCount * 3)];
+    const wingEdgePositions = [new Float32Array((wingSpanSegments + 1) * 3), new Float32Array((wingSpanSegments + 1) * 3)];
+    const wingEdgeColors = [new Float32Array((wingSpanSegments + 1) * 3), new Float32Array((wingSpanSegments + 1) * 3)];
+    const energyFlowPositions = Array.from({ length: energyFlowCount }, () => new Float32Array(energyFlowPointCount * 2 * 3));
+    const energyFlowColors = Array.from({ length: energyFlowCount }, () => new Float32Array(energyFlowPointCount * 2 * 3));
+    const wakePositions = new Float32Array(wakePointCount * 2 * 3);
+    const wakeColors = new Float32Array(wakePointCount * 2 * 3);
     const motePositions = new Float32Array(moteLimit * 3);
     const particlePositions = new Float32Array(particleCount * 3);
     const particleSeeds = new Float32Array(particleCount * 3);
@@ -192,24 +202,31 @@ export function WaveCanvas({
     const stemGeometry = dynamicGeometry(sampleStemPositions);
     const playheadGeometry = dynamicGeometry(playheadPositions);
     const playheadMarkerGeometry = dynamicGeometry(playheadMarkerPositions);
-    const innerVeilGeometry = dynamicBandGeometry(innerVeilPositions, veilPointLimit);
-    const outerVeilGeometry = dynamicBandGeometry(outerVeilPositions, veilPointLimit);
-    const spectralVeilGeometry = dynamicBandGeometry(spectralVeilPositions, veilPointLimit);
-    const outerEdgeGeometry = dynamicGeometry(outerEdgePositions);
-    const innerEdgeGeometry = dynamicGeometry(innerEdgePositions);
-    const harmonicArcGeometry = dynamicGeometry(harmonicArcPositions);
-    const moteGeometry = dynamicGeometry(motePositions);
-    innerVeilGeometry.setAttribute('color', new THREE.BufferAttribute(innerVeilColors, 3).setUsage(THREE.DynamicDrawUsage));
-    outerVeilGeometry.setAttribute('color', new THREE.BufferAttribute(outerVeilColors, 3).setUsage(THREE.DynamicDrawUsage));
-    spectralVeilGeometry.setAttribute('color', new THREE.BufferAttribute(spectralVeilColors, 3).setUsage(THREE.DynamicDrawUsage));
-    outerEdgeGeometry.setAttribute('color', new THREE.BufferAttribute(outerEdgeColors, 3).setUsage(THREE.DynamicDrawUsage));
-    innerEdgeGeometry.setAttribute('color', new THREE.BufferAttribute(innerEdgeColors, 3).setUsage(THREE.DynamicDrawUsage));
-    harmonicArcGeometry.setAttribute('color', new THREE.BufferAttribute(harmonicArcColors, 3).setUsage(THREE.DynamicDrawUsage));
-    const ribbonGeometries = ribbonPositions.map((positions, index) => {
-      const geometry = dynamicBandGeometry(positions, ribbonPointLimit);
-      geometry.setAttribute('color', new THREE.BufferAttribute(ribbonColors[index], 3).setUsage(THREE.DynamicDrawUsage));
+    const bodySurfaceGeometry = dynamicSurfaceGeometry(bodySurfacePositions, bodyRingCount, bodyRadialSegments + 1);
+    const bodyInnerGeometry = dynamicSurfaceGeometry(bodyInnerPositions, bodyRingCount, bodyRadialSegments + 1);
+    const bodyGlowGeometry = dynamicSurfaceGeometry(bodyGlowPositions, bodyRingCount, bodyRadialSegments + 1);
+    bodySurfaceGeometry.setAttribute('color', new THREE.BufferAttribute(bodySurfaceColors, 3).setUsage(THREE.DynamicDrawUsage));
+    bodyInnerGeometry.setAttribute('color', new THREE.BufferAttribute(bodyInnerColors, 3).setUsage(THREE.DynamicDrawUsage));
+    bodyGlowGeometry.setAttribute('color', new THREE.BufferAttribute(bodyGlowColors, 3).setUsage(THREE.DynamicDrawUsage));
+    const wingGeometries = wingPositions.map((positions, index) => {
+      const geometry = dynamicSurfaceGeometry(positions, wingSpanSegments + 1, wingChordSegments + 1);
+      geometry.setAttribute('color', new THREE.BufferAttribute(wingColors[index], 3).setUsage(THREE.DynamicDrawUsage));
       return geometry;
     });
+    const wingEdgeGeometries = wingEdgePositions.map((positions, index) => {
+      const geometry = dynamicGeometry(positions);
+      geometry.setAttribute('color', new THREE.BufferAttribute(wingEdgeColors[index], 3).setUsage(THREE.DynamicDrawUsage));
+      geometry.setDrawRange(0, wingSpanSegments + 1);
+      return geometry;
+    });
+    const energyFlowGeometries = energyFlowPositions.map((positions, index) => {
+      const geometry = dynamicBandGeometry(positions, energyFlowPointCount);
+      geometry.setAttribute('color', new THREE.BufferAttribute(energyFlowColors[index], 3).setUsage(THREE.DynamicDrawUsage));
+      return geometry;
+    });
+    const wakeGeometry = dynamicBandGeometry(wakePositions, wakePointCount);
+    wakeGeometry.setAttribute('color', new THREE.BufferAttribute(wakeColors, 3).setUsage(THREE.DynamicDrawUsage));
+    const moteGeometry = dynamicGeometry(motePositions);
     const particleGeometry = dynamicGeometry(particlePositions);
 
     const waveLine = new THREE.Line(waveGeometry, waveMaterial);
@@ -224,14 +241,14 @@ export function WaveCanvas({
     sampleRings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     const playheadLine = new THREE.Line(playheadGeometry, playheadMaterial);
     const playheadMarker = new THREE.Points(playheadMarkerGeometry, playheadMarkerMaterial);
-    const innerVeil = new THREE.Mesh(innerVeilGeometry, innerVeilMaterial);
-    const outerVeil = new THREE.Mesh(outerVeilGeometry, outerVeilMaterial);
-    const spectralVeil = new THREE.Mesh(spectralVeilGeometry, spectralVeilMaterial);
-    const outerEdge = new THREE.Line(outerEdgeGeometry, outerEdgeMaterial);
-    const innerEdge = new THREE.Line(innerEdgeGeometry, innerEdgeMaterial);
-    const harmonicArcs = new THREE.LineSegments(harmonicArcGeometry, harmonicArcMaterial);
+    const bodySurface = new THREE.Mesh(bodySurfaceGeometry, bodySurfaceMaterial);
+    const bodyInner = new THREE.Mesh(bodyInnerGeometry, bodyInnerMaterial);
+    const bodyGlow = new THREE.Mesh(bodyGlowGeometry, bodyGlowMaterial);
+    const wings = wingGeometries.map((geometry, index) => new THREE.Mesh(geometry, wingMaterials[index]));
+    const wingEdges = wingEdgeGeometries.map((geometry, index) => new THREE.Line(geometry, wingEdgeMaterials[index]));
+    const energyFlows = energyFlowGeometries.map((geometry, index) => new THREE.Mesh(geometry, energyFlowMaterials[index]));
+    const energyWake = new THREE.Mesh(wakeGeometry, wakeMaterial);
     const motes = new THREE.Points(moteGeometry, moteMaterial);
-    const ribbons = ribbonGeometries.map((geometry, index) => new THREE.Mesh(geometry, ribbonMaterials[index]));
     const particles = new THREE.Points(particleGeometry, particleMaterial);
 
     const haloTexture = createGlowTexture();
@@ -249,22 +266,22 @@ export function WaveCanvas({
     musicHalo.position.set(0, -0.02, -0.2);
     const coreMaterial = new THREE.SpriteMaterial({ map: haloTexture, color: 0xf4ffff, depthTest: false, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
     const innerCore = new THREE.Sprite(coreMaterial);
-    const corePetalMaterials = Array.from({ length: 3 }, () => new THREE.SpriteMaterial({ map: haloTexture, color: 0x9c9cff, depthTest: false, transparent: true, opacity: 0, blending: THREE.AdditiveBlending }));
+    const corePetalMaterials = Array.from({ length: 4 }, () => new THREE.SpriteMaterial({ map: haloTexture, color: 0xffe0a8, depthTest: false, transparent: true, opacity: 0, blending: THREE.AdditiveBlending }));
     const corePetals = corePetalMaterials.map((material) => new THREE.Sprite(material));
 
     particles.renderOrder = 0;
     musicHalo.renderOrder = 1;
     secondaryLine.renderOrder = 2;
-    ribbons[0].renderOrder = 1;
-    outerVeil.renderOrder = 2;
-    ribbons[1].renderOrder = 3;
-    spectralVeil.renderOrder = 4;
-    outerEdge.renderOrder = 5;
-    innerVeil.renderOrder = 6;
-    innerEdge.renderOrder = 7;
-    harmonicArcs.renderOrder = 8;
+    wings[0].renderOrder = 1;
+    bodyGlow.renderOrder = 2;
+    bodySurface.renderOrder = 3;
+    bodyInner.renderOrder = 4;
+    wings[1].renderOrder = 5;
+    wingEdges[0].renderOrder = 6;
+    wingEdges[1].renderOrder = 7;
+    energyFlows.forEach((flow, index) => { flow.renderOrder = 7.2 + index * 0.05; });
     motes.renderOrder = 9;
-    ribbons[2].renderOrder = 9.5;
+    energyWake.renderOrder = 2.5;
     innerCore.renderOrder = 10;
     corePetals.forEach((petal, index) => { petal.renderOrder = 9 + index * 0.1; });
     sampleStems.renderOrder = 7;
@@ -280,16 +297,15 @@ export function WaveCanvas({
       particles,
       musicHalo,
       secondaryLine,
-      outerVeil,
-      ribbons[0],
-      spectralVeil,
-      outerEdge,
-      innerVeil,
-      innerEdge,
-      harmonicArcs,
+      energyWake,
+      wings[0],
+      bodyGlow,
+      bodySurface,
+      bodyInner,
+      wings[1],
+      ...wingEdges,
+      ...energyFlows,
       motes,
-      ribbons[1],
-      ribbons[2],
       ...corePetals,
       innerCore,
       sampleStems,
@@ -336,6 +352,9 @@ export function WaveCanvas({
     let adaptivePeak = 0.025;
     let adaptiveVariancePeak = 0.01;
     let localVariance = 0;
+    let longTermEnergy = 0.04;
+    let shortTermPeak = 0.08;
+    let lifeEnergy = 0;
     let previousOverallEnergy = 0;
     let previousRelativeEnergy = 0;
     let onsetPulse = 0;
@@ -367,6 +386,8 @@ export function WaveCanvas({
     let repulsorEscapeX = 0;
     let repulsorEscapeY = 0;
     let repulsorEscapeUntil = 0;
+    const wingSpring = [new Float32Array(3), new Float32Array(3)];
+    const wingVelocity = [new Float32Array(3), new Float32Array(3)];
 
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     let reducedMotion = motionQuery.matches;
@@ -399,17 +420,17 @@ export function WaveCanvas({
     };
 
     const hideSpectrum = () => {
-      innerVeil.visible = false;
-      outerVeil.visible = false;
-      spectralVeil.visible = false;
-      outerEdge.visible = false;
-      innerEdge.visible = false;
-      harmonicArcs.visible = false;
+      bodySurface.visible = false;
+      bodyInner.visible = false;
+      bodyGlow.visible = false;
+      wings.forEach((wing) => { wing.visible = false; });
+      wingEdges.forEach((edge) => { edge.visible = false; });
+      energyFlows.forEach((flow) => { flow.visible = false; });
+      energyWake.visible = false;
       motes.visible = false;
       musicHalo.visible = false;
       innerCore.visible = false;
       corePetals.forEach((petal) => { petal.visible = false; });
-      ribbons.forEach((ribbon) => { ribbon.visible = false; });
     };
 
     const updateSpectrumLevels = (data: Uint8Array, deltaTime: number, playing: boolean) => {
@@ -463,6 +484,21 @@ export function WaveCanvas({
       const energyDelta = Math.abs(overallEnergy - previousOverallEnergy);
       localVariance += (energyDelta - localVariance) * (1 - Math.exp(-deltaTime * (energyDelta > localVariance ? 18 : 2.4)));
       adaptiveVariancePeak = Math.max(localVariance, adaptiveVariancePeak * Math.exp(-deltaTime * 0.55), 0.0035);
+      longTermEnergy += (overallEnergy - longTermEnergy) * (1 - Math.exp(-deltaTime * 0.32));
+      shortTermPeak = Math.max(overallEnergy, shortTermPeak * Math.exp(-deltaTime * 0.8), 0.035);
+      const varianceRatio = Math.min(1, localVariance / Math.max(0.004, adaptiveVariancePeak));
+      const automaticGain = Math.min(2.8, Math.max(0.78, 0.19 / Math.max(0.055, longTermEnergy * 0.72 + shortTermPeak * 0.28)));
+      const lifeSignal = (
+        rmsEnergy * 0.31
+        + bassEnergy * 0.2
+        + midEnergy * 0.27
+        + trebleEnergy * 0.09
+        + varianceRatio * 0.08
+        + Math.min(1, energyDelta * 8) * 0.05
+      ) * automaticGain;
+      const lifeTarget = playing && overallEnergy > 0.002 ? Math.min(1, Math.max(0.2, lifeSignal)) : 0;
+      const lifeRate = lifeTarget > lifeEnergy ? 3.1 : 1.35;
+      lifeEnergy += (lifeTarget - lifeEnergy) * (1 - Math.exp(-deltaTime * lifeRate));
       const fastRate = overallEnergy > fastEnergy ? 16 : 7;
       fastEnergy += (overallEnergy - fastEnergy) * (1 - Math.exp(-deltaTime * fastRate));
       slowEnergy += (overallEnergy - slowEnergy) * (1 - Math.exp(-deltaTime * 0.85));
@@ -655,221 +691,212 @@ export function WaveCanvas({
     };
 
 
-    const drawSoundSpirit = (time: number, current: WaveCanvasProps) => {
+    const drawSoundSpirit = (time: number, deltaTime: number, current: WaveCanvasProps) => {
       const viewportAspect = Math.min(1, canvasHeight / canvasWidth);
       const scale = current.creatureScale ?? 1;
       const baseRadius = creatureGenome.bodyRadius * scale;
-      const motionScale = reducedMotion ? 0.3 : 1;
+      const motionScale = reducedMotion ? 0.34 : 1;
       const speed = Math.hypot(creatureVelocityX, creatureVelocityY);
       const movementHeading = speed > 0.002 ? Math.atan2(creatureVelocityY, creatureVelocityX) : creatureHeading;
-      const orientationDelta = Math.atan2(
-        Math.sin(movementHeading - creatureGenome.orientation),
-        Math.cos(movementHeading - creatureGenome.orientation),
-      );
-      const bodyAngle = creatureGenome.orientation + orientationDelta * 0.12;
+      const turnDelta = Math.atan2(Math.sin(movementHeading - creatureGenome.orientation), Math.cos(movementHeading - creatureGenome.orientation));
+      const bodyAngle = creatureGenome.orientation + turnDelta * 0.16;
       const upX = Math.cos(bodyAngle);
       const upY = Math.sin(bodyAngle);
       const sideX = -upY;
       const sideY = upX;
-      const idleBreath = reducedMotion ? 0 : Math.sin(time * creatureGenome.idleBreathRate + creatureGenome.breathPhase) * creatureGenome.idleBreathDepth;
-      const lifeEnergy = current.musicPlaying ? Math.sqrt(Math.max(0, rmsEnergy)) * creatureGenome.rmsSensitivity : 0;
-      const bassPulse = current.musicPlaying ? bassEnergy * creatureGenome.bassSensitivity : 0;
+      const idleBreath = Math.sin(time * 0.72 + creatureGenome.breathPhase) * 0.018 * motionScale;
+      const bassDrive = current.musicPlaying ? bassEnergy * creatureGenome.bassSensitivity : 0;
       const midDrive = current.musicPlaying ? midEnergy * creatureGenome.midSensitivity : 0;
       const trebleDrive = current.musicPlaying ? trebleEnergy * creatureGenome.trebleSensitivity : 0;
-      const beatAccent = onsetPulse * 0.14 + veilPulse * 0.1;
-      const startleClose = startlePulse * 0.34;
-      const bodyLength = baseRadius * creatureGenome.bodyLength * (1 - bassPulse * 0.035 - contractionPulse * 0.025);
-      const bodyWidth = baseRadius * creatureGenome.bodyWidth * (1 + idleBreath + bassPulse * 0.08 + lifeEnergy * 0.06);
+      const bodyLength = baseRadius * creatureGenome.bodyLength * (1 + lifeEnergy * 0.075 - bassDrive * 0.045 - contractionPulse * 0.035);
+      const bodyWidth = baseRadius * creatureGenome.bodyWidth * (1 + idleBreath + bassDrive * 0.12 + veilPulse * 0.05);
+      const bodyBend = turnDelta * baseRadius * 0.14 + Math.sin(time * (0.55 + midDrive * 0.5)) * baseRadius * (0.016 + lifeEnergy * 0.055) * motionScale;
+      const bodyPositionSets = [bodySurfacePositions, bodyInnerPositions, bodyGlowPositions];
+      const bodyColorSets = [bodySurfaceColors, bodyInnerColors, bodyGlowColors];
+      const bodyScales = [1, 0.68, 1.08];
 
-      const bodyPositions = [outerVeilPositions, spectralVeilPositions, innerVeilPositions];
-      const bodyColors = [outerVeilColors, spectralVeilColors, innerVeilColors];
-      for (let layerIndex = 0; layerIndex < creatureGenome.bodyLayers.length; layerIndex += 1) {
-        const layer = creatureGenome.bodyLayers[layerIndex];
-        const positions = bodyPositions[layerIndex];
-        const colors = bodyColors[layerIndex];
-        for (let index = 0; index < veilPointLimit; index += 1) {
-          const progress = index / (veilPointLimit - 1);
-          const lowerTaper = 0.18 + 0.82 * Math.min(1, progress / 0.24);
-          const upperTaper = 0.5 + 0.5 * Math.min(1, (1 - progress) / 0.12);
-          const upperVolume = Math.exp(-Math.pow((progress - 0.72) / 0.25, 2)) * 0.82;
-          const waistVolume = Math.exp(-Math.pow((progress - 0.39) / 0.17, 2)) * 0.26;
-          const profile = (0.08 + upperVolume + waistVolume) * lowerTaper * upperTaper;
-          const along = (progress - 0.47) * bodyLength + layer.alongOffset * baseRadius;
-          const livingCurve = Math.sin(progress * Math.PI * 1.25 + layer.phase + time * 0.22) * baseRadius * layer.curve * motionScale;
-          const centerX = creatureX + (upX * along + sideX * livingCurve) * viewportAspect;
-          const centerY = creatureY + upY * along + sideY * livingCurve;
-          const halfWidth = bodyWidth * profile * layer.widthScale;
-          const offset = index * 6;
-          positions[offset] = centerX + sideX * halfWidth * viewportAspect;
-          positions[offset + 1] = centerY + sideY * halfWidth;
-          positions[offset + 2] = layer.depth;
-          positions[offset + 3] = centerX - sideX * halfWidth * viewportAspect;
-          positions[offset + 4] = centerY - sideY * halfWidth;
-          positions[offset + 5] = layer.depth;
-          const longitudinalFade = Math.pow(Math.sin(progress * Math.PI), 0.42);
-          const intensity = longitudinalFade * layer.brightness * (1 + lifeEnergy * 0.14 + bassPulse * 0.12);
-          for (let side = 0; side < 2; side += 1) {
-            const colorOffset = offset + side * 3;
-            colors[colorOffset] = intensity;
-            colors[colorOffset + 1] = intensity;
-            colors[colorOffset + 2] = intensity;
+      for (let layerIndex = 0; layerIndex < bodyPositionSets.length; layerIndex += 1) {
+        const positions = bodyPositionSets[layerIndex];
+        const colors = bodyColorSets[layerIndex];
+        const layerScale = bodyScales[layerIndex];
+        for (let ring = 0; ring < bodyRingCount; ring += 1) {
+          const progress = ring / (bodyRingCount - 1);
+          const lowerRound = 0.62 + 0.38 * Math.sin(Math.min(1, progress / 0.3) * Math.PI * 0.5);
+          const upperRound = 0.58 + 0.42 * Math.sin(Math.min(1, (1 - progress) / 0.16) * Math.PI * 0.5);
+          const longTorso = 0.34 + progress * 0.28;
+          const shoulder = Math.exp(-Math.pow((progress - 0.72) / 0.32, 2)) * 0.17;
+          const headVolume = Math.exp(-Math.pow((progress - 0.92) / 0.18, 2)) * 0.12;
+          const radiusProfile = (longTorso + shoulder + headVolume) * lowerRound * upperRound;
+          const along = (progress - 0.47) * bodyLength;
+          const bend = bodyBend * Math.sin(progress * Math.PI) + Math.sin(time * 0.32 + progress * 2.4) * baseRadius * 0.01 * motionScale;
+          const centerX = creatureX + (upX * along + sideX * bend) * viewportAspect;
+          const centerY = creatureY + upY * along + sideY * bend;
+          const radius = bodyWidth * radiusProfile * layerScale;
+          for (let radial = 0; radial <= bodyRadialSegments; radial += 1) {
+            const radialProgress = radial / bodyRadialSegments;
+            const theta = radialProgress * Math.PI * 2;
+            const sideOffset = Math.cos(theta) * radius;
+            const depthOffset = Math.sin(theta) * radius * 0.72;
+            const index = (ring * (bodyRadialSegments + 1) + radial) * 3;
+            positions[index] = centerX + sideX * sideOffset * viewportAspect;
+            positions[index + 1] = centerY + sideY * sideOffset;
+            positions[index + 2] = depthOffset + (layerIndex - 1) * 0.004;
+            const centerGlow = Math.pow(Math.abs(Math.sin(theta)), 0.7);
+            const edgeGlow = Math.pow(Math.abs(Math.cos(theta)), 2.2);
+            const longitudinal = 0.35 + Math.pow(Math.sin(progress * Math.PI), 0.55) * 0.65;
+            const intensity = longitudinal * (layerIndex === 0 ? 0.34 + centerGlow * 0.46 + edgeGlow * 0.2 : layerIndex === 1 ? 0.3 + centerGlow * 0.7 : 0.22 + edgeGlow * 0.5);
+            colors[index] = intensity;
+            colors[index + 1] = intensity;
+            colors[index + 2] = intensity;
           }
         }
       }
 
+      const idleAmplitude = 0.3;
+      const musicAmplitude = lifeEnergy * 0.44;
+      const accentAmplitude = ribbonPulse * 0.15;
+      const startleFold = startlePulse * 0.42;
+      const wingRate = 0.62 + lifeEnergy * 1.15 + midDrive * 0.45;
       for (let wingIndex = 0; wingIndex < 2; wingIndex += 1) {
-        const wing = creatureGenome.wings[wingIndex];
         const direction = wingIndex === 0 ? -1 : 1;
-        const positions = ribbonPositions[wingIndex];
-        const colors = ribbonColors[wingIndex];
-        const wingPhase = time * (creatureGenome.wingRate + midDrive * 0.3) + wing.phase;
-        const stroke = Math.sin(wingPhase) * creatureGenome.wingAmplitude * wing.amplitudeScale * motionScale;
-        const opening = 0.8 + lifeEnergy * 0.34 + midDrive * 0.46 + beatAccent - startleClose + stroke * 0.14 + speed * 0.45;
-        const depthFold = Math.cos(wingPhase) * baseRadius * 0.12 * motionScale;
-        for (let index = 0; index < ribbonPointLimit; index += 1) {
-          const progress = index / (ribbonPointLimit - 1);
-          const rootEase = Math.sin(progress * Math.PI * 0.5);
-          const membraneFade = Math.pow(Math.sin(progress * Math.PI), 0.62);
-          const outward = baseRadius * creatureGenome.wingLength * wing.lengthScale * rootEase * opening;
-          const lift = bodyLength * (0.13 - progress * 0.14 + Math.sin(progress * Math.PI) * wing.curvature * 0.15);
-          const fluidBend = Math.sin(progress * Math.PI) * stroke * baseRadius * 0.2;
-          const rootSide = bodyWidth * 0.52;
-          const centerX = creatureX + (
-            upX * (bodyLength * 0.13 + lift + fluidBend)
-            + sideX * direction * (rootSide + outward)
-          ) * viewportAspect;
-          const centerY = creatureY
-            + upY * (bodyLength * 0.13 + lift + fluidBend)
-            + sideY * direction * (rootSide + outward);
-          const membraneWidth = baseRadius * creatureGenome.wingWidth * membraneFade * (1 + midDrive * 0.18);
-          const offset = index * 6;
-          positions[offset] = centerX + upX * membraneWidth * viewportAspect;
-          positions[offset + 1] = centerY + upY * membraneWidth;
-          positions[offset + 2] = wing.depth + depthFold * (progress - 0.2);
-          positions[offset + 3] = centerX - upX * membraneWidth * viewportAspect;
-          positions[offset + 4] = centerY - upY * membraneWidth;
-          positions[offset + 5] = wing.depth - depthFold * (progress - 0.2);
-          const intensity = Math.pow(Math.sin(progress * Math.PI), 0.55) * (0.5 + trebleDrive * 0.3 + ribbonPulse * 0.18);
-          for (let side = 0; side < 2; side += 1) {
-            const colorOffset = offset + side * 3;
-            colors[colorOffset] = intensity;
-            colors[colorOffset + 1] = intensity;
-            colors[colorOffset + 2] = intensity;
+        const asymmetry = wingIndex === 0 ? 0.92 : 1.06;
+        const lengthAsymmetry = wingIndex === 0 ? 0.94 : 1.04;
+        const phaseOffset = wingIndex === 0 ? 0 : creatureGenome.wingPhaseOffset;
+        const turnBias = Math.max(-0.12, Math.min(0.12, turnDelta * direction * 0.1));
+        for (let zone = 0; zone < 3; zone += 1) {
+          const propagation = zone * (0.34 + lifeEnergy * 0.08);
+          const target = Math.sin(time * wingRate + phaseOffset - propagation) * (idleAmplitude + musicAmplitude + accentAmplitude) * asymmetry + turnBias - startleFold;
+          const stiffness = 18 - zone * 2.1;
+          const damping = 6.2 - zone * 0.45;
+          wingVelocity[wingIndex][zone] += (target - wingSpring[wingIndex][zone]) * stiffness * deltaTime;
+          wingVelocity[wingIndex][zone] *= Math.exp(-damping * deltaTime);
+          wingSpring[wingIndex][zone] += wingVelocity[wingIndex][zone] * deltaTime;
+        }
+
+        const positions = wingPositions[wingIndex];
+        const colors = wingColors[wingIndex];
+        for (let spanIndex = 0; spanIndex <= wingSpanSegments; spanIndex += 1) {
+          const span = spanIndex / wingSpanSegments;
+          const zonePosition = span * 2;
+          const zoneIndex = Math.min(1, Math.floor(zonePosition));
+          const zoneBlend = zonePosition - zoneIndex;
+          const stroke = wingSpring[wingIndex][zoneIndex] * (1 - zoneBlend) + wingSpring[wingIndex][zoneIndex + 1] * zoneBlend;
+          const phase = time * wingRate + phaseOffset - span * (0.72 + lifeEnergy * 0.22);
+          const spanEase = Math.sin(span * Math.PI * 0.5);
+          const rootBlend = Math.sin(Math.min(1, span / 0.22) * Math.PI * 0.5);
+          const outward = baseRadius * creatureGenome.wingLength * lengthAsymmetry * spanEase * (0.86 + lifeEnergy * 0.22 + bassDrive * 0.08 + speed * 0.7);
+          const rootSide = bodyWidth * (0.5 + span * 0.18);
+          const verticalSweep = baseRadius * (0.16 - span * 0.28 + stroke * (0.09 + span * 0.2));
+          const backwardSweep = Math.cos(phase) * baseRadius * (0.035 + span * 0.09) * motionScale;
+          const centerAlong = bodyLength * 0.17 + verticalSweep + baseRadius * (wingIndex === 0 ? -0.045 : 0.035);
+          const centerSide = direction * (rootSide + outward + backwardSweep);
+          const membraneEnvelope = (0.22 * (1 - span) + Math.pow(Math.sin(span * Math.PI), 0.58)) * rootBlend;
+          const halfChord = baseRadius * creatureGenome.wingChord * membraneEnvelope * (1 + midDrive * 0.22);
+          for (let chordIndex = 0; chordIndex <= wingChordSegments; chordIndex += 1) {
+            const chord = chordIndex / wingChordSegments * 2 - 1;
+            const chordCurve = Math.sqrt(Math.max(0, 1 - chord * chord));
+            const surfaceWave = Math.sin(phase - chord * 0.38) * baseRadius * (0.025 + lifeEnergy * 0.045) * span * chordCurve * motionScale;
+            const localAlong = centerAlong + chord * halfChord;
+            const localSide = centerSide + direction * chord * chord * baseRadius * 0.025 * span;
+            const index = (spanIndex * (wingChordSegments + 1) + chordIndex) * 3;
+            positions[index] = creatureX + (upX * localAlong + sideX * localSide) * viewportAspect;
+            positions[index + 1] = creatureY + upY * localAlong + sideY * localSide;
+            positions[index + 2] = (wingIndex === 0 ? -0.07 : 0.055) + surfaceWave + stroke * baseRadius * 0.045 * span;
+            const chordCenter = Math.pow(chordCurve, 0.62);
+            const rim = Math.pow(Math.abs(chord), 3);
+            const intensity = (0.22 + chordCenter * 0.46 + rim * (0.16 + trebleDrive * 0.24)) * Math.pow(Math.sin(Math.min(0.999, span) * Math.PI), 0.2);
+            colors[index] = intensity;
+            colors[index + 1] = intensity;
+            colors[index + 2] = intensity;
           }
-          const edgePositions = wingIndex === 0 ? outerEdgePositions : innerEdgePositions;
-          const edgeColors = wingIndex === 0 ? outerEdgeColors : innerEdgeColors;
-          writeOrganicPoint(edgePositions, index, positions[offset], positions[offset + 1]);
-          const edgeOffset = index * 3;
-          const edgeIntensity = membraneFade * (0.36 + trebleDrive * 0.48 + ribbonPulse * 0.18);
-          edgeColors[edgeOffset] = edgeIntensity;
-          edgeColors[edgeOffset + 1] = edgeIntensity;
-          edgeColors[edgeOffset + 2] = edgeIntensity;
+          const edgeVertex = (spanIndex * (wingChordSegments + 1)) * 3;
+          const edgeIndex = spanIndex * 3;
+          wingEdgePositions[wingIndex][edgeIndex] = positions[edgeVertex];
+          wingEdgePositions[wingIndex][edgeIndex + 1] = positions[edgeVertex + 1];
+          wingEdgePositions[wingIndex][edgeIndex + 2] = positions[edgeVertex + 2] + 0.002;
+          const edgeIntensity = Math.pow(Math.sin(span * Math.PI), 0.4) * (0.42 + trebleDrive * 0.52 + motePulse * 0.12);
+          wingEdgeColors[wingIndex].fill(edgeIntensity, edgeIndex, edgeIndex + 3);
         }
       }
 
-      const wakePositions = ribbonPositions[2];
-      const wakeColors = ribbonColors[2];
-      const wakeDirectionX = -upX * 0.72 - Math.cos(movementHeading) * 0.28;
-      const wakeDirectionY = -upY * 0.72 - Math.sin(movementHeading) * 0.28;
-      for (let index = 0; index < ribbonPointLimit; index += 1) {
-        const progress = index / (ribbonPointLimit - 1);
-        const fade = Math.pow(1 - progress, 1.45);
-        const wakeCurve = Math.sin(progress * Math.PI * 2 + time * 0.48 + creatureGenome.wakePhase) * baseRadius * creatureGenome.wakeCurve * progress * motionScale;
-        const along = bodyLength * 0.48 + baseRadius * creatureGenome.wakeLength * progress * (1 + speed * 1.8);
-        const centerX = creatureX + (wakeDirectionX * along + sideX * wakeCurve) * viewportAspect;
-        const centerY = creatureY + wakeDirectionY * along + sideY * wakeCurve;
-        const width = baseRadius * 0.1 * fade * (1 + trebleDrive * 0.4);
+      const heartAlong = bodyLength * 0.18;
+      const heartSide = bodyBend * 0.35;
+      const heartX = creatureX + (upX * heartAlong + sideX * heartSide) * viewportAspect;
+      const heartY = creatureY + upY * heartAlong + sideY * heartSide;
+      for (let flowIndex = 0; flowIndex < energyFlowCount; flowIndex += 1) {
+        const positions = energyFlowPositions[flowIndex];
+        const colors = energyFlowColors[flowIndex];
+        const toWing = flowIndex < 2;
+        const direction = flowIndex === 0 ? -1 : 1;
+        const flowSpeed = 0.45 + lifeEnergy * 1.9 + midDrive * 0.55;
+        for (let pointIndex = 0; pointIndex < energyFlowPointCount; pointIndex += 1) {
+          const progress = pointIndex / (energyFlowPointCount - 1);
+          const along = toWing ? heartAlong * (1 - progress) + bodyLength * 0.15 * progress : heartAlong - bodyLength * 0.58 * progress;
+          const side = toWing ? direction * baseRadius * creatureGenome.wingLength * 0.54 * Math.pow(progress, 1.35) : Math.sin(progress * Math.PI * 1.4 + time * 0.3) * baseRadius * 0.055;
+          const travelling = Math.sin(progress * Math.PI * 5 - time * flowSpeed + flowIndex * 1.7) * baseRadius * 0.018 * progress;
+          const centerX = creatureX + (upX * along + sideX * (side + travelling)) * viewportAspect;
+          const centerY = creatureY + upY * along + sideY * (side + travelling);
+          const width = baseRadius * (toWing ? 0.022 : 0.028) * Math.pow(Math.sin(progress * Math.PI), 0.6) * (0.7 + lifeEnergy * 0.55);
+          const offset = pointIndex * 6;
+          positions[offset] = centerX + sideX * width * viewportAspect;
+          positions[offset + 1] = centerY + sideY * width;
+          positions[offset + 2] = 0.066;
+          positions[offset + 3] = centerX - sideX * width * viewportAspect;
+          positions[offset + 4] = centerY - sideY * width;
+          positions[offset + 5] = 0.066;
+          const pulse = 0.38 + 0.42 * Math.pow(0.5 + 0.5 * Math.sin(progress * Math.PI * 3 - time * flowSpeed), 2);
+          const intensity = Math.pow(Math.sin(progress * Math.PI), 0.45) * pulse * (0.7 + lifeEnergy * 0.45);
+          colors.fill(intensity, offset, offset + 6);
+        }
+      }
+
+      const wakeDirectionX = -upX * 0.78 - Math.cos(movementHeading) * 0.22;
+      const wakeDirectionY = -upY * 0.78 - Math.sin(movementHeading) * 0.22;
+      for (let index = 0; index < wakePointCount; index += 1) {
+        const progress = index / (wakePointCount - 1);
+        const fade = Math.pow(1 - progress, 1.65);
+        const lag = Math.sin(progress * Math.PI * 2.2 + time * (0.28 + lifeEnergy * 0.8) + creatureGenome.wakePhase) * baseRadius * 0.12 * progress;
+        const along = bodyLength * 0.43 + baseRadius * (0.28 + lifeEnergy * 0.62 + speed * 2.4) * progress;
+        const centerX = creatureX + (wakeDirectionX * along + sideX * (lag - turnDelta * baseRadius * progress * 0.08)) * viewportAspect;
+        const centerY = creatureY + wakeDirectionY * along + sideY * (lag - turnDelta * baseRadius * progress * 0.08);
+        const width = baseRadius * 0.11 * fade * (0.35 + lifeEnergy * 0.85 + trebleDrive * 0.28);
         const offset = index * 6;
         wakePositions[offset] = centerX + sideX * width * viewportAspect;
         wakePositions[offset + 1] = centerY + sideY * width;
-        wakePositions[offset + 2] = -0.08;
+        wakePositions[offset + 2] = -0.09;
         wakePositions[offset + 3] = centerX - sideX * width * viewportAspect;
         wakePositions[offset + 4] = centerY - sideY * width;
-        wakePositions[offset + 5] = -0.08;
-        const intensity = fade * (0.34 + trebleDrive * 0.44 + motePulse * 0.14);
-        for (let side = 0; side < 2; side += 1) {
-          const colorOffset = offset + side * 3;
-          wakeColors[colorOffset] = intensity;
-          wakeColors[colorOffset + 1] = intensity;
-          wakeColors[colorOffset + 2] = intensity;
-        }
-      }
-
-      const heartAlong = bodyLength * creatureGenome.heartAlong;
-      const heartSide = baseRadius * creatureGenome.heartSide;
-      const heartX = creatureX + (upX * heartAlong + sideX * heartSide) * viewportAspect;
-      const heartY = creatureY + upY * heartAlong + sideY * heartSide;
-      const streamSegments = compact ? 22 : harmonicArcSegmentLimit;
-      let streamVertex = 0;
-      for (const stream of creatureGenome.energyStreams) {
-        const streamEndAlong = -bodyLength * (0.31 + stream.lengthOffset);
-        const streamSway = Math.sin(time * (0.42 + trebleDrive * 0.35) + stream.phase) * baseRadius * 0.035 * motionScale;
-        const endX = creatureX + (upX * streamEndAlong + sideX * (stream.side * baseRadius * 0.18 + streamSway)) * viewportAspect;
-        const endY = creatureY + upY * streamEndAlong + sideY * (stream.side * baseRadius * 0.18 + streamSway);
-        let previousX = heartX;
-        let previousY = heartY;
-        for (let segment = 1; segment <= streamSegments; segment += 1) {
-          const progress = segment / streamSegments;
-          const bow = baseRadius * (stream.curvature + streamSway / Math.max(baseRadius, 0.001));
-          const point = cubicBezier(
-            progress,
-            heartX,
-            heartY,
-            heartX - upX * bodyLength * 0.18 * viewportAspect + sideX * bow * viewportAspect,
-            heartY - upY * bodyLength * 0.18 + sideY * bow,
-            endX + upX * bodyLength * 0.14 * viewportAspect - sideX * bow * 0.45 * viewportAspect,
-            endY + upY * bodyLength * 0.14 - sideY * bow * 0.45,
-            endX,
-            endY,
-          );
-          const offset = streamVertex * 3;
-          harmonicArcPositions[offset] = previousX;
-          harmonicArcPositions[offset + 1] = previousY;
-          harmonicArcPositions[offset + 2] = 0.045;
-          harmonicArcPositions[offset + 3] = point.x;
-          harmonicArcPositions[offset + 4] = point.y;
-          harmonicArcPositions[offset + 5] = 0.045;
-          const brightness = Math.pow(Math.sin(progress * Math.PI), 0.55) * (0.55 + trebleDrive * 0.28);
-          harmonicArcColors.fill(brightness, offset, offset + 6);
-          streamVertex += 2;
-          previousX = point.x;
-          previousY = point.y;
-        }
+        wakePositions[offset + 5] = -0.09;
+        const intensity = fade * (0.2 + lifeEnergy * 0.62 + trebleDrive * 0.25 + motePulse * 0.12);
+        wakeColors.fill(intensity, offset, offset + 6);
       }
 
       const activeMotes = Math.min(compact ? 7 : moteLimit, creatureGenome.moteCount);
       for (let index = 0; index < activeMotes; index += 1) {
         const mote = creatureGenome.motes[index];
-        const drift = Math.sin(time * mote.speed + mote.phase) * 0.12;
-        const along = baseRadius * (mote.along + drift - motePulse * mote.scatter * 0.1);
-        const side = baseRadius * (mote.side + Math.cos(time * mote.speed * 0.73 + mote.phase) * 0.1);
+        const drift = Math.sin(time * mote.speed * (1 + lifeEnergy) + mote.phase) * (0.1 + lifeEnergy * 0.18);
+        const along = baseRadius * (mote.along + drift - motePulse * mote.scatter * 0.12);
+        const side = baseRadius * (mote.side + Math.cos(time * mote.speed + mote.phase) * (0.08 + trebleDrive * 0.08));
         writeOrganicPoint(motePositions, index, creatureX + (upX * along + sideX * side) * viewportAspect, creatureY + upY * along + sideY * side);
       }
-
-      outerEdgeGeometry.setDrawRange(0, ribbonPointLimit);
-      innerEdgeGeometry.setDrawRange(0, ribbonPointLimit);
-      harmonicArcGeometry.setDrawRange(0, streamVertex);
       moteGeometry.setDrawRange(0, activeMotes);
-      [innerVeilGeometry, outerVeilGeometry, spectralVeilGeometry, outerEdgeGeometry, innerEdgeGeometry, harmonicArcGeometry, moteGeometry].forEach((geometry) => {
+
+      [bodySurfaceGeometry, bodyInnerGeometry, bodyGlowGeometry, ...wingGeometries, ...wingEdgeGeometries, ...energyFlowGeometries, wakeGeometry, moteGeometry].forEach((geometry) => {
         geometry.attributes.position.needsUpdate = true;
         if (geometry.attributes.color) geometry.attributes.color.needsUpdate = true;
       });
-      ribbonGeometries.forEach((geometry) => {
-        geometry.attributes.position.needsUpdate = true;
-        geometry.attributes.color.needsUpdate = true;
-      });
 
       musicHalo.position.set(creatureX, creatureY, -0.2);
-      const auraScale = baseRadius * (1.3 + idleBreath * 1.6 + lifeEnergy * 0.28 + startlePulse * 0.06);
-      musicHalo.scale.set(auraScale * viewportAspect * 1.15, auraScale * 1.45, 1);
-      innerCore.position.set(heartX, heartY, 0.06);
-      const heartScale = baseRadius * (0.21 + idleBreath * 0.4 + bassPulse * 0.1 + onsetPulse * 0.035 + startlePulse * 0.04);
-      innerCore.scale.set(heartScale * viewportAspect * 0.82, heartScale * 1.18, 1);
+      const auraScale = baseRadius * (1.15 + lifeEnergy * 0.38 + startlePulse * 0.08);
+      musicHalo.scale.set(auraScale * viewportAspect * 1.05, auraScale * 1.65, 1);
+      innerCore.position.set(heartX, heartY, 0.075);
+      const heartScale = baseRadius * (0.28 + idleBreath * 0.5 + lifeEnergy * 0.17 + bassDrive * 0.13 + onsetPulse * 0.065 + startlePulse * 0.05);
+      innerCore.scale.set(heartScale * viewportAspect * 0.9, heartScale * 1.2, 1);
       corePetals.forEach((petal, index) => {
-        const angle = bodyAngle + index * 2.05 + Math.sin(time * 0.28 + index) * 0.16;
-        const petalOffset = heartScale * (0.1 + index * 0.035);
-        petal.position.set(heartX + Math.cos(angle) * petalOffset * viewportAspect, heartY + Math.sin(angle) * petalOffset, 0.055 + index * 0.002);
-        petal.scale.set(heartScale * viewportAspect * (0.58 + index * 0.06), heartScale * (0.92 + index * 0.08), 1);
+        const angle = bodyAngle + index * (Math.PI * 2 / corePetals.length) + Math.sin(time * (0.3 + lifeEnergy * 0.4) + index) * 0.2;
+        const petalOffset = heartScale * (0.15 + index * 0.02);
+        petal.position.set(heartX + Math.cos(angle) * petalOffset * viewportAspect, heartY + Math.sin(angle) * petalOffset, 0.07 + index * 0.001);
+        petal.scale.set(heartScale * viewportAspect * (0.58 + index * 0.035), heartScale * (0.86 + index * 0.05), 1);
         petal.material.rotation = angle;
       });
     };
@@ -888,6 +915,9 @@ export function WaveCanvas({
         adaptivePeak = 0.025;
         adaptiveVariancePeak = 0.01;
         localVariance = 0;
+        longTermEnergy = 0.04;
+        shortTermPeak = 0.08;
+        lifeEnergy = 0;
         previousOverallEnergy = 0;
         previousRelativeEnergy = 0;
         rmsEnergy = 0;
@@ -908,45 +938,49 @@ export function WaveCanvas({
         startlePulse = 0;
         escapeUntil = 0;
         repulsorEscapeUntil = 0;
-        innerVeilMaterial.color.setHex(0xf5ffff);
-        outerVeilMaterial.color.setHex(0xbfeeff);
-        spectralVeilMaterial.color.setHex(0xe5faff);
-        outerEdgeMaterial.color.setHex(creatureGenome.primaryHue);
-        innerEdgeMaterial.color.setHex(creatureGenome.highlightHue);
-        harmonicArcMaterial.color.setHex(creatureGenome.highlightHue);
-        ribbonMaterials.forEach((material, index) => material.color.setHex(index === 2 ? creatureGenome.primaryHue : index === 1 ? 0xe9faff : 0xcdf4ff));
+        wingSpring.forEach((state) => state.fill(0));
+        wingVelocity.forEach((state) => state.fill(0));
+        bodySurfaceMaterial.color.setHex(0x9ddff5);
+        bodyInnerMaterial.color.setHex(0xf5ffff);
+        bodyGlowMaterial.color.setHex(creatureGenome.primaryHue);
+        wingMaterials[0].color.setHex(0x79cfee);
+        wingMaterials[1].color.setHex(0xa99bea);
+        wingEdgeMaterials[0].color.setHex(creatureGenome.primaryHue);
+        wingEdgeMaterials[1].color.setHex(creatureGenome.secondaryHue);
+        energyFlowMaterials.forEach((material, index) => material.color.setHex(index === 1 ? creatureGenome.highlightHue : creatureGenome.primaryHue));
+        wakeMaterial.color.setHex(creatureGenome.primaryHue);
         moteMaterial.color.setHex(creatureGenome.highlightHue);
         particleMaterial.color.setHex(creatureGenome.primaryHue);
         haloMaterial.color.setHex(creatureGenome.primaryHue);
         coreMaterial.color.setHex(creatureGenome.highlightColor);
-        corePetalMaterials.forEach((material, index) => material.color.setHex(index === 1 ? creatureGenome.highlightHue : creatureGenome.secondaryHue));
+        corePetalMaterials.forEach((material, index) => material.color.setHex(index % 3 === 0 ? creatureGenome.highlightHue : index % 3 === 1 ? creatureGenome.secondaryHue : creatureGenome.primaryHue));
       }
       updateSpiritPhysics(time, deltaTime, current);
-      drawSoundSpirit(time, current);
+      drawSoundSpirit(time, deltaTime, current);
 
-      innerVeil.visible = true;
-      outerVeil.visible = true;
-      spectralVeil.visible = true;
-      outerEdge.visible = true;
-      innerEdge.visible = true;
-      harmonicArcs.visible = true;
+      bodySurface.visible = true;
+      bodyInner.visible = true;
+      bodyGlow.visible = true;
+      wings.forEach((wing) => { wing.visible = true; });
+      wingEdges.forEach((edge) => { edge.visible = true; });
+      energyFlows.forEach((flow) => { flow.visible = true; });
+      energyWake.visible = true;
       motes.visible = true;
       musicHalo.visible = true;
       innerCore.visible = true;
       corePetals.forEach((petal) => { petal.visible = true; });
-      ribbons.forEach((ribbon) => { ribbon.visible = true; });
-      innerVeilMaterial.opacity = 0.18 + bassEnergy * 0.12 + onsetPulse * 0.035;
-      outerVeilMaterial.opacity = 0.14 + bassEnergy * 0.08 + veilPulse * 0.045;
-      spectralVeilMaterial.opacity = 0.22 + bassEnergy * 0.12 + overallEnergy * 0.05;
-      outerEdgeMaterial.opacity = 0.44 + trebleEnergy * 0.3 + ribbonPulse * 0.08;
-      innerEdgeMaterial.opacity = 0.42 + trebleEnergy * 0.28 + ribbonPulse * 0.08;
-      harmonicArcMaterial.opacity = 0.48 + trebleEnergy * 0.25 + overallEnergy * 0.08;
-      ribbonMaterials.forEach((material, index) => { material.opacity = index === 2 ? 0.09 + trebleEnergy * 0.12 : 0.14 + midEnergy * 0.18 + ribbonPulse * 0.08; });
+      bodySurfaceMaterial.opacity = 0.045 + lifeEnergy * 0.025 + bassEnergy * 0.02;
+      bodyInnerMaterial.opacity = 0.026 + lifeEnergy * 0.034 + bassEnergy * 0.024;
+      bodyGlowMaterial.opacity = 0.012 + lifeEnergy * 0.032 + veilPulse * 0.018;
+      wingMaterials.forEach((material, index) => { material.opacity = 0.15 + index * 0.018 + lifeEnergy * 0.12 + midEnergy * 0.08; });
+      wingEdgeMaterials.forEach((material) => { material.opacity = 0.34 + trebleEnergy * 0.35 + ribbonPulse * 0.12; });
+      energyFlowMaterials.forEach((material) => { material.opacity = 0.12 + lifeEnergy * 0.22 + midEnergy * 0.08; });
+      wakeMaterial.opacity = 0.035 + lifeEnergy * 0.16 + trebleEnergy * 0.08;
       moteMaterial.opacity = 0.82 + trebleEnergy * 0.16 + onsetPulse * 0.02;
       moteMaterial.size = 4.8 + trebleEnergy * (reducedMotion ? 1.2 : 4.5) + startlePulse * 1.5;
-      haloMaterial.opacity = creatureGenome.glowIntensity * (0.14 + onsetPulse * 0.08 + overallEnergy * 0.07);
-      coreMaterial.opacity = 0.72 + bassEnergy * 0.18 + onsetPulse * 0.08;
-      corePetalMaterials.forEach((material, index) => { material.opacity = 0.14 + index * 0.025 + bassEnergy * 0.12 + onsetPulse * 0.06; });
+      haloMaterial.opacity = creatureGenome.glowIntensity * (0.08 + lifeEnergy * 0.16 + onsetPulse * 0.08);
+      coreMaterial.opacity = 0.78 + lifeEnergy * 0.14 + bassEnergy * 0.12 + onsetPulse * 0.08;
+      corePetalMaterials.forEach((material, index) => { material.opacity = 0.18 + index * 0.018 + lifeEnergy * 0.14 + bassEnergy * 0.1 + onsetPulse * 0.08; });
     };
 
     const drawMusicWave = (current: WaveCanvasProps) => {
@@ -1187,9 +1221,9 @@ export function WaveCanvas({
       motionQuery.removeEventListener?.('change', updateMotionPreference);
       mount.removeChild(renderer.domElement);
       renderer.dispose();
-      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, innerVeilGeometry, outerVeilGeometry, spectralVeilGeometry, outerEdgeGeometry, innerEdgeGeometry, harmonicArcGeometry, moteGeometry, particleGeometry, sampleRingGeometry, ...ribbonGeometries].forEach((geometry) => geometry.dispose());
+      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, bodySurfaceGeometry, bodyInnerGeometry, bodyGlowGeometry, moteGeometry, particleGeometry, sampleRingGeometry, wakeGeometry, ...wingGeometries, ...wingEdgeGeometries, ...energyFlowGeometries].forEach((geometry) => geometry.dispose());
       haloTexture.dispose();
-      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, innerVeilMaterial, outerVeilMaterial, spectralVeilMaterial, outerEdgeMaterial, innerEdgeMaterial, harmonicArcMaterial, moteMaterial, particleMaterial, haloMaterial, coreMaterial, ...corePetalMaterials, ...ribbonMaterials].forEach((material) => material.dispose());
+      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, bodySurfaceMaterial, bodyInnerMaterial, bodyGlowMaterial, moteMaterial, particleMaterial, haloMaterial, coreMaterial, wakeMaterial, ...corePetalMaterials, ...wingMaterials, ...wingEdgeMaterials, ...energyFlowMaterials].forEach((material) => material.dispose());
     };
   }, []);
 
@@ -1217,6 +1251,28 @@ function dynamicBandGeometry(positions: Float32Array, pointCount: number) {
     indices[offset + 3] = index * 2;
     indices[offset + 4] = next * 2 + 1;
     indices[offset + 5] = next * 2;
+  }
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.setDrawRange(0, indices.length);
+  return geometry;
+}
+
+function dynamicSurfaceGeometry(positions: Float32Array, rows: number, columns: number) {
+  const geometry = dynamicGeometry(positions);
+  const indices = new Uint16Array((rows - 1) * (columns - 1) * 6);
+  let cursor = 0;
+  for (let row = 0; row < rows - 1; row += 1) {
+    for (let column = 0; column < columns - 1; column += 1) {
+      const current = row * columns + column;
+      const nextRow = current + columns;
+      indices[cursor] = current;
+      indices[cursor + 1] = current + 1;
+      indices[cursor + 2] = nextRow + 1;
+      indices[cursor + 3] = current;
+      indices[cursor + 4] = nextRow + 1;
+      indices[cursor + 5] = nextRow;
+      cursor += 6;
+    }
   }
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.setDrawRange(0, indices.length);
@@ -1251,32 +1307,8 @@ function logarithmicBin(index: number, bandCount: number, binCount: number) {
 
 function createSpiritProfile(seed: number) {
   const random = seededRandom(seed);
-  const paletteFamilies = [
-    { primary: 0x72e7ff, secondary: 0x8b7cff, highlight: 0xffe6b8 },
-    { primary: 0x65e7d3, secondary: 0x6cb7ff, highlight: 0xf8ffff },
-    { primary: 0x8bd8ff, secondary: 0xc985e4, highlight: 0xffd9ca },
-    { primary: 0xa996ff, secondary: 0x6ce7e2, highlight: 0xffedc7 },
-  ];
-  const palette = paletteFamilies[Math.floor(random() * paletteFamilies.length)];
-  const orientation = Math.PI * 0.5 + (random() - 0.5) * 0.48;
-  const moteCount = 9 + Math.floor(random() * 5);
-  const bodyLayers = [
-    { widthScale: 1, alongOffset: 0, curve: 0.025, phase: 0.2, brightness: 0.42, depth: -0.035 },
-    { widthScale: 0.8, alongOffset: 0.015, curve: -0.018, phase: 2.1, brightness: 0.58, depth: 0 },
-    { widthScale: 0.56, alongOffset: 0.035, curve: 0.012, phase: 4.2, brightness: 0.72, depth: 0.035 },
-  ];
-  const wingPhaseOffset = 0.18 + random() * 0.12;
-  const wings = [
-    { phase: random() * Math.PI * 2, amplitudeScale: 0.94 + random() * 0.04, lengthScale: 0.94 + random() * 0.08, curvature: 0.82 + random() * 0.16, depth: -0.09 },
-    { phase: random() * Math.PI * 2 + wingPhaseOffset, amplitudeScale: 1 + random() * 0.06, lengthScale: 0.96 + random() * 0.08, curvature: 0.86 + random() * 0.16, depth: 0.07 },
-  ];
-  const streamCount = 2 + Math.floor(random() * 2);
-  const energyStreams = Array.from({ length: streamCount }, (_, index) => ({
-    side: (index - (streamCount - 1) / 2) * 0.72,
-    curvature: (index % 2 === 0 ? -1 : 1) * (0.035 + random() * 0.055),
-    lengthOffset: (random() - 0.5) * 0.06,
-    phase: random() * Math.PI * 2,
-  }));
+  const orientation = Math.PI * 0.5 + 0.24;
+  const moteCount = 12;
   const motes = Array.from({ length: moteCount }, () => ({
     along: -1.15 + random() * 2,
     side: (random() - 0.5) * (0.8 + random() * 0.55),
@@ -1286,53 +1318,42 @@ function createSpiritProfile(seed: number) {
   }));
 
   return {
-    bodyRadius: 0.145 + random() * 0.015,
-    bodyLength: 2.45 * (0.94 + random() * 0.12),
-    bodyWidth: 0.72 * (0.94 + random() * 0.12),
-    bodyAsymmetry: 0.08 + random() * 0.04,
+    bodyRadius: 0.135,
+    bodyLength: 2.55,
+    bodyWidth: 0.78,
+    bodyAsymmetry: 0.1,
     orientation,
     flowDirection: orientation,
-    bodyLayers,
-    wings,
-    wingLength: 1.18 * (0.9 + random() * 0.2),
-    wingWidth: 0.34 * (0.93 + random() * 0.14),
-    wingAmplitude: 0.62 + random() * 0.1,
-    wingRate: 0.58 + random() * 0.12,
-    heartAlong: 0.11 + random() * 0.07,
-    heartSide: (random() - 0.5) * 0.09,
-    energyStreams,
-    wakeLength: 0.92 + random() * 0.2,
-    wakeCurve: 0.2 + random() * 0.12,
+    wingLength: 1.4,
+    wingChord: 0.34,
+    wingPhaseOffset: Math.PI * 0.18,
     wakePhase: random() * Math.PI * 2,
     moteCount,
     motes,
-    trailDensity: 64 + Math.floor(random() * 45),
-    bassSensitivity: 0.82 + random() * 0.3,
-    midSensitivity: 0.86 + random() * 0.28,
-    trebleSensitivity: 0.84 + random() * 0.34,
-    rmsSensitivity: 0.22 + random() * 0.07,
-    rhythmSensitivity: 0.86 + random() * 0.3,
-    idleBreathRate: 0.62 + random() * 0.2,
-    idleBreathDepth: 0.018 + random() * 0.012,
+    trailDensity: 88,
+    bassSensitivity: 1.02,
+    midSensitivity: 1.08,
+    trebleSensitivity: 1.06,
+    rhythmSensitivity: 1.04,
     breathPhase: random() * Math.PI * 2,
     veilDelay: 0.04 + random() * 0.04,
     ribbonDelay: 0.07 + random() * 0.06,
     moteDelay: 0.1 + random() * 0.06,
-    glowIntensity: 0.74 + random() * 0.2,
-    wanderSpeed: 0.14 + random() * 0.16,
-    wanderPhase: random() * Math.PI * 2,
-    turningTendency: 0.28 + random() * 0.36,
-    escapeCommitment: 1.1 + random() * 0.7,
-    repulsorCommitment: 0.72 + random() * 0.5,
-    escapePhase: random() * Math.PI * 2,
-    onsetSensitivity: 0.86 + random() * 0.3,
-    avoidanceSensitivity: 0.88 + random() * 0.36,
-    spawnX: (random() - 0.5) * 0.42,
-    spawnY: (random() - 0.5) * 0.32,
-    primaryHue: palette.primary,
-    secondaryHue: palette.secondary,
-    highlightHue: palette.highlight,
-    highlightColor: palette.highlight,
+    glowIntensity: 0.86,
+    wanderSpeed: 0.2,
+    wanderPhase: 2.34,
+    turningTendency: 0.42,
+    escapeCommitment: 1.45,
+    repulsorCommitment: 0.9,
+    escapePhase: 1.7,
+    onsetSensitivity: 1.02,
+    avoidanceSensitivity: 1.04,
+    spawnX: 0,
+    spawnY: 0,
+    primaryHue: 0x6ee7ff,
+    secondaryHue: 0xa48bff,
+    highlightHue: 0xffcf86,
+    highlightColor: 0xffb968,
   };
 }
 
