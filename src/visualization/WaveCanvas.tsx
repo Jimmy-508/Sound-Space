@@ -38,6 +38,7 @@ const wakeRibbonCount = 2;
 const wakePointCount = 26;
 const moteLimit = 36;
 const particleCount = 220;
+const heartLobeDelays = new Float32Array([0.026, 0.05, 0.072, 0.038, 0]);
 const silentSpectrumData = new Uint8Array(512);
 
 export function WaveCanvas({
@@ -499,13 +500,18 @@ export function WaveCanvas({
       const beatDistance = Math.abs(beatSignal - beatBaseline);
       beatDeviation += (beatDistance - beatDeviation) * (1 - Math.exp(-deltaTime * 1.8));
       const beatThreshold = beatBaseline + Math.max(0.018, beatDeviation * 1.55);
-      const weakBeatThreshold = beatBaseline + Math.max(0.008, beatDeviation * 0.72);
+      const weakBeatThreshold = beatBaseline + Math.max(0.006, beatDeviation * 0.58);
       const beatRise = beatSignal - previousBeatSignal;
       const bassRise = bassEnergy - previousBassEnergy;
       const transientScore = Math.min(1, relativeRise * 2.6 + spectralFlux * automaticGain * 3.2 + variancePulse * 0.12);
       const timeSinceBeat = rhythmClock - lastMainBeatAt;
       const timingError = expectedBeatInterval > 0 ? Math.abs(timeSinceBeat - expectedBeatInterval) / expectedBeatInterval : 1;
-      const timingConfidence = acceptedBeatCount >= 2 ? 1 - smoothstep(0.12, 0.22, timingError) : 0;
+      const subdivisionError = expectedBeatInterval > 0
+        ? Math.abs(timeSinceBeat - expectedBeatInterval * 0.5) / Math.max(0.16, expectedBeatInterval * 0.5)
+        : 1;
+      const timingConfidence = acceptedBeatCount >= 2
+        ? Math.max(1 - smoothstep(0.13, 0.26, timingError), 1 - smoothstep(0.14, 0.3, subdivisionError))
+        : 0;
       const localRiseEvidence = Math.min(1, Math.max(0, beatRise) / Math.max(0.006, beatDeviation * 0.42));
       const bassRiseEvidence = Math.min(1, Math.max(0, bassRise) / Math.max(0.008, beatDeviation * 0.55));
       const audioEvidence = Math.min(1, transientScore * 0.56 + localRiseEvidence * 0.25 + bassRiseEvidence * 0.19);
@@ -517,16 +523,16 @@ export function WaveCanvas({
       const weakBeatCandidate = playing
         && musicAwake > 0.12
         && expectedBeatInterval > 0
-        && timeSinceBeat > Math.max(0.22, expectedBeatInterval * 0.62)
+        && timeSinceBeat > Math.max(0.2, expectedBeatInterval * 0.38)
         && timingConfidence > 0
         && beatSignal > weakBeatThreshold
-        && audioEvidence > 0.16;
+        && audioEvidence > 0.11;
       if (strongBeatCandidate || weakBeatCandidate) {
         const baselineStrength = (beatSignal - beatThreshold) / Math.max(0.025, beatDeviation * 2.1);
         const beatConfidence = Math.min(1, audioEvidence * 0.72 + timingConfidence * 0.28);
         const detectedStrength = strongBeatCandidate
           ? Math.min(1, Math.max(0.48, baselineStrength, transientScore * 1.4))
-          : Math.min(0.68, Math.max(0.28, 0.24 + beatConfidence * 0.42));
+          : Math.min(0.7, Math.max(0.3, 0.25 + beatConfidence * 0.46));
         if (lastMainBeatAt > 0 && timeSinceBeat >= 0.24 && timeSinceBeat <= 1.6) {
           recentBeatIntervals[acceptedBeatCursor] = timeSinceBeat;
           acceptedBeatCursor = (acceptedBeatCursor + 1) % recentBeatIntervals.length;
@@ -550,9 +556,9 @@ export function WaveCanvas({
       rhythmPulse *= Math.exp(-deltaTime * 13.5);
       accentPulse *= Math.exp(-deltaTime * 7.5);
       const grooveTarget = playing
-        ? Math.min(1, musicEnergy * 0.5 + onsetPulse * 0.22 + rhythmImpulse * 0.2 + accentPulse * 0.18)
+        ? Math.min(1, musicEnergy * 0.38 + onsetPulse * 0.18 + rhythmImpulse * 0.18 + accentPulse * 0.34)
         : 0;
-      grooveEnergy += (grooveTarget - grooveEnergy) * (1 - Math.exp(-deltaTime * (grooveTarget > grooveEnergy ? 3.2 : 0.8)));
+      grooveEnergy += (grooveTarget - grooveEnergy) * (1 - Math.exp(-deltaTime * (grooveTarget > grooveEnergy ? 5.2 : 1.35)));
       contractionPulse *= Math.exp(-deltaTime * 15);
       veilPulse *= Math.exp(-deltaTime * 4.6);
       ribbonPulse *= Math.exp(-deltaTime * 5.2);
@@ -729,12 +735,20 @@ export function WaveCanvas({
       const speed = Math.hypot(creatureVelocityX, creatureVelocityY);
       const movementHeading = speed > 0.002 ? Math.atan2(creatureVelocityY, creatureVelocityX) : creatureHeading;
       const turnDelta = Math.atan2(Math.sin(movementHeading - creatureGenome.orientation), Math.cos(movementHeading - creatureGenome.orientation));
-      const vitality = 0.16 + musicAwake * (0.12 + musicEnergy * 0.22 + grooveEnergy * 0.28) + accentPulse * 0.12;
+      const beatAge = rhythmClock - lastMainBeatAt;
+      const heartRelease = expectedBeatInterval > 0
+        ? THREE.MathUtils.clamp(expectedBeatInterval * 0.48, 0.19, 0.31)
+        : 0.3;
+      const rootBeatPulse = sampleHeartEnvelope(beatAge - 0.045, heartRelease * 0.8) * rhythmStrength;
+      const veinBeatPulse = sampleHeartEnvelope(beatAge - 0.09, heartRelease * 0.86) * rhythmStrength;
+      const rimBeatPulse = sampleHeartEnvelope(beatAge - 0.145, heartRelease * 0.75) * rhythmStrength;
+      const funnelBeatPulse = sampleHeartEnvelope(beatAge - 0.075, heartRelease) * rhythmStrength;
+      const vitality = 0.16 + musicAwake * (0.09 + musicEnergy * 0.18 + grooveEnergy * 0.32) + accentPulse * 0.16;
       const strokeRate = Math.min(0.42, 0.13 + musicAwake * (0.06 + grooveEnergy * 0.18 + musicEnergy * 0.06));
       const strokePower = 0.16 + musicAwake * (0.2 + grooveEnergy * 0.34 + bassEnergy * 0.18) + accentPulse * 0.08;
-      const membraneTension = 0.28 + midEnergy * 0.28 + grooveEnergy * 0.24 + rhythmPulse * rhythmStrength * 0.08;
-      const energyFlow = 0.18 + musicAwake * (0.12 + musicEnergy * 0.26 + grooveEnergy * 0.22) + accentPulse * 0.12;
-      const rimActivity = 0.15 + musicAwake * (0.08 + trebleEnergy * 0.28 + grooveEnergy * 0.18) + accentPulse * 0.1;
+      const membraneTension = 0.28 + midEnergy * 0.2 + grooveEnergy * 0.22 + rootBeatPulse * 0.18;
+      const energyFlow = 0.18 + musicAwake * (0.08 + musicEnergy * 0.2 + grooveEnergy * 0.24) + veinBeatPulse * 0.22;
+      const rimActivity = 0.15 + musicAwake * (0.06 + trebleEnergy * 0.2 + grooveEnergy * 0.18) + rimBeatPulse * 0.28;
       const debugPhase = spiritDebug === 'power' || spiritDebug === 'funnel-power'
         ? 0.54
         : spiritDebug === 'glide' || spiritDebug === 'funnel-glide' ? 0.76 : 0.1;
@@ -782,6 +796,15 @@ export function WaveCanvas({
         bodyFollowVelocity[bodyZone] *= Math.exp(-damping * deltaTime);
         bodyFollowState[bodyZone] += bodyFollowVelocity[bodyZone] * deltaTime;
       }
+      const bodySoftness = THREE.MathUtils.clamp(
+        (Math.abs(bodyFollowVelocity[0]) * 0.34
+          + Math.abs(bodyFollowVelocity[1]) * 0.48
+          + Math.abs(bodyFollowVelocity[2]) * 0.62
+          + Math.abs(bodyFollowVelocity[3]) * 0.74
+          + Math.abs(turnDelta) * speed * 1.8) * motionScale,
+        0,
+        0.11,
+      );
       let bodyFollow = bodyFollowState[0];
       let midFollow = bodyFollowState[1];
       let lowerFollow = bodyFollowState[2] * 0.94;
@@ -806,10 +829,6 @@ export function WaveCanvas({
           ? 0.72
           : spiritDebug ? 0.47 : 0.37;
       unifiedSpirit.scale.set(debugScale * viewportAspect * scale, debugScale * scale, 1);
-      const beatAge = rhythmClock - lastMainBeatAt;
-      const heartRelease = expectedBeatInterval > 0
-        ? THREE.MathUtils.clamp(expectedBeatInterval * 0.52, 0.2, 0.33)
-        : 0.33;
       spiritRig.surfaces.forEach(({ mesh, finalMaterial, geometryMaterial }) => {
         mesh.material = previewPass === 'A' ? geometryMaterial : finalMaterial;
         const kind = finalMaterial.uniforms.uKind.value as number;
@@ -817,7 +836,7 @@ export function WaveCanvas({
       });
       spiritRig.finalMaterials.forEach((material) => {
         material.uniforms.uTime.value = time;
-        material.uniforms.uLife.value = previewPass === 'B' ? 0 : lifeEnergy;
+        material.uniforms.uLife.value = previewPass === 'B' || spiritLayer === 'body' ? 0 : lifeEnergy;
         material.uniforms.uMusicAwake.value = previewPass === 'B' ? 0 : musicAwake;
         material.uniforms.uBass.value = bassEnergy;
         material.uniforms.uMid.value = midEnergy;
@@ -826,14 +845,19 @@ export function WaveCanvas({
         material.uniforms.uMidFollow.value = midFollow;
         material.uniforms.uLowerFollow.value = lowerFollow;
         material.uniforms.uTerminalFollow.value = terminalFollow;
+        material.uniforms.uBodySoftness.value = bodySoftness;
         material.uniforms.uMembraneTension.value = membraneTension;
         material.uniforms.uEnergyFlow.value = energyFlow;
         material.uniforms.uRimActivity.value = rimActivity;
         material.uniforms.uCycle.value = cycle;
         material.uniforms.uHeartBeat.value = 0;
         material.uniforms.uBeatAge.value = beatAge;
-        material.uniforms.uBeatStrength.value = rhythmStrength;
-        material.uniforms.uRhythmPulse.value = rhythmPulse * rhythmStrength;
+        material.uniforms.uBeatStrength.value = spiritLayer === 'body' ? 0 : rhythmStrength;
+        material.uniforms.uRhythmPulse.value = spiritLayer === 'body' ? 0 : rhythmPulse * rhythmStrength;
+        material.uniforms.uRootPulse.value = spiritLayer === 'body' ? 0 : rootBeatPulse;
+        material.uniforms.uVeinPulse.value = spiritLayer === 'body' ? 0 : veinBeatPulse;
+        material.uniforms.uRimPulse.value = spiritLayer === 'body' ? 0 : rimBeatPulse;
+        material.uniforms.uFunnelPulse.value = spiritLayer === 'body' ? 0 : funnelBeatPulse;
       });
       const wingMotion = previewPass || spiritDebug === 'neutral' || spiritDebug === 'closeup' ? 0 : 1;
       spiritRig.leftWing.userData.materials.forEach((material: THREE.ShaderMaterial) => {
@@ -845,26 +869,25 @@ export function WaveCanvas({
         material.uniforms.uWingB.value.set(wingSpring[1][3], wingSpring[1][4]).multiplyScalar(wingMotion);
       });
 
-      const lobeDelays = [0.026, 0.05, 0.072, 0.038, 0];
       spiritRig.heartLobes.forEach((lobe, index) => {
         const idlePhase = (time * 0.34 + index * 0.075) % 1;
-        const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.09, 2)) * 0.16;
-        const lobeAge = beatAge - lobeDelays[index];
+        const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.09, 2)) * 0.055;
+        const lobeAge = beatAge - heartLobeDelays[index];
         const audioBeat = sampleHeartEnvelope(lobeAge, heartRelease) * rhythmStrength;
-        const rebound = sampleHeartEnvelope(lobeAge - 0.085, heartRelease * 0.72) * rhythmStrength;
+        const rebound = sampleHeartEnvelope(lobeAge - 0.1, heartRelease * 0.64) * rhythmStrength;
         const visibleBeat = THREE.MathUtils.lerp(idleBeat, audioBeat, musicAwake);
-        const beat = 1 - visibleBeat * 0.15 + rebound * musicAwake * 0.09;
+        const beat = 1 - visibleBeat * 0.22 + rebound * musicAwake * 0.13;
         lobe.scale.copy(lobe.userData.baseScale).multiplyScalar(beat);
         lobe.rotation.z = Math.sin(time * 0.2 + index * 1.31) * 0.038;
         (lobe.material as THREE.ShaderMaterial).uniforms.uHeartBeat.value = visibleBeat;
       });
       spiritRig.energyMaterials.forEach((material, index) => {
-        const propagation = sampleHeartEnvelope(beatAge - 0.11 - index * 0.085, heartRelease) * rhythmStrength;
+        const propagation = sampleHeartEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * rhythmStrength;
         material.opacity = spiritLayer !== null
           ? 0
           : previewPass === 'A'
           ? 0.58
-          : 0.11 + lifeEnergy * 0.06 + propagation * 0.34 + rhythmImpulse * 0.025;
+          : 0.075 + lifeEnergy * 0.035 + propagation * 0.52 + rhythmImpulse * 0.015;
       });
 
       const funnelTipX = (spiritDebug ? 0 : creatureX) + terminalFollow * debugScale * scale * viewportAspect;
@@ -1493,6 +1516,9 @@ function createMasterBodyGeometry(compact: boolean) {
   const rows = compact ? 48 : 84;
   const columns = compact ? 28 : 48;
   const positions = new Float32Array(rows * columns * 3);
+  const bodyCoordinates = new Float32Array(rows * columns * 2);
+  const bodyCenters = new Float32Array(rows * columns * 3);
+  const bodyRadii = new Float32Array(rows * columns * 2);
   for (let row = 0; row < rows; row += 1) {
     const progress = row / (rows - 1);
     const profileProgress = progress * (bodyProfile.length - 1);
@@ -1514,9 +1540,19 @@ function createMasterBodyGeometry(compact: boolean) {
       positions[offset] = centerX + Math.cos(angle) * radiusX + asymmetry;
       positions[offset + 1] = vertical + crown;
       positions[offset + 2] = centerDepth + Math.sin(angle) * radiusDepth;
+      bodyCoordinates[(row * columns + column) * 2] = progress;
+      bodyCoordinates[(row * columns + column) * 2 + 1] = angle;
+      bodyCenters[offset] = centerX;
+      bodyCenters[offset + 1] = vertical;
+      bodyCenters[offset + 2] = centerDepth;
+      bodyRadii[(row * columns + column) * 2] = radiusX;
+      bodyRadii[(row * columns + column) * 2 + 1] = radiusDepth;
     }
   }
   const geometry = dynamicSurfaceGeometry(positions, rows, columns);
+  geometry.setAttribute('bodyCoord', new THREE.BufferAttribute(bodyCoordinates, 2));
+  geometry.setAttribute('bodyCenter', new THREE.BufferAttribute(bodyCenters, 3));
+  geometry.setAttribute('bodyRadius', new THREE.BufferAttribute(bodyRadii, 2));
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -1721,10 +1757,15 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uMidFollow: { value: 0 },
       uLowerFollow: { value: 0 },
       uTerminalFollow: { value: 0 },
+      uBodySoftness: { value: 0 },
       uHeartBeat: { value: 0 },
       uBeatAge: { value: 10 },
       uBeatStrength: { value: 0 },
       uRhythmPulse: { value: 0 },
+      uRootPulse: { value: 0 },
+      uVeinPulse: { value: 0 },
+      uRimPulse: { value: 0 },
+      uFunnelPulse: { value: 0 },
       uWingA: { value: new THREE.Vector3() },
       uWingB: { value: new THREE.Vector2() },
       uWingSide: { value: 0 },
@@ -1738,10 +1779,14 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       attribute vec3 restPosition;
       attribute vec2 wingCoord;
       attribute float wingMask;
+      attribute vec2 bodyCoord;
+      attribute vec3 bodyCenter;
+      attribute vec2 bodyRadius;
       uniform float uBodyFollow;
       uniform float uMidFollow;
       uniform float uLowerFollow;
       uniform float uTerminalFollow;
+      uniform float uBodySoftness;
       uniform float uRhythmPulse;
       uniform float uKind;
       uniform float uTime;
@@ -1758,6 +1803,24 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       varying float vSpan;
       varying float vChord;
       varying float vWingMask;
+      varying float vBodyStrain;
+      float bodySpine(float progress) {
+        float t = clamp(progress, 0.0, 1.0);
+        float segment = min(2.0, floor(t * 3.0));
+        float localT = t * 3.0 - segment;
+        float p0 = segment < 0.5 ? uBodyFollow : segment < 1.5 ? uMidFollow : uLowerFollow;
+        float p1 = segment < 0.5 ? uMidFollow : segment < 1.5 ? uLowerFollow : uTerminalFollow;
+        float before = segment < 0.5 ? uBodyFollow : segment < 1.5 ? uBodyFollow : uMidFollow;
+        float after = segment < 0.5 ? uLowerFollow : segment < 1.5 ? uTerminalFollow : uTerminalFollow;
+        float m0 = (p1 - before) * 0.5;
+        float m1 = (after - p0) * 0.5;
+        float t2 = localT * localT;
+        float t3 = t2 * localT;
+        return (2.0 * t3 - 3.0 * t2 + 1.0) * p0
+          + (t3 - 2.0 * t2 + localT) * m0
+          + (-2.0 * t3 + 3.0 * t2) * p1
+          + (t3 - t2) * m1;
+      }
       float zoneStroke(float span) {
         if (span < 0.25) return mix(uWingA.x, uWingA.y, span * 4.0);
         if (span < 0.5) return mix(uWingA.y, uWingA.z, (span - 0.25) * 4.0);
@@ -1769,24 +1832,40 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float wingSurface = step(0.5, uKind) * (1.0 - step(2.5, uKind))
           + step(3.5, uKind) * (1.0 - step(7.5, uKind));
         if (uKind < 0.5) {
-          float funnelT = clamp((0.5 - position.y) / 1.24, 0.0, 1.0);
-          float centerline = uBodyFollow;
-          if (funnelT < 0.3333) {
-            centerline = mix(uBodyFollow, uMidFollow, smoothstep(0.0, 0.3333, funnelT));
-          } else if (funnelT < 0.6667) {
-            centerline = mix(uMidFollow, uLowerFollow, smoothstep(0.3333, 0.6667, funnelT));
-          } else {
-            centerline = mix(uLowerFollow, uTerminalFollow, smoothstep(0.6667, 1.0, funnelT));
-          }
+          float funnelT = bodyCoord.x;
           float funnelMask = smoothstep(0.02, 0.16, funnelT);
-          float curvature = (uMidFollow - uBodyFollow) * sin(funnelT * 3.14159)
-            + (uTerminalFollow - uLowerFollow) * smoothstep(0.58, 1.0, funnelT);
-          centerline += curvature * (1.15 + funnelT * 0.65);
-          transformed.x += centerline * funnelMask * (0.58 + funnelT * 0.72);
-          transformed.z += curvature * funnelMask * (0.18 + funnelT * 0.34);
-          float tissueContraction = uRhythmPulse * funnelMask * (0.008 + funnelT * 0.012);
-          transformed.x -= position.x * tissueContraction;
-          transformed.z -= position.z * tissueContraction * 0.7;
+          float sampleStep = 0.018;
+          float spine = bodySpine(funnelT);
+          float spineBefore = bodySpine(max(0.0, funnelT - sampleStep));
+          float spineAfter = bodySpine(min(1.0, funnelT + sampleStep));
+          float slope = (spineAfter - spineBefore) / (sampleStep * 2.0);
+          float curvature = (spineAfter - 2.0 * spine + spineBefore) / (sampleStep * sampleStep);
+          float slopeY = -1.24;
+          vec2 tangent = normalize(vec2(slope, slopeY));
+          vec2 crossNormal = vec2(-tangent.y, tangent.x);
+          float localX = position.x - bodyCenter.x;
+          float localY = position.y - bodyCenter.y;
+          float localZ = position.z - bodyCenter.z;
+          float side = localX / max(0.012, bodyRadius.x);
+          float bendStrain = clamp(curvature * side * 0.018, -0.075, 0.075);
+          float pathStretch = sqrt(1.0 + pow(slope / 1.24, 2.0));
+          float volumeCompensation = pow(pathStretch, -0.34);
+          float softWave = sin(funnelT * 7.1 - uTime * 1.12) * uBodySoftness
+            * smoothstep(0.12, 0.92, funnelT) * (1.0 - smoothstep(0.9, 1.0, funnelT));
+          float longitudinalCompression = clamp(-curvature * spine * 0.65 + softWave * 0.3, -0.045, 0.045);
+          float crossScale = volumeCompensation * (1.0 + bendStrain - longitudinalCompression * 0.42);
+          float depthScale = volumeCompensation * (1.0 - bendStrain * 0.34 - longitudinalCompression * 0.32);
+          float tissueContraction = uRhythmPulse * funnelMask * (0.006 + funnelT * 0.009);
+          crossScale *= 1.0 - tissueContraction;
+          depthScale *= 1.0 - tissueContraction * 0.72;
+          float spineOffset = spine * funnelMask * (0.66 + funnelT * 0.78) + softWave * (0.18 + funnelT * 0.24);
+          vec2 rebuilt = vec2(bodyCenter.x + spineOffset, bodyCenter.y)
+            + crossNormal * localX * crossScale
+            + tangent * localY;
+          transformed.x = rebuilt.x;
+          transformed.y = rebuilt.y;
+          transformed.z = bodyCenter.z + localZ * depthScale + curvature * funnelMask * (0.0025 + funnelT * 0.0045);
+          vBodyStrain = abs(bendStrain) + abs(longitudinalCompression) + uBodySoftness * 0.08;
         }
         if (wingSurface > 0.5) {
           transformed = restPosition;
@@ -1808,10 +1887,12 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
           vSpan = span;
           vChord = chord;
           vWingMask = wingMask;
+          vBodyStrain = 0.0;
         } else {
           vSpan = 0.0;
           vChord = 0.0;
           vWingMask = 1.0;
+          if (uKind >= 0.5) vBodyStrain = 0.0;
         }
         vLocal = transformed;
         vNormalView = normalize(normalMatrix * normal);
@@ -1836,12 +1917,17 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uniform float uEnergyFlow;
       uniform float uRimActivity;
       uniform float uCycle;
+      uniform float uRootPulse;
+      uniform float uVeinPulse;
+      uniform float uRimPulse;
+      uniform float uFunnelPulse;
       varying vec3 vLocal;
       varying vec3 vNormalView;
       varying vec3 vViewPosition;
       varying float vSpan;
       varying float vChord;
       varying float vWingMask;
+      varying float vBodyStrain;
       void main() {
         vec3 viewDirection = normalize(-vViewPosition);
         float fresnel = pow(1.0 - abs(dot(normalize(vNormalView), viewDirection)), 1.55);
@@ -1856,7 +1942,7 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float depthGlow = exp(-abs(vLocal.z) * (heart > 0.5 ? 8.0 : 4.0));
         float funnelProgress = clamp((0.5 - vLocal.y) / 1.24, 0.0, 1.0);
         float funnelTravel = exp(-pow(funnelProgress - (uBeatAge - 0.08) * 1.75, 2.0) / 0.018)
-          * uBeatStrength * step(uBeatAge, 0.78) * (1.0 - step(0.5, uKind));
+          * uFunnelPulse * step(funnelProgress, 0.24 + uBeatStrength * 0.76) * (1.0 - step(0.5, uKind));
         vec3 pearl = vec3(0.78, 0.97, 1.0);
         vec3 cyan = vec3(0.22, 0.78, 1.0);
         vec3 blue = vec3(0.2, 0.42, 1.0);
@@ -1870,23 +1956,24 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         wingPalette = mix(wingPalette, mix(cyan, violet, fresnel), iridescence * (0.18 + uTreble * 0.2));
         float energyPulse = 0.5 + 0.5 * sin(vSpan * 12.0 - uTime * (1.1 + uEnergyFlow * 2.2) - uCycle * 6.28318);
         float wingTravel = exp(-pow(vSpan - (uBeatAge - 0.1) * 1.85, 2.0) / 0.022)
-          * uBeatStrength * step(uBeatAge, 0.82) * wing;
-        float warmRoot = (1.0 - smoothstep(0.02, 0.24, vSpan)) * energyPulse * uEnergyFlow;
+          * uVeinPulse * step(vSpan, 0.3 + uBeatStrength * 0.7) * wing;
+        float warmRoot = (1.0 - smoothstep(0.02, 0.24, vSpan)) * (energyPulse * uEnergyFlow + uRootPulse * 0.62);
         float localRimActivity = rim * (0.22 + uRimActivity * (0.28 + 0.72 * energyPulse))
-          * (0.56 + 0.44 * sin(vChord * 5.3 + vSpan * 8.0 + uTime * 0.72));
+          * (0.56 + 0.44 * sin(vChord * 5.3 + vSpan * 8.0 + uTime * 0.72)) + rim * uRimPulse * 0.5;
         float membraneLight = (1.0 - clamp(vein + rim, 0.0, 1.0)) * (0.64 + fresnel * 0.72 + spectral * 0.18);
         vec3 coolLight = wingPalette * wing * (membraneLight + vein * (0.12 + energyPulse * uEnergyFlow * 0.3) + localRimActivity);
-        vec3 warmLight = vec3(1.0, 0.5, 0.22) * heart * (0.16 + uBass * 0.08 + uHeartBeat * 1.18);
-        vec3 finalColor = uColor * (0.65 + depthGlow * 0.28 + uLife * 0.1) + coolLight + warmLight;
-        finalColor += vec3(1.0, 0.82, 0.5) * heart * uHeartBeat * 0.5;
-        finalColor += vec3(0.34, 0.88, 1.0) * funnelTravel * 0.72;
-        finalColor += mix(vec3(0.25, 0.8, 1.0), vec3(0.72, 0.46, 1.0), vSpan) * wingTravel * 0.58;
+        vec3 warmLight = vec3(1.0, 0.5, 0.22) * heart * (0.09 + uBass * 0.03 + uHeartBeat * 1.48);
+        vec3 finalColor = uColor * (0.65 + depthGlow * 0.28 + uLife * 0.1 + vBodyStrain * 0.8) + coolLight + warmLight;
+        finalColor += vec3(1.0, 0.82, 0.5) * heart * uHeartBeat * 0.72;
+        finalColor += vec3(0.24, 0.76, 0.92) * vBodyStrain * (0.35 + fresnel * 0.9);
+        finalColor += vec3(0.34, 0.88, 1.0) * funnelTravel * 0.94;
+        finalColor += mix(vec3(0.25, 0.8, 1.0), vec3(0.72, 0.46, 1.0), vSpan) * wingTravel * 0.82;
         finalColor += vec3(1.0, 0.7, 0.32) * warmRoot * (vein + rootBlend + spectral * 0.35);
         finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.06 + localRimActivity * 0.14);
         float detailAlpha = 1.0 + spectral * 0.12 + vein * (energyPulse * uEnergyFlow * 0.42) + localRimActivity * 0.32;
         float featheredMask = mix(1.0, vWingMask, clamp(wing + spectral + rootBlend, 0.0, 1.0));
         float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
-        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + heart * (0.22 + uHeartBeat * 0.34) + membraneDepth + uMid * wing * 0.06);
+        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vBodyStrain * 0.36 + funnelTravel * 0.5 + wingTravel * 0.34 + rootBlend * uRootPulse * 0.22 + heart * (0.12 + uHeartBeat * 0.48) + membraneDepth + uMid * wing * 0.06);
         if (alpha < 0.008) discard;
         gl_FragColor = vec4(finalColor, alpha);
       }
