@@ -11,6 +11,7 @@ import type { LabId, PointerPoint } from './types';
 import { StarfieldBackground } from './visualization/StarfieldBackground';
 import { VisualImpulseLayer, type VisualImpulseHandle } from './visualization/VisualImpulseLayer';
 import { WaveCanvas } from './visualization/WaveCanvas';
+import { HomeMusicTitles } from './components/HomeMusicTitles';
 
 const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: string; icon: React.ReactNode }> = [
   { id: 'wave', title: '聲波實驗室', description: '動手改變聲音的響度與音調', icon: <Waves size={22} /> },
@@ -135,8 +136,7 @@ export default function App() {
           />
           <VisualImpulseLayer ref={visualImpulseRef} />
           <div className="home-content">
-            <p className="eyebrow">聲音數位化互動實驗室</p>
-            <h1>Sound Space</h1>
+            <HomeMusicTitles playing={musicController.playing} visualStateRef={musicController.visualStateRef} />
           </div>
         </section>
       )}

@@ -213,6 +213,102 @@ h1 {
   text-shadow: 0 0 34px rgba(103, 217, 255, 0.36);
 }
 
+.home-title-neon {
+  --neon-awake: 0;
+  --music-energy: 0;
+  --bass-energy: 0;
+  --mid-energy: 0;
+  --treble-energy: 0;
+  --cn-beat: 0;
+  --en-beat: 0;
+  --club-flicker: 0;
+  --neon-hue: 198;
+  --en-hue: 206;
+  --accent-hue: 292;
+  position: relative;
+  isolation: isolate;
+}
+
+.music-neon-title {
+  position: relative;
+  transform-origin: center;
+  will-change: transform, filter, text-shadow;
+}
+
+.music-neon-title::before,
+.music-neon-title::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  color: transparent;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.home-title-neon[data-neon-awake="true"] .music-neon-title::before,
+.home-title-neon[data-neon-awake="true"] .music-neon-title::after {
+  opacity: var(--neon-awake);
+}
+
+.home-title-neon[data-neon-awake="true"] .music-neon-title-cn {
+  color: hsl(var(--neon-hue) 100% var(--cn-lightness));
+  filter: brightness(var(--cn-brightness));
+  transform: scale(var(--cn-scale));
+  text-shadow:
+    var(--cn-split-negative) 0 0 hsl(188 100% 65% / var(--cn-split-cyan-alpha)),
+    var(--cn-split-positive) 0 0 hsl(315 100% 68% / var(--cn-split-magenta-alpha)),
+    0 0 var(--cn-core-glow) hsl(var(--neon-hue) 100% 78% / 0.92),
+    0 0 var(--cn-near-glow) hsl(var(--neon-hue) 100% 57% / 0.78),
+    0 0 var(--cn-outer-glow) hsl(var(--accent-hue) 100% 60% / 0.56);
+}
+
+.home-title-neon[data-neon-awake="true"] .music-neon-title-cn::before {
+  filter: blur(var(--cn-layer-blur));
+  text-shadow: 0 0 var(--cn-layer-glow) hsl(var(--neon-hue) 100% 68% / 0.96);
+  transform: scale(var(--cn-near-scale));
+}
+
+.home-title-neon[data-neon-awake="true"] .music-neon-title-cn::after {
+  filter: blur(var(--cn-bloom-blur));
+  text-shadow: 0 0 var(--cn-bloom-glow) hsl(var(--accent-hue) 100% 60% / 0.82);
+  transform: scale(var(--cn-bloom-scale));
+}
+
+.home-title-neon[data-neon-awake="true"] .music-neon-title-en {
+  color: hsl(var(--en-hue) 100% var(--en-lightness));
+  filter: brightness(var(--en-brightness));
+  transform: scale(var(--en-scale));
+  text-shadow:
+    var(--en-split-negative) 0 0 hsl(186 100% 66% / 0.92),
+    var(--en-split-positive) 0 0 hsl(317 100% 67% / 0.84),
+    0 0 var(--en-core-glow) hsl(var(--neon-hue) 100% 78% / 0.9),
+    0 0 var(--en-near-glow) hsl(var(--accent-hue) 100% 63% / 0.72),
+    0 0 var(--en-outer-glow) hsl(var(--neon-hue) 100% 55% / 0.48);
+}
+
+.home-title-neon[data-neon-awake="true"] .music-neon-title-en::before {
+  filter: blur(var(--en-layer-blur));
+  text-shadow:
+    var(--en-split-negative) 0 var(--en-layer-cyan-glow) hsl(186 100% 62% / 0.9),
+    var(--en-split-positive) 0 var(--en-layer-magenta-glow) hsl(317 100% 64% / 0.82);
+  transform: scale(var(--en-near-scale));
+}
+
+.home-title-neon[data-neon-awake="true"] .music-neon-title-en::after {
+  filter: blur(var(--en-bloom-blur));
+  text-shadow: 0 0 var(--en-bloom-glow) hsl(var(--accent-hue) 100% 61% / 0.78);
+  transform: scale(var(--en-bloom-scale));
+}
+
+.music-neon-title-cn {
+  transition: color 420ms ease, filter 520ms ease, text-shadow 620ms ease, transform 160ms ease-out;
+}
+
+.music-neon-title-en {
+  transition: color 460ms ease, filter 540ms ease, text-shadow 680ms ease, transform 170ms ease-out;
+}
+
 .home-content > p:not(.eyebrow) {
   max-width: 620px;
   margin: 1.2rem auto 0;
@@ -691,6 +787,27 @@ input.timeline-slider::-moz-range-thumb {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .home-title-neon[data-neon-awake="true"] .music-neon-title-cn,
+  .home-title-neon[data-neon-awake="true"] .music-neon-title-en,
+  .home-title-neon[data-neon-awake="true"] .music-neon-title::before,
+  .home-title-neon[data-neon-awake="true"] .music-neon-title::after {
+    transform: scale(1);
+  }
+
+  .home-title-neon[data-neon-awake="true"] .music-neon-title-cn {
+    text-shadow:
+      0 0 10px hsl(var(--neon-hue) 100% 78% / 0.9),
+      0 0 var(--reduced-cn-near) hsl(var(--neon-hue) 100% 57% / 0.72),
+      0 0 var(--reduced-cn-outer) hsl(var(--accent-hue) 100% 60% / 0.48);
+  }
+
+  .home-title-neon[data-neon-awake="true"] .music-neon-title-en {
+    text-shadow:
+      0 0 11px hsl(var(--neon-hue) 100% 78% / 0.88),
+      0 0 var(--reduced-en-near) hsl(var(--accent-hue) 100% 63% / 0.66),
+      0 0 var(--reduced-en-outer) hsl(var(--neon-hue) 100% 55% / 0.44);
+  }
+
   .data-core,
   .data-core::before,
   .data-core::after,
