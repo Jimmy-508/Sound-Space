@@ -54,8 +54,8 @@ const funnelPowerX = new Float32Array([0, -0.003, -0.009, -0.018, -0.026, -0.031
 const funnelPowerZ = new Float32Array([0, 0.001, 0.003, 0.005, 0.006, 0.007]);
 const funnelGlideX = new Float32Array([0, 0.002, 0.007, 0.015, 0.025, 0.034]);
 const funnelGlideZ = new Float32Array([0, -0.001, -0.002, -0.004, -0.006, -0.008]);
-const funnelCenterStiffness = new Float32Array([68, 60, 47, 38, 30, 23]);
-const funnelCenterDamping = new Float32Array([15.5, 16.5, 17.5, 18.5, 19.5, 20.5]);
+const funnelCenterStiffness = new Float32Array([68, 54, 42, 32, 24, 18]);
+const funnelCenterDamping = new Float32Array([15, 13.8, 12.4, 11.2, 10.2, 9.4]);
 
 export function WaveCanvas({
   amplitude,
@@ -349,6 +349,7 @@ export function WaveCanvas({
     let lastMainBeatAt = -10;
     let expectedBeatInterval = 0;
     let acceptedBeatCount = 0;
+    let acceptedBeatTotal = 0;
     let acceptedBeatCursor = 0;
     const recentBeatIntervals = new Float32Array(8);
     const beatIntervalScratch = new Float32Array(8);
@@ -396,6 +397,7 @@ export function WaveCanvas({
     const wingContactPulse = new Float32Array(2);
     const wingContactSpan = new Float32Array(2);
     let lastDebugTelemetryTick = -1;
+    let lastVisualTelemetryTick = -1;
     const wingSpring = [new Float32Array(5), new Float32Array(5)];
     const wingVelocity = [new Float32Array(5), new Float32Array(5)];
     const funnelRingCount = 6;
@@ -566,24 +568,22 @@ export function WaveCanvas({
       const transientScore = Math.min(1, relativeRise * 2.6 + spectralFlux * automaticGain * 3.2 + variancePulse * 0.12);
       const timeSinceBeat = rhythmClock - lastMainBeatAt;
       const timingError = expectedBeatInterval > 0 ? Math.abs(timeSinceBeat - expectedBeatInterval) / expectedBeatInterval : 1;
-      const subdivisionError = expectedBeatInterval > 0
-        ? Math.abs(timeSinceBeat - expectedBeatInterval * 0.5) / Math.max(0.16, expectedBeatInterval * 0.5)
-        : 1;
       const timingConfidence = acceptedBeatCount >= 2
-        ? Math.max(1 - smoothstep(0.13, 0.26, timingError), 1 - smoothstep(0.14, 0.3, subdivisionError))
+        ? 1 - smoothstep(0.16, 0.34, timingError)
         : 0;
       const localRiseEvidence = Math.min(1, Math.max(0, beatRise) / Math.max(0.006, beatDeviation * 0.42));
       const bassRiseEvidence = Math.min(1, Math.max(0, bassRise) / Math.max(0.008, beatDeviation * 0.55));
       const audioEvidence = Math.min(1, transientScore * 0.56 + localRiseEvidence * 0.25 + bassRiseEvidence * 0.19);
       const strongBeatCandidate = playing
         && musicAwake > 0.12
-        && timeSinceBeat > 0.24
+        && timeSinceBeat > 0.34
         && (beatSignal > beatThreshold || transientScore > 0.14)
-        && (beatRise > Math.max(0.003, beatDeviation * 0.12) || transientScore > 0.18);
+        && (beatRise > Math.max(0.004, beatDeviation * 0.18) || transientScore > 0.24)
+        && (acceptedBeatCount < 3 || timingError < 0.36 || transientScore > 0.34);
       const weakBeatCandidate = playing
         && musicAwake > 0.12
         && expectedBeatInterval > 0
-        && timeSinceBeat > Math.max(0.2, expectedBeatInterval * 0.38)
+        && timeSinceBeat > Math.max(0.32, expectedBeatInterval * 0.68)
         && timingConfidence > 0
         && beatSignal > weakBeatThreshold
         && audioEvidence > 0.11;
@@ -599,16 +599,17 @@ export function WaveCanvas({
           acceptedBeatCount = Math.min(recentBeatIntervals.length, acceptedBeatCount + 1);
           expectedBeatInterval = medianBeatInterval(recentBeatIntervals, acceptedBeatCount, beatIntervalScratch);
         }
-        rhythmStrength = detectedStrength;
+        rhythmStrength = 0.6 + detectedStrength * 0.58;
+        acceptedBeatTotal += 1;
         rhythmPulse = 1;
         accentPulse = Math.max(accentPulse, strongBeatCandidate ? detectedStrength : detectedStrength * 0.34);
         lastMainBeatAt = rhythmClock;
         contractionPulse = Math.max(contractionPulse, detectedStrength);
-        pendingVeilPulse = detectedStrength;
+        pendingVeilPulse = rhythmStrength;
         pendingVeilAt = rhythmClock + creatureGenome.veilDelay;
-        pendingRibbonPulse = detectedStrength;
+        pendingRibbonPulse = rhythmStrength;
         pendingRibbonAt = rhythmClock + creatureGenome.ribbonDelay;
-        pendingMotePulse = detectedStrength;
+        pendingMotePulse = rhythmStrength;
         pendingMoteAt = rhythmClock + creatureGenome.moteDelay;
       }
       previousBeatSignal = beatSignal;
@@ -655,18 +656,32 @@ export function WaveCanvas({
 
     const selectLifeState = (time: number, horizontalLimit: number, verticalLimit: number) => {
       const choice = nextLifeRandom();
-      lifeState = choice < 0.3 ? 'drift' : choice < 0.76 ? 'cruise' : 'glide';
-      const reach = lifeState === 'drift' ? 0.22 : lifeState === 'cruise' ? 0.68 : 0.42;
-      lifeTargetX = THREE.MathUtils.clamp(
-        creatureX + (nextLifeRandom() * 2 - 1) * horizontalLimit * reach,
-        -horizontalLimit * 0.88,
-        horizontalLimit * 0.88,
-      );
-      lifeTargetY = THREE.MathUtils.clamp(
-        creatureY + (nextLifeRandom() * 2 - 1) * verticalLimit * reach,
-        -verticalLimit * 0.84,
-        verticalLimit * 0.84,
-      );
+      lifeState = choice < 0.24 ? 'drift' : choice < 0.78 ? 'cruise' : 'glide';
+      const reach = lifeState === 'drift' ? 0.42 : lifeState === 'cruise' ? 0.92 : 0.68;
+      const minimumDistance = lifeState === 'drift' ? 0.14 : lifeState === 'cruise' ? 0.3 : 0.22;
+      let candidateX = creatureX;
+      let candidateY = creatureY;
+      let candidateDistance = 0;
+      for (let attempt = 0; attempt < 5 && candidateDistance < minimumDistance; attempt += 1) {
+        candidateX = THREE.MathUtils.clamp(
+          creatureX + (nextLifeRandom() * 2 - 1) * horizontalLimit * reach,
+          -horizontalLimit * 0.88,
+          horizontalLimit * 0.88,
+        );
+        candidateY = THREE.MathUtils.clamp(
+          creatureY + (nextLifeRandom() * 2 - 1) * verticalLimit * reach,
+          -verticalLimit * 0.84,
+          verticalLimit * 0.84,
+        );
+        candidateDistance = Math.hypot(candidateX - creatureX, candidateY - creatureY);
+      }
+      if (candidateDistance < minimumDistance) {
+        const angle = nextLifeRandom() * Math.PI * 2;
+        candidateX = THREE.MathUtils.clamp(creatureX + Math.cos(angle) * minimumDistance, -horizontalLimit * 0.88, horizontalLimit * 0.88);
+        candidateY = THREE.MathUtils.clamp(creatureY + Math.sin(angle) * minimumDistance, -verticalLimit * 0.84, verticalLimit * 0.84);
+      }
+      lifeTargetX = candidateX;
+      lifeTargetY = candidateY;
       const duration = lifeState === 'drift'
         ? 4.5 + nextLifeRandom() * 4.2
         : lifeState === 'cruise'
@@ -713,12 +728,12 @@ export function WaveCanvas({
       const targetDistance = Math.max(0.001, Math.hypot(targetDeltaX, targetDeltaY));
       const arrival = 0.22 + smoothstep(0.025, 0.42, targetDistance) * 0.78;
       const stateSpeed = lifeState === 'drift'
-        ? 0.014
+        ? 0.026
         : lifeState === 'cruise'
-          ? 0.038
+          ? 0.078
           : lifeState === 'glide'
-            ? 0.025
-            : lifeState === 'curious' ? 0.019 : 0.12;
+            ? 0.05
+            : lifeState === 'curious' ? 0.042 : 0.16;
       const musicMotion = current.musicPlaying ? overallEnergy * 0.032 + rhythmImpulse * 0.018 : 0;
       const desiredSpeed = (stateSpeed + musicMotion) * arrival * motionScale;
       let desiredVelocityX = targetDeltaX / targetDistance * desiredSpeed;
@@ -760,14 +775,7 @@ export function WaveCanvas({
         interactionX = repulsorX;
         interactionY = repulsorY;
 
-        if (!fastApproach && !directContact) {
-          curiousTarget = Math.max(curiousTarget, awareness);
-          if (awareness > 0.08) {
-            const approach = Math.max(0, distance - collisionRadius * 1.15);
-            lifeTargetX = repulsorX + awayX * Math.min(0.2, approach);
-            lifeTargetY = repulsorY + awayY * Math.min(0.16, approach);
-          }
-        }
+        curiousTarget = Math.max(curiousTarget, awareness);
 
         if (isNewRepulsorUpdate && directContact) {
           const spiritScale = 0.37 * scale;
@@ -792,15 +800,17 @@ export function WaveCanvas({
           }
         }
 
-        if (fastApproach) {
-          const force = Math.max(influence, awareness) * Math.max(0.5, repulsor.strength) * creatureGenome.avoidanceSensitivity;
+        const avoidance = Math.max(influence, awareness * (directContact ? 1.12 : fastApproach ? 0.92 : 0.56));
+        if (avoidance > 0) {
+          const responseStrength = directContact ? 1.45 : fastApproach ? 1.18 : 0.48;
+          const force = avoidance * Math.max(responseStrength, repulsor.strength) * creatureGenome.avoidanceSensitivity;
           repulsorAwayX += awayX * force;
           repulsorAwayY += awayY * force;
-          nearestThreat = Math.max(nearestThreat, Math.max(influence, awareness));
+          nearestThreat = Math.max(nearestThreat, avoidance);
         }
 
-        if (isNewRepulsorUpdate && fastApproach) {
-          const impulse = Math.max(influence, awareness) * (0.035 + Math.min(0.16, swipeSpeed * 0.045));
+        if (isNewRepulsorUpdate && (fastApproach || directContact)) {
+          const impulse = Math.max(influence, awareness) * (directContact ? 0.065 : 0.04 + Math.min(0.18, swipeSpeed * 0.05));
           const safeAwayX = awayX + inwardX * Math.max(horizontalEdge, verticalEdge) * 0.9;
           const safeAwayY = awayY + inwardY * Math.max(horizontalEdge, verticalEdge) * 0.9;
           const safeLength = Math.max(0.001, Math.hypot(safeAwayX, safeAwayY));
@@ -811,7 +821,7 @@ export function WaveCanvas({
           repulsorEscapeUntil = time + creatureGenome.repulsorCommitment;
           lifeState = 'startled';
           lifeStateUntil = repulsorEscapeUntil;
-          startlePulse = Math.max(startlePulse, Math.min(1, awareness * 0.62 + swipeSpeed * 0.24));
+          startlePulse = Math.max(startlePulse, Math.min(1, awareness * (directContact ? 0.82 : 0.64) + swipeSpeed * 0.26));
           lastRepulsorUpdate = repulsor.updatedAt ?? lastRepulsorUpdate;
         } else if (isNewRepulsorUpdate) {
           lastRepulsorUpdate = repulsor.updatedAt ?? lastRepulsorUpdate;
@@ -825,9 +835,9 @@ export function WaveCanvas({
         const awayLength = Math.max(0.001, Math.hypot(repulsorAwayX, repulsorAwayY));
         const awayX = repulsorAwayX / awayLength;
         const awayY = repulsorAwayY / awayLength;
-        const escapeSpeed = (0.11 + nearestThreat * 0.16 + startlePulse * 0.08) * motionScale;
-        accelerationX = (awayX * escapeSpeed - creatureVelocityX) * 4.4;
-        accelerationY = (awayY * escapeSpeed - creatureVelocityY) * 4.4;
+        const escapeSpeed = (0.052 + nearestThreat * 0.2 + startlePulse * 0.1) * motionScale;
+        accelerationX = (awayX * escapeSpeed - creatureVelocityX) * (2.8 + nearestThreat * 2.1);
+        accelerationY = (awayY * escapeSpeed - creatureVelocityY) * (2.8 + nearestThreat * 2.1);
         repulsorEscapeX = awayX;
         repulsorEscapeY = awayY;
       } else if (time < repulsorEscapeUntil) {
@@ -837,12 +847,6 @@ export function WaveCanvas({
         lifeState = 'curious';
         lifeStateUntil = time + 0.8;
         releaseLookUntil = time + 1.4;
-        const observeX = interactionX - creatureX;
-        const observeY = interactionY - creatureY;
-        const observeDistance = Math.max(0.001, Math.hypot(observeX, observeY));
-        const curiousSpeed = 0.016 * smoothstep(0.08, 0.42, observeDistance) * motionScale;
-        accelerationX = (observeX / observeDistance * curiousSpeed - creatureVelocityX) * 0.62;
-        accelerationY = (observeY / observeDistance * curiousSpeed - creatureVelocityY) * 0.62;
       } else if (insideEdgeZone) {
         if (time >= escapeUntil) {
           const phase = creatureGenome.escapePhase + time * 1.618;
@@ -861,11 +865,8 @@ export function WaveCanvas({
         accelerationX = (escapeX / escapeLength * escapeSpeed - creatureVelocityX) * 3.8;
         accelerationY = (escapeY / escapeLength * escapeSpeed - creatureVelocityY) * 3.8;
       } else if (time < releaseLookUntil) {
-        const observeX = interactionX - creatureX;
-        const observeY = interactionY - creatureY;
-        const observeDistance = Math.max(0.001, Math.hypot(observeX, observeY));
-        accelerationX += (observeX / observeDistance * 0.009 * motionScale - creatureVelocityX) * 0.28;
-        accelerationY += (observeY / observeDistance * 0.009 * motionScale - creatureVelocityY) * 0.28;
+        accelerationX += (repulsorEscapeX * 0.045 * motionScale - creatureVelocityX) * 0.34;
+        accelerationY += (repulsorEscapeY * 0.045 * motionScale - creatureVelocityY) * 0.34;
       } else if (time < escapeUntil) {
         const escapeX = escapeTargetX - creatureX;
         const escapeY = escapeTargetY - creatureY;
@@ -881,7 +882,7 @@ export function WaveCanvas({
       }
       creatureVelocityX += accelerationX * deltaTime;
       creatureVelocityY += accelerationY * deltaTime;
-      const maxSpeed = (0.075 + overallEnergy * 0.07 + threatResponse * 0.16 + startlePulse * 0.12 + (time < escapeUntil ? 0.06 : 0)) * motionScale;
+      const maxSpeed = (0.13 + overallEnergy * 0.07 + threatResponse * 0.18 + startlePulse * 0.14 + (time < escapeUntil ? 0.06 : 0)) * motionScale;
       const speed = Math.hypot(creatureVelocityX, creatureVelocityY);
       if (speed > maxSpeed) {
         creatureVelocityX = creatureVelocityX / speed * maxSpeed;
@@ -933,26 +934,26 @@ export function WaveCanvas({
       const idleLife = 0.1 + curiousResponse * 0.08 + startlePulse * 0.14;
       const vitality = idleLife + 0.06 + musicAwake * (0.09 + musicEnergy * 0.18 + grooveEnergy * 0.32) + accentPulse * 0.16;
       const autonomousStrokeRate = lifeState === 'drift'
-        ? 0.085
+        ? 0.11
         : lifeState === 'cruise'
-          ? 0.145
+          ? 0.21
           : lifeState === 'glide'
-            ? 0.042
+            ? 0.055
             : lifeState === 'curious' ? 0.068 : 0.29;
       const autonomousStrokePower = lifeState === 'drift'
-        ? 0.28
+        ? 0.38
         : lifeState === 'cruise'
-          ? 0.58
+          ? 0.85
           : lifeState === 'glide'
-            ? 0.12
+            ? 0.18
             : lifeState === 'curious' ? 0.2 : 0.92;
       const musicStrokeRate = Math.min(0.42, 0.19 + grooveEnergy * 0.18 + musicEnergy * 0.06);
       const musicStrokePower = 0.36 + grooveEnergy * 0.34 + bassEnergy * 0.18 + accentPulse * 0.08;
       const strokeRate = THREE.MathUtils.lerp(autonomousStrokeRate, musicStrokeRate, musicAwake);
       const strokePower = THREE.MathUtils.lerp(autonomousStrokePower, musicStrokePower, musicAwake);
       const membraneTension = 0.28 + midEnergy * 0.2 + grooveEnergy * 0.22 + rootBeatPulse * 0.18;
-      const energyFlow = 0.18 + musicAwake * (0.08 + musicEnergy * 0.2 + grooveEnergy * 0.24) + veinBeatPulse * 0.22;
-      const rimActivity = 0.15 + musicAwake * (0.06 + trebleEnergy * 0.2 + grooveEnergy * 0.18) + rimBeatPulse * 0.28;
+      const energyFlow = 0.08 + musicAwake * (0.035 + musicEnergy * 0.08 + grooveEnergy * 0.08) + veinBeatPulse * 0.46;
+      const rimActivity = 0.08 + musicAwake * (0.025 + trebleEnergy * 0.08 + grooveEnergy * 0.07) + rimBeatPulse * 0.58;
       const debugPhase = spiritDebug === 'power' || spiritDebug === 'funnel-power'
         ? 0.54
         : spiritDebug === 'glide' || spiritDebug === 'funnel-glide' ? 0.76 : 0.1;
@@ -991,20 +992,21 @@ export function WaveCanvas({
       }
 
       const rootStroke = (wingSpring[0][0] + wingSpring[1][0]) * 0.5;
-      const waterResistance = THREE.MathUtils.clamp(turnDelta, -1, 1) * Math.min(1, speed * 8.5) * 0.03;
+      const waterResistance = THREE.MathUtils.clamp(turnDelta, -1, 1) * Math.min(1, speed * 10.5) * 0.072;
       const softbodyRest = spiritDebug === 'softbody' && softbodyDebug !== 'active';
       const softbodyActive = spiritDebug === 'softbody' && softbodyDebug === 'active';
       const funnelPower = spiritDebug === 'funnel-power';
       const funnelGlide = spiritDebug === 'funnel-glide';
-      const propulsion = rootStroke * 0.18 * motionScale;
-      const dragX = -creatureVelocityX * 0.65 - creatureAccelerationX * 0.12 + waterResistance * 1.8 + propulsion;
-      const dragZ = -creatureVelocityY * 0.16 - creatureAccelerationY * 0.055 + Math.abs(turnDelta) * speed * 0.09;
+      const propulsion = rootStroke * 0.24 * motionScale;
+      const dragX = -creatureVelocityX * 2.25 - creatureAccelerationX * 0.92 + waterResistance * 2.6 + propulsion * 0.46;
+      const dragZ = -creatureVelocityY * 0.56 - creatureAccelerationY * 0.29 + Math.abs(turnDelta) * speed * 0.3;
       for (let ring = 0; ring < funnelRingCount; ring += 1) {
         const progress = ring / (funnelRingCount - 1);
         const previousX = ring === 0 ? 0 : funnelCenterX[ring - 1];
         const previousZ = ring === 0 ? 0 : funnelCenterZ[ring - 1];
-        let targetX = previousX + dragX * (0.08 + progress * 0.27);
-        let targetZ = previousZ + dragZ * (0.055 + progress * 0.17);
+        const tissueInfluence = progress * progress * (3 - 2 * progress);
+        let targetX = THREE.MathUtils.clamp(previousX + dragX * (0.045 + tissueInfluence * 0.34), -0.145, 0.145);
+        let targetZ = THREE.MathUtils.clamp(previousZ + dragZ * (0.035 + tissueInfluence * 0.23), -0.09, 0.09);
         if (softbodyRest || spiritDebug === 'funnel-neutral') {
           targetX = 0;
           targetZ = 0;
@@ -1036,14 +1038,16 @@ export function WaveCanvas({
 
         const localBend = Math.abs(targetX - previousX) + Math.abs(targetZ - previousZ);
         let targetCompression = THREE.MathUtils.clamp(
-          Math.abs(propulsion) * (0.65 + progress * 0.9) + localBend * (1.4 + progress),
+          Math.abs(propulsion) * (0.72 + progress * 1.2)
+            + localBend * (2.5 + progress * 2.1)
+            + Math.abs(creatureAccelerationX) * tissueInfluence * 0.5,
           0,
-          0.12,
+          0.19,
         );
         let targetStretch = THREE.MathUtils.clamp(
-          (speed * 0.16 + localBend * 1.1) * progress,
+          (speed * 0.42 + localBend * 2.25 + Math.abs(creatureAccelerationY) * 0.28) * tissueInfluence,
           0,
-          0.07,
+          0.13,
         );
         if (softbodyRest || spiritDebug === 'funnel-neutral') {
           targetCompression = 0;
@@ -1057,8 +1061,8 @@ export function WaveCanvas({
           const contactFalloff = Math.max(0, 1 - Math.abs(ring - rippleRing) * 0.58);
           targetCompression += contactPulse * contactFalloff * 0.026;
         }
-        const tissueStiffness = 59 - ring * 4.7;
-        const tissueDamping = 16 + ring * 0.95;
+        const tissueStiffness = 58 - ring * 5.8;
+        const tissueDamping = 14.8 - ring * 0.72;
         funnelCompressionVelocity[ring] += (targetCompression - funnelCompression[ring]) * tissueStiffness * deltaTime;
         funnelStretchVelocity[ring] += (targetStretch - funnelStretch[ring]) * tissueStiffness * deltaTime;
         const tissueDrag = Math.exp(-tissueDamping * deltaTime);
@@ -1067,10 +1071,10 @@ export function WaveCanvas({
         funnelCompression[ring] += funnelCompressionVelocity[ring] * deltaTime;
         funnelStretch[ring] += funnelStretchVelocity[ring] * deltaTime;
 
-        const targetRadiusX = 1 + funnelCompression[ring] * 0.95 - funnelStretch[ring] * 0.2;
-        const targetRadiusZ = 1 - funnelCompression[ring] * 0.52 + funnelStretch[ring] * 0.08;
-        const radiusStiffness = 62 - ring * 5.2;
-        const radiusDamping = 16.5 + ring * 0.85;
+        const targetRadiusX = 1 + funnelCompression[ring] * (1.1 + progress * 0.55) - funnelStretch[ring] * 0.28;
+        const targetRadiusZ = 1 - funnelCompression[ring] * (0.58 + progress * 0.24) + funnelStretch[ring] * 0.14;
+        const radiusStiffness = 58 - ring * 6.4;
+        const radiusDamping = 14.5 - ring * 0.7;
         funnelRadiusVelocityX[ring] += (targetRadiusX - funnelRadiusX[ring]) * radiusStiffness * deltaTime;
         funnelRadiusVelocityZ[ring] += (targetRadiusZ - funnelRadiusZ[ring]) * radiusStiffness * deltaTime;
         const radiusDrag = Math.exp(-radiusDamping * deltaTime);
@@ -1079,11 +1083,11 @@ export function WaveCanvas({
         funnelRadiusX[ring] += funnelRadiusVelocityX[ring] * deltaTime;
         funnelRadiusZ[ring] += funnelRadiusVelocityZ[ring] * deltaTime;
 
-        let targetTilt = THREE.MathUtils.clamp((targetX - previousX) * 2.8, -0.16, 0.16);
+        let targetTilt = THREE.MathUtils.clamp((targetX - previousX) * (3.2 + progress * 2.4) - creatureAccelerationX * progress * 0.7, -0.28, 0.28);
         if (softbodyRest || spiritDebug === 'funnel-neutral') targetTilt = 0;
         if (softbodyActive) targetTilt = softbodyActiveTilt[ring];
-        funnelTiltVelocity[ring] += (targetTilt - funnelTilt[ring]) * (58 - ring * 4.8) * deltaTime;
-        funnelTiltVelocity[ring] *= Math.exp(-(15.5 + ring * 0.9) * deltaTime);
+        funnelTiltVelocity[ring] += (targetTilt - funnelTilt[ring]) * (54 - ring * 6.2) * deltaTime;
+        funnelTiltVelocity[ring] *= Math.exp(-(14.5 - ring * 0.74) * deltaTime);
         funnelTilt[ring] += funnelTiltVelocity[ring] * deltaTime;
       }
       unifiedSpirit.visible = true;
@@ -1146,24 +1150,37 @@ export function WaveCanvas({
       });
 
       spiritRig.heartLobes.forEach((lobe, index) => {
+        lobe.visible = spiritLayer !== 'body';
         const idlePhase = (time * 0.3 + index * 0.075) % 1;
         const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.1, 2)) * (0.052 + curiousResponse * 0.018);
         const lobeAge = beatAge - heartLobeDelays[index];
         const audioBeat = sampleHeartEnvelope(lobeAge, heartRelease) * rhythmStrength;
         const rebound = sampleHeartEnvelope(lobeAge - 0.1, heartRelease * 0.64) * rhythmStrength;
         const visibleBeat = THREE.MathUtils.lerp(idleBeat, audioBeat, musicAwake) + heartStartlePulse * 0.24;
-        const beat = 1 - visibleBeat * 0.22 + rebound * musicAwake * 0.13;
+        const beat = 1 - visibleBeat * 0.31 + rebound * musicAwake * 0.17;
         lobe.scale.copy(lobe.userData.baseScale).multiplyScalar(beat);
         lobe.rotation.z = Math.sin(time * 0.2 + index * 1.31) * 0.038;
-        (lobe.material as THREE.ShaderMaterial).uniforms.uHeartBeat.value = visibleBeat;
+        (lobe.material as THREE.ShaderMaterial).uniforms.uHeartBeat.value = Math.min(1.35, visibleBeat * 1.16);
       });
+      const visualTelemetryTick = Math.floor(time * 12);
+      if (localPreview && visualTelemetryTick !== lastVisualTelemetryTick) {
+        lastVisualTelemetryTick = visualTelemetryTick;
+        const horizontalPixelsPerUnit = canvasWidth * 0.5 * debugScale * viewportAspect * scale;
+        mount.dataset.spiritFunnelMidPx = (Math.abs(funnelCenterX[2]) * horizontalPixelsPerUnit).toFixed(2);
+        mount.dataset.spiritFunnelLowerPx = (Math.abs(funnelCenterX[4]) * horizontalPixelsPerUnit).toFixed(2);
+        mount.dataset.spiritFunnelTipPx = (Math.abs(funnelCenterX[5]) * horizontalPixelsPerUnit).toFixed(2);
+        mount.dataset.spiritHeart = (sampleHeartEnvelope(beatAge, heartRelease) * rhythmStrength).toFixed(2);
+        mount.dataset.spiritBeatStrength = rhythmStrength.toFixed(2);
+        mount.dataset.spiritBeatTotal = String(acceptedBeatTotal);
+        mount.dataset.spiritBeatAge = beatAge.toFixed(3);
+      }
       spiritRig.energyMaterials.forEach((material, index) => {
         const propagation = sampleHeartEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * rhythmStrength;
         material.opacity = spiritLayer !== null
           ? 0
           : previewPass === 'A'
           ? 0.58
-          : 0.075 + Math.max(lifeEnergy, idleLife) * 0.05 + propagation * 0.52 + rhythmImpulse * 0.015 + contactPulse * 0.035;
+          : 0.035 + Math.max(lifeEnergy, idleLife) * 0.025 + propagation * 0.86 + rhythmImpulse * 0.01 + contactPulse * 0.035;
       });
 
       const funnelTipX = (spiritDebug ? 0 : creatureX) + funnelCenterX[funnelRingCount - 1] * debugScale * scale * viewportAspect;
@@ -1341,6 +1358,7 @@ export function WaveCanvas({
         lastMainBeatAt = -10;
         expectedBeatInterval = 0;
         acceptedBeatCount = 0;
+        acceptedBeatTotal = 0;
         acceptedBeatCursor = 0;
         recentBeatIntervals.fill(0);
         rhythmClock = 0;
@@ -2275,24 +2293,26 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float energyPulse = 0.5 + 0.5 * sin(vSpan * 12.0 - uTime * (1.1 + uEnergyFlow * 2.2) - uCycle * 6.28318);
         float wingTravel = exp(-pow(vSpan - (uBeatAge - 0.1) * 1.85, 2.0) / 0.022)
           * uVeinPulse * step(vSpan, 0.3 + uBeatStrength * 0.7) * wing;
-        float warmRoot = (1.0 - smoothstep(0.02, 0.24, vSpan)) * (energyPulse * uEnergyFlow + uRootPulse * 0.62);
-        float localRimActivity = rim * (0.22 + uRimActivity * (0.28 + 0.72 * energyPulse))
-          * (0.56 + 0.44 * sin(vChord * 5.3 + vSpan * 8.0 + uTime * 0.72)) + rim * uRimPulse * 0.5;
+        float warmRoot = (1.0 - smoothstep(0.02, 0.24, vSpan)) * (energyPulse * uEnergyFlow * 0.42 + uRootPulse * 1.18);
+        float localRimActivity = rim * (0.08 + uRimActivity * (0.18 + 0.36 * energyPulse))
+          * (0.56 + 0.44 * sin(vChord * 5.3 + vSpan * 8.0 + uTime * 0.72)) + rim * uRimPulse * 0.92;
         float membraneLight = (1.0 - clamp(vein + rim, 0.0, 1.0)) * (0.64 + fresnel * 0.72 + spectral * 0.18);
-        vec3 coolLight = wingPalette * wing * (membraneLight + vein * (0.12 + energyPulse * uEnergyFlow * 0.3) + localRimActivity);
-        vec3 warmLight = vec3(1.0, 0.5, 0.22) * heart * (0.09 + uBass * 0.03 + uHeartBeat * 1.48);
+        vec3 coolLight = wingPalette * wing * (membraneLight + vein * (0.06 + energyPulse * uEnergyFlow * 0.16) + localRimActivity);
+        vec3 warmLight = vec3(1.0, 0.5, 0.22) * heart * (0.035 + uBass * 0.015 + uHeartBeat * 2.08);
         vec3 finalColor = uColor * (0.65 + depthGlow * 0.28 + uLife * 0.1 + vFunnelResponse * 0.8) + coolLight + warmLight;
-        finalColor += vec3(1.0, 0.82, 0.5) * heart * uHeartBeat * 0.72;
+        finalColor *= mix(1.0, 0.36 + uHeartBeat * 0.78, heart);
+        finalColor += vec3(1.0, 0.82, 0.5) * heart * uHeartBeat * 1.08;
         finalColor += vec3(0.24, 0.76, 0.92) * vFunnelResponse * (0.35 + fresnel * 0.9);
-        finalColor += vec3(0.34, 0.88, 1.0) * funnelTravel * 0.94;
+        finalColor += vec3(0.34, 0.88, 1.0) * funnelTravel * 1.48;
         finalColor += vec3(0.28, 0.9, 1.0) * contactEnergy * 1.15;
-        finalColor += mix(vec3(0.25, 0.8, 1.0), vec3(0.72, 0.46, 1.0), vSpan) * wingTravel * 0.82;
+        finalColor += mix(vec3(0.25, 0.8, 1.0), vec3(0.72, 0.46, 1.0), vSpan) * wingTravel * 1.34;
         finalColor += vec3(1.0, 0.7, 0.32) * warmRoot * (vein + rootBlend + spectral * 0.35);
         finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.06 + localRimActivity * 0.14);
         float detailAlpha = 1.0 + spectral * 0.12 + vein * (energyPulse * uEnergyFlow * 0.42) + localRimActivity * 0.32;
         float featheredMask = mix(1.0, vWingMask, clamp(wing + spectral + rootBlend, 0.0, 1.0));
         float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
-        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vFunnelResponse * 0.36 + funnelTravel * 0.5 + contactEnergy * 0.42 + wingTravel * 0.34 + rootBlend * uRootPulse * 0.22 + heart * (0.12 + uHeartBeat * 0.48) + membraneDepth + uMid * wing * 0.06);
+        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vFunnelResponse * 0.36 + funnelTravel * 0.86 + contactEnergy * 0.42 + wingTravel * 0.62 + rootBlend * uRootPulse * 0.48 + heart * (0.04 + uHeartBeat * 0.72) + membraneDepth + uMid * wing * 0.06);
+        alpha *= mix(1.0, 0.5 + uHeartBeat * 0.62, heart);
         if (alpha < 0.008) discard;
         gl_FragColor = vec4(finalColor, alpha);
       }

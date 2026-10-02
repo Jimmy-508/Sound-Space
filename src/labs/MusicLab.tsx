@@ -78,7 +78,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
     controller.seek(time);
   };
 
-  const updateSpectrumRepulsor = (event: PointerEvent<HTMLDivElement>, contact: boolean) => {
+  const updateSpectrumStimulus = (event: PointerEvent<HTMLDivElement>, contact: boolean) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
     const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / Math.max(1, rect.height)));
@@ -98,6 +98,9 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
       type: 'pointer',
       updatedAt: now,
       contact,
+      active: true,
+      source: event.pointerType === 'touch' ? 'touch' : 'mouse',
+      speed,
     });
     lastRepulsorPointRef.current = { x, y, time: now };
   };
@@ -128,6 +131,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
           startY: event.clientY,
           startTime: performance.now(),
         });
+        updateSpectrumStimulus(event, true);
         if (touchPointersRef.current.size === 2) {
           const [first, second] = [...touchPointersRef.current.values()];
           pinchRef.current = {
@@ -141,7 +145,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
         return;
       }
       if (event.detail > 1) return;
-      updateSpectrumRepulsor(event, true);
+      updateSpectrumStimulus(event, true);
       return;
     }
     if (viewMode !== 'wave' || !session.duration || !session.sourceUrl) return;
@@ -177,7 +181,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
     if (viewMode === 'spectrum') {
       const tracked = touchPointersRef.current.get(event.pointerId);
       if (event.pointerType !== 'touch' && !tracked) {
-        updateSpectrumRepulsor(event, event.buttons > 0);
+        updateSpectrumStimulus(event, event.buttons > 0);
         return;
       }
       if (tracked) {
@@ -191,9 +195,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
         setRepulsor(null);
         return;
       }
-      if (tracked && Math.hypot(tracked.x - tracked.startX, tracked.y - tracked.startY) > 6) {
-        updateSpectrumRepulsor(event, true);
-      }
+      if (tracked) updateSpectrumStimulus(event, true);
       return;
     }
     const tracked = touchPointersRef.current.get(event.pointerId);
@@ -231,7 +233,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
         lastRepulsorPointRef.current = null;
         if (touchPointersRef.current.size < 2) pinchRef.current = null;
       } else {
-        updateSpectrumRepulsor(event, false);
+        updateSpectrumStimulus(event, false);
       }
       return;
     }
@@ -259,6 +261,12 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
     if (touchPointersRef.current.size === 0) gesturePinchedRef.current = false;
   };
 
+  const pointerLeave = (event: PointerEvent<HTMLDivElement>) => {
+    if (viewMode !== 'spectrum' || event.pointerType === 'touch') return;
+    setRepulsor(null);
+    lastRepulsorPointRef.current = null;
+  };
+
   const zoomFromWheel = (event: WheelEvent<HTMLDivElement>) => {
     if (!session.sourceUrl) return;
     if (viewMode === 'spectrum') {
@@ -281,7 +289,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}
         onPointerCancel={pointerCancel}
-        onPointerLeave={() => viewMode === 'spectrum' && setRepulsor(null)}
+        onPointerLeave={pointerLeave}
         onContextMenu={(event) => event.preventDefault()}
         onDoubleClick={(event) => {
           if (viewMode !== 'spectrum') return;

@@ -12,4 +12,7 @@ export interface Repulsor {
   decay?: number;
   updatedAt?: number;
   contact?: boolean;
+  active?: boolean;
+  source?: 'mouse' | 'touch' | 'hand' | 'system';
+  speed?: number;
 }
