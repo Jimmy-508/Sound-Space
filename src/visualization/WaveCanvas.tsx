@@ -642,29 +642,31 @@ export function WaveCanvas({
       const movementHeading = speed > 0.002 ? Math.atan2(creatureVelocityY, creatureVelocityX) : creatureHeading;
       const turnDelta = Math.atan2(Math.sin(movementHeading - creatureGenome.orientation), Math.cos(movementHeading - creatureGenome.orientation));
       const vitality = 0.16 + musicAwake * (0.16 + lifeEnergy * 0.4) + spectralFlux * 0.12;
-      const strokeRate = 0.18 + musicAwake * (0.18 + lifeEnergy * 0.5 + rhythmImpulse * 0.16);
-      const strokePower = 0.2 + musicAwake * (0.15 + bassEnergy * 0.45 + beatAccent * 0.16);
+      const strokeRate = Math.min(0.4, 0.13 + musicAwake * (0.08 + lifeEnergy * 0.14 + rhythmImpulse * 0.04));
+      const strokePower = 0.16 + musicAwake * (0.24 + bassEnergy * 0.42 + beatAccent * 0.1);
       const membraneTension = 0.28 + midEnergy * 0.52 + musicAwake * 0.12;
       const energyFlow = 0.18 + musicAwake * (0.16 + lifeEnergy * 0.42 + midEnergy * 0.18);
       const rimActivity = 0.15 + musicAwake * (0.12 + trebleEnergy * 0.52);
-      const debugPhase = spiritDebug === 'power' ? 0.41 : spiritDebug === 'glide' ? 0.7 : 0.08;
+      const debugPhase = spiritDebug === 'power' ? 0.54 : spiritDebug === 'glide' ? 0.76 : 0.1;
       const cycle = spiritDebug ? debugPhase : (time * strokeRate + creatureGenome.breathPhase) % 1;
       const phasePower = spiritDebug === 'power' ? 0.82 : spiritDebug === 'glide' ? 0.24 : strokePower;
+      const idleStrokeWindow = smoothstep(0.8, 0.98, 0.5 + Math.sin(time * 0.16 + creatureGenome.breathPhase * 6.28318) * 0.5);
+      const actionStrength = spiritDebug ? 1 : musicAwake + (1 - musicAwake) * idleStrokeWindow * 0.3;
 
       for (let sideIndex = 0; sideIndex < 2; sideIndex += 1) {
         const sidePhase = sideIndex === 0 ? -0.008 : 0.008;
         for (let zone = 0; zone < 5; zone += 1) {
           const zoneProgress = zone / 4;
-          const delayedCycle = (cycle - zoneProgress * 0.055 + sidePhase + 1) % 1;
+          const delayedCycle = (cycle - zoneProgress * 0.082 + sidePhase + 1) % 1;
           const phaseStroke = sampleSwimmingCycle(delayedCycle);
-          const idleUndulation = Math.sin(time * 0.36 - zoneProgress * 1.4 + sidePhase) * (0.018 + zoneProgress * 0.026);
+          const idleUndulation = Math.sin(time * 0.29 - zoneProgress * 1.4 + sidePhase * 6) * (0.012 + zoneProgress * 0.018);
           const target = spiritDebug === 'neutral' || spiritDebug === 'closeup'
             ? 0
-            : phaseStroke * phasePower * (0.18 + zoneProgress * 0.82)
-              + idleUndulation * (1 - musicAwake * 0.58)
+            : phaseStroke * phasePower * actionStrength * (0.12 + zoneProgress * 0.88)
+              + idleUndulation * (1 - musicAwake * 0.72)
               + turnDelta * (sideIndex === 0 ? -0.012 : 0.012) * zoneProgress;
-          const stiffness = 20 - zone * 2.8;
-          const damping = 8.2 - zone * 0.82;
+          const stiffness = 21 - zone * 3.15;
+          const damping = 8.8 - zone * 1.02;
           wingVelocity[sideIndex][zone] += (target - wingSpring[sideIndex][zone]) * stiffness * deltaTime;
           wingVelocity[sideIndex][zone] *= Math.exp(-damping * deltaTime);
           wingSpring[sideIndex][zone] += wingVelocity[sideIndex][zone] * deltaTime;
@@ -672,12 +674,16 @@ export function WaveCanvas({
       }
 
       const rootStroke = (wingSpring[0][0] + wingSpring[1][0]) * 0.5;
-      const bodyFollow = spiritDebug ? 0 : rootStroke * 0.045 + Math.sin(time * 0.31) * (0.004 + vitality * 0.008) * motionScale;
-      const lowerFollow = spiritDebug ? 0 : Math.sin(time * 0.31 - 0.48) * (0.01 + vitality * 0.024) * motionScale;
+      const bodyFollow = spiritDebug ? 0 : rootStroke * 0.022 + Math.sin(time * 0.23) * (0.0015 + vitality * 0.0025) * motionScale;
+      const lowerFollow = spiritDebug ? 0 : rootStroke * -0.014 + Math.sin(time * 0.23 - 0.58) * (0.002 + vitality * 0.004) * motionScale;
       unifiedSpirit.visible = true;
       unifiedSpirit.position.set(spiritDebug ? 0 : creatureX, spiritDebug ? -0.03 : creatureY, 0);
       unifiedSpirit.rotation.z = spiritDebug || previewPass ? 0 : THREE.MathUtils.clamp(turnDelta * musicAwake * 0.025, -0.035, 0.035);
-      const debugScale = spiritDebug === 'closeup' ? 0.64 : spiritDebug ? 0.47 : 0.37;
+      const debugScale = spiritDebug === 'closeup'
+        ? 0.9
+        : spiritDebug === 'power' || spiritDebug === 'glide'
+          ? 0.72
+          : spiritDebug ? 0.47 : 0.37;
       unifiedSpirit.scale.set(debugScale * viewportAspect * scale, debugScale * scale, 1);
       spiritRig.surfaces.forEach(({ mesh, finalMaterial, geometryMaterial }) => {
         mesh.material = previewPass === 'A' ? geometryMaterial : finalMaterial;
@@ -1160,7 +1166,7 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
   };
 
   const bodyGeometry = createMasterBodyGeometry(compact);
-  const bodyOuter = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0x7bd7e8, 0.2, 0), geometryMaterials.body, 4);
+  const bodyOuter = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0x7bd7e8, 0.27, 0), geometryMaterials.body, 8.6);
   const bodyInner = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0xd8fbff, 0.16, 0), geometryMaterials.body, 5);
   bodyOuter.scale.set(1.025, 1.01, 1.04);
   bodyInner.scale.set(0.92, 0.965, 0.86);
@@ -1186,9 +1192,9 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
       return addSurface(wingGroup, geometry, material, geometryMaterial, order);
     };
 
-    addWingSurface(mainGeometry, 0xb9f5ff, 0.34, 1, geometryMaterials.wing, 3, 0);
-    addWingSurface(veilGeometry, 0x91dcff, 0.2, 2, geometryMaterials.veil, 3.35, 0.065);
-    addWingSurface(createWingRootBlendGeometry(side, compact), 0xd8fbff, 0.28, 7, geometryMaterials.wing, 3.7, 0.025);
+    addWingSurface(mainGeometry, 0xb9f5ff, 0.43, 1, geometryMaterials.wing, 3, 0);
+    addWingSurface(veilGeometry, 0x91dcff, 0.25, 2, geometryMaterials.veil, 3.35, 0.065);
+    addWingSurface(createWingRootBlendGeometry(side, compact), 0xd8fbff, 0.24, 7, geometryMaterials.wing, 3.7, 0.025);
 
     const spectralRegions = [
       [0.13, 0.58, 0.22, 0.84],
@@ -1197,31 +1203,31 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
     ] as const;
     spectralRegions.forEach(([start, end, lower, upper], index) => {
       const geometry = createWingRegionGeometry(side, start, end, lower, upper, compact, index);
-      addWingSurface(geometry, 0x675cff, 0.27, 4, geometryMaterials.spectral, 4.2 + index * 0.04, 0.095 + index * 0.012);
+      addWingSurface(geometry, 0x675cff, 0.17, 4, geometryMaterials.spectral, 4.2 + index * 0.04, 0.095 + index * 0.012);
     });
 
     for (let index = 0; index < 5; index += 1) {
       const geometry = createWingVeinGeometry(side, index, false, compact);
-      addWingSurface(geometry, 0x3c8dff, 0.42, 5, geometryMaterials.detail, 6, 0.035 + index * 0.006);
+      addWingSurface(geometry, 0x3c8dff, 0.18, 5, geometryMaterials.detail, 6, 0.035 + index * 0.006);
     }
     const secondaryCount = compact ? 3 : 5;
     for (let index = 0; index < secondaryCount; index += 1) {
       const geometry = createWingVeinGeometry(side, index, true, compact);
-      addWingSurface(geometry, 0x745ee8, 0.26, 5.5, geometryMaterials.detail, 6.1, 0.065 + index * 0.006);
+      addWingSurface(geometry, 0x745ee8, 0.1, 5.5, geometryMaterials.detail, 6.1, 0.065 + index * 0.006);
     }
-    addWingSurface(createWingRimGeometry(side, compact, 0.012), 0xd9faff, 0.74, 6, geometryMaterials.detail, 6.4, 0.035);
-    addWingSurface(createWingRimGeometry(side, compact, 0.026), 0x9b8cff, 0.2, 6.5, geometryMaterials.spectral, 6.2, 0.05);
+    addWingSurface(createWingRimGeometry(side, compact, 0.009), 0xd9faff, 0.34, 6, geometryMaterials.detail, 6.4, 0.035);
+    addWingSurface(createWingRimGeometry(side, compact, 0.023), 0x9b8cff, 0.11, 6.5, geometryMaterials.spectral, 6.2, 0.05);
   }
 
   const internalPathControls = [
-    [[0, -0.025, 0.53], [-0.11, 0.015, 0.531], [-0.254, 0.014, 0.545], [-0.39, 0.06, 0.544], [-0.5, 0.035, 0.5]],
-    [[-0.02, 0.013, 0.5], [0.093, 0.023, 0.505], [0.244, 0.03, 0.531], [0.387, 0.064, 0.539], [0.5, 0.017, 0.5]],
+    [[0, -0.025, 0.53], [-0.06, 0.015, 0.565], [-0.17, 0.022, 0.61], [-0.33, 0.056, 0.615], [-0.5, 0.035, 0.54]],
+    [[0, 0.013, 0.52], [0.06, 0.023, 0.555], [0.17, 0.03, 0.6], [0.33, 0.06, 0.605], [0.5, 0.017, 0.53]],
     [[0.02, 0.028, 0.55], [-0.032, 0.016, 0.411], [-0.04, 0.041, 0.095], [-0.048, 0.047, -0.216], [-0.1, -0.003, -0.4]],
     [[0, 0.027, 0.48], [0.049, 0.016, 0.37], [0.05, 0.058, 0.122], [0.051, 0.039, -0.125], [0.1, 0.008, -0.28]],
   ];
   internalPathControls.forEach((controls, index) => {
     const geometry = createMasterPathGeometry(controls, compact ? 34 : 70);
-    const material = createEnergyLineMaterial(index < 2 ? 0x96eeff : 0xffca8d, index < 2 ? 0.34 : 0.28);
+    const material = createEnergyLineMaterial(index < 2 ? 0x96eeff : 0xffca8d, index < 2 ? 0.22 : 0.28);
     const line = new THREE.Line(geometry, material);
     line.renderOrder = 7;
     group.add(line);
@@ -1240,9 +1246,9 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
   const heartLobes: THREE.Mesh[] = [];
   heartProfiles.forEach((profile, index) => {
     const geometry = createHeartLobeGeometry(compact, index);
-    const material = createMasterSpiritMaterial(index < 2 ? 0xff997e : 0xffd28d, 0.5, 3);
+    const material = createMasterSpiritMaterial(index < 2 ? 0xff997e : 0xffd28d, 0.43, 3);
     const lobe = addSurface(group, geometry, material, geometryMaterials.heart, 8);
-    lobe.position.set(profile[0], profile[2], profile[1] + 0.035);
+    lobe.position.set(profile[0], profile[2], profile[1] + 0.012);
     const baseScale = new THREE.Vector3(profile[3], profile[5], profile[4]);
     lobe.scale.copy(baseScale);
     lobe.userData.baseScale = baseScale;
@@ -1289,6 +1295,7 @@ function createMasterWingGeometry(side: -1 | 1, inner: boolean, compact: boolean
   const columns = compact ? 22 : 34;
   const positions = new Float32Array(rows * columns * 3);
   const wingCoordinates = new Float32Array(rows * columns * 2);
+  const masks = new Float32Array(rows * columns);
   for (let row = 0; row < rows; row += 1) {
     const span = row / (rows - 1);
     for (let column = 0; column < columns; column += 1) {
@@ -1301,25 +1308,31 @@ function createMasterWingGeometry(side: -1 | 1, inner: boolean, compact: boolean
       const wingOffset = (row * columns + column) * 2;
       wingCoordinates[wingOffset] = span;
       wingCoordinates[wingOffset + 1] = chord;
+      const rootFade = THREE.MathUtils.lerp(0.2, 1, smoothstep(0, inner ? 0.28 : 0.22, span));
+      const edgeFeather = 0.82 + Math.pow(Math.max(0, 1 - Math.abs(chord)), 0.65) * 0.18;
+      masks[row * columns + column] = rootFade * edgeFeather;
     }
   }
-  return finalizeWingSurface(positions, wingCoordinates, rows, columns);
+  return finalizeWingSurface(positions, wingCoordinates, rows, columns, masks);
 }
 
 function sampleWingRest(side: -1 | 1, span: number, chord: number, inner = false) {
   const safeSpan = Math.min(1, Math.max(0, span));
   const membraneScale = inner ? 0.91 : 1;
   const roundedTip = 0.066 * Math.pow(Math.abs(chord), 1.7) * smoothstep(0.58, 1, safeSpan);
+  const shoulderBlend = 1 - smoothstep(0, 0.27, safeSpan);
+  const organicRoot = shoulderBlend * (0.078 + 0.058 * Math.pow(Math.max(0, 1 - chord * chord), 0.7));
   const distance = (0.735 * Math.pow(safeSpan, 0.62) - 0.12 * safeSpan * safeSpan
     + 0.17 * Math.pow(Math.sin(Math.PI * safeSpan), 1.2) * (1 - chord * chord)
-    - roundedTip) * membraneScale;
+    - roundedTip) * membraneScale - organicRoot;
   const centerVertical = 0.53 + Math.sin(Math.PI * safeSpan) * 0.038 - 0.13 * Math.pow(safeSpan, 1.45)
     + (inner ? 0.008 : 0);
-  const halfChord = 0.195 * (1 - safeSpan * 0.1);
+  const halfChord = 0.195 * (1 - safeSpan * 0.1) * (0.88 + smoothstep(0, 0.24, safeSpan) * 0.12);
   const lowerScoop = -0.024 * Math.sin(Math.PI * safeSpan) * (1 - chord * chord) * (0.55 - chord * 0.45);
+  const shoulderVolume = shoulderBlend * Math.pow(Math.max(0, 1 - chord * chord), 0.8) * 0.026;
   const depth = Math.pow(Math.sin(Math.PI * safeSpan), 0.78) * (1 - chord * chord) * 0.118
     + Math.sin(safeSpan * Math.PI * 1.5) * chord * 0.012
-    + (inner ? -0.034 : 0);
+    + shoulderVolume + (inner ? -0.034 : 0);
   return new THREE.Vector3(side * distance, centerVertical + chord * halfChord + lowerScoop, depth);
 }
 
@@ -1350,13 +1363,14 @@ function createWingRootBlendGeometry(side: -1 | 1, compact: boolean) {
     for (let column = 0; column < columns; column += 1) {
       const chord = column / (columns - 1) * 2 - 1;
       const point = sampleWingRest(side, span, chord * (0.7 + blend * 0.3));
-      point.x -= side * (1 - blend) * 0.13;
-      point.z -= (1 - blend) * 0.018;
+      point.x -= side * (1 - blend) * 0.042 * Math.pow(Math.max(0, 1 - chord * chord), 0.7);
+      point.z += (1 - blend) * 0.012 * (1 - chord * chord);
       const vertex = row * columns + column;
       positions.set([point.x, point.y, point.z], vertex * 3);
       coordinates.set([span, chord], vertex * 2);
-      masks[vertex] = Math.pow(Math.max(0, Math.sin((chord + 1) * Math.PI * 0.5)), 0.55)
-        * (1 - smoothstep(0.27, 0.34, span));
+      const chordFade = Math.pow(Math.max(0, Math.sin((chord + 1) * Math.PI * 0.5)), 0.62);
+      const bodyFade = 0.16 + smoothstep(0, 0.1, span) * 0.84;
+      masks[vertex] = chordFade * bodyFade * (1 - smoothstep(0.28, 0.34, span));
     }
   }
   return finalizeWingSurface(positions, coordinates, rows, columns, masks);
@@ -1399,16 +1413,18 @@ function createWingVeinGeometry(side: -1 | 1, index: number, secondary: boolean,
   const pointCount = compact ? 18 : 30;
   const positions = new Float32Array(pointCount * 2 * 3);
   const coordinates = new Float32Array(pointCount * 2 * 2);
-  const startSpan = secondary ? 0.3 + index * 0.055 : 0.025;
+  const startSpan = secondary ? 0.31 + index * 0.052 : 0.06 + index * 0.006;
   const endSpan = secondary ? 0.66 + index * 0.055 : 0.72 + index * 0.052;
-  const startChord = secondary ? -0.48 + index * 0.22 : (index - 2) * 0.035;
+  const startChord = secondary ? -0.46 + index * 0.21 : (index - 2) * 0.028;
   const endChord = secondary ? -0.7 + index * 0.34 : -0.78 + index * 0.39;
-  const width = secondary ? 0.0042 : 0.0065;
+  const width = secondary ? 0.0024 : 0.0041;
   for (let pointIndex = 0; pointIndex < pointCount; pointIndex += 1) {
     const progress = pointIndex / (pointCount - 1);
-    const span = THREE.MathUtils.lerp(startSpan, Math.min(0.96, endSpan), progress);
-    const curvature = Math.sin(progress * Math.PI) * (secondary ? 0.1 : 0.075) * (index % 2 === 0 ? -1 : 1);
-    const chord = THREE.MathUtils.lerp(startChord, endChord, progress) + curvature;
+    const spanProgress = secondary ? smoothstep(0, 1, progress) : Math.pow(progress, 0.88);
+    const span = THREE.MathUtils.lerp(startSpan, Math.min(0.96, endSpan), spanProgress);
+    const branchProgress = smoothstep(0.14, 1, progress);
+    const rootBend = Math.sin(progress * Math.PI) * (secondary ? 0.08 : 0.12) * (index < 2 ? -1 : 1);
+    const chord = THREE.MathUtils.lerp(startChord, endChord, branchProgress) + rootBend;
     const point = sampleWingRest(side, span, chord);
     point.z += secondary ? 0.012 : 0.014;
     for (let edge = 0; edge < 2; edge += 1) {
@@ -1528,11 +1544,13 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
           float tipWeight = smoothstep(0.34, 1.0, span);
           float travelingRipple = sin(span * 8.0 - uTime * (0.34 + uLife * 0.7) + uWingSide * 0.12 - uLayerDelay * 9.0);
           float figureEight = sin(uCycle * 6.28318 + span * 1.7) * cos(uCycle * 6.28318 * 2.0 + span);
-          transformed.z += rootBlend * stroke * (0.045 + span * 0.14);
+          transformed.z += rootBlend * stroke * (0.052 + span * 0.19);
           transformed.z += travelingRipple * tipWeight * (0.003 + uLife * 0.008);
-          transformed.y += figureEight * tipWeight * (0.004 + abs(stroke) * 0.012);
-          transformed.y -= abs(stroke) * (1.0 - chord * chord) * sin(span * 3.14159) * (0.028 + uMembraneTension * 0.052);
-          transformed.x -= sign(transformed.x) * abs(stroke) * tipWeight * (0.014 + span * 0.048);
+          transformed.y += figureEight * tipWeight * (0.004 + abs(stroke) * 0.016);
+          transformed.y -= abs(stroke) * (1.0 - chord * chord) * sin(span * 3.14159) * (0.038 + uMembraneTension * 0.07);
+          transformed.y -= abs(stroke) * tipWeight * (0.038 + span * 0.105);
+          transformed.x -= sign(transformed.x) * abs(stroke) * tipWeight * (0.042 + span * 0.128);
+          transformed.z -= abs(stroke) * (1.0 - chord * chord) * sin(span * 3.14159) * (0.018 + uMembraneTension * 0.035);
           vSpan = span;
           vChord = chord;
           vWingMask = wingMask;
@@ -1592,14 +1610,18 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         wingPalette = mix(wingPalette, mix(cyan, violet, fresnel), iridescence * (0.18 + uTreble * 0.2));
         float energyPulse = 0.5 + 0.5 * sin(vSpan * 12.0 - uTime * (1.1 + uEnergyFlow * 2.2) - uCycle * 6.28318);
         float warmRoot = (1.0 - smoothstep(0.02, 0.24, vSpan)) * energyPulse * uEnergyFlow;
-        vec3 coolLight = wingPalette * wing * (0.5 + fresnel * 0.75 + spectral * 0.28 + vein * 0.48 + rim * (0.42 + uRimActivity));
+        float localRimActivity = rim * (0.22 + uRimActivity * (0.28 + 0.72 * energyPulse))
+          * (0.56 + 0.44 * sin(vChord * 5.3 + vSpan * 8.0 + uTime * 0.72));
+        float membraneLight = (1.0 - clamp(vein + rim, 0.0, 1.0)) * (0.64 + fresnel * 0.72 + spectral * 0.18);
+        vec3 coolLight = wingPalette * wing * (membraneLight + vein * (0.12 + energyPulse * uEnergyFlow * 0.3) + localRimActivity);
         vec3 warmLight = vec3(1.0, 0.5, 0.22) * heart * (0.4 + uBass * 0.65 + uMusicAwake * 0.18);
         vec3 finalColor = uColor * (0.65 + depthGlow * 0.28 + uLife * 0.1) + coolLight + warmLight;
         finalColor += vec3(1.0, 0.7, 0.32) * warmRoot * (vein + rootBlend + spectral * 0.35);
-        finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.08 + rim * 0.2);
-        float detailAlpha = 1.0 + spectral * 0.2 + vein * (0.32 + energyPulse * uEnergyFlow * 0.48) + rim * (0.42 + uRimActivity * 0.48);
-        float featheredMask = mix(1.0, vWingMask, clamp(spectral + rootBlend, 0.0, 1.0));
-        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.46 + fresnel * 0.78 + depthGlow * 0.18 + heart * 0.36 + uMid * wing * 0.08);
+        finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.06 + localRimActivity * 0.14);
+        float detailAlpha = 1.0 + spectral * 0.12 + vein * (energyPulse * uEnergyFlow * 0.42) + localRimActivity * 0.32;
+        float featheredMask = mix(1.0, vWingMask, clamp(wing + spectral + rootBlend, 0.0, 1.0));
+        float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
+        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + heart * 0.36 + membraneDepth + uMid * wing * 0.06);
         if (alpha < 0.008) discard;
         gl_FragColor = vec4(finalColor, alpha);
       }
@@ -1690,10 +1712,10 @@ function smoothstep(edgeStart: number, edgeEnd: number, value: number) {
 
 function sampleSwimmingCycle(phase: number) {
   const normalized = ((phase % 1) + 1) % 1;
-  if (normalized < 0.22) return THREE.MathUtils.lerp(0, 0.18, smoothstep(0, 0.22, normalized));
-  if (normalized < 0.48) return THREE.MathUtils.lerp(0.18, -1, smoothstep(0.22, 0.48, normalized));
-  if (normalized < 0.72) return THREE.MathUtils.lerp(-1, -0.2, smoothstep(0.48, 0.72, normalized));
-  return THREE.MathUtils.lerp(-0.2, 0, smoothstep(0.72, 1, normalized));
+  if (normalized < 0.24) return THREE.MathUtils.lerp(0, 0.24, smoothstep(0, 0.24, normalized));
+  if (normalized < 0.46) return THREE.MathUtils.lerp(0.24, -1, smoothstep(0.24, 0.46, normalized));
+  if (normalized < 0.78) return THREE.MathUtils.lerp(-1, -0.06, smoothstep(0.46, 0.78, normalized));
+  return THREE.MathUtils.lerp(-0.06, 0, smoothstep(0.78, 1, normalized));
 }
 
 function sampleCatmullSpine(controls: Float32Array, progress: number, target: { x: number; y: number }) {

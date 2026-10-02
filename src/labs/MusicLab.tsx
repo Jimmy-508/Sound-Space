@@ -10,6 +10,7 @@ import { WaveCanvas } from '../visualization/WaveCanvas';
 import type { Repulsor } from '../visualization/repulsor';
 
 type ViewMode = 'wave' | 'spectrum';
+const masterCreatureScale = 0.7;
 
 interface MusicLabProps {
   session: MusicSessionState;
@@ -20,7 +21,7 @@ interface MusicLabProps {
 export function MusicLab({ session, onSessionChange, controller }: MusicLabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('wave');
   const [repulsor, setRepulsor] = useState<Repulsor | null>(null);
-  const [creatureScale, setCreatureScale] = useState(1);
+  const [creatureScale, setCreatureScale] = useState(masterCreatureScale);
   const touchPointersRef = useRef(new Map<number, { x: number; y: number; startX: number; startY: number; startTime: number }>());
   const pinchRef = useRef<{
     distance: number;
@@ -90,7 +91,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
     setRepulsor({
       x,
       y,
-      radius: 0.34 + Math.min(0.22, speed * 0.04),
+      radius: 0.238 + Math.min(0.154, speed * 0.028),
       strength: 1.5 + Math.min(2.5, speed * 0.45),
       velocityX,
       velocityY,
@@ -109,7 +110,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
     const animate = (now: number) => {
       const progress = Math.min(1, (now - startedAt) / 280);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setCreatureScale(from + (1 - from) * eased);
+      setCreatureScale(from + (masterCreatureScale - from) * eased);
       if (progress < 1) scaleAnimationRef.current = requestAnimationFrame(animate);
     };
     scaleAnimationRef.current = requestAnimationFrame(animate);
@@ -371,5 +372,5 @@ function getMaxZoom(duration: number, sampleRate: number) {
 }
 
 function clampCreatureScale(value: number) {
-  return Math.min(2.4, Math.max(0.65, value));
+  return Math.min(1.68, Math.max(0.455, value));
 }
