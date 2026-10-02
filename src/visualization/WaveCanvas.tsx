@@ -40,6 +40,17 @@ const moteLimit = 36;
 const particleCount = 220;
 const heartLobeDelays = new Float32Array([0.026, 0.05, 0.072, 0.038, 0]);
 const silentSpectrumData = new Uint8Array(512);
+const funnelRingUniformNames = ['uFunnelRing0', 'uFunnelRing1', 'uFunnelRing2', 'uFunnelRing3', 'uFunnelRing4', 'uFunnelRing5'] as const;
+const funnelTiltUniformNames = ['uFunnelTilt0', 'uFunnelTilt1', 'uFunnelTilt2', 'uFunnelTilt3', 'uFunnelTilt4', 'uFunnelTilt5'] as const;
+const softbodyActiveX = new Float32Array([0, 0.006, 0.018, 0.038, 0.065, 0.09]);
+const softbodyActiveZ = new Float32Array([0, -0.002, -0.006, -0.011, -0.016, -0.02]);
+const softbodyActiveCompression = new Float32Array([0, 0.018, 0.045, 0.075, 0.1, 0.12]);
+const softbodyActiveStretch = new Float32Array([0, 0.005, 0.012, 0.022, 0.034, 0.045]);
+const softbodyActiveTilt = new Float32Array([0, 0.015, 0.04, 0.076, 0.118, 0.15]);
+const funnelPowerX = new Float32Array([0, -0.003, -0.009, -0.018, -0.026, -0.031]);
+const funnelPowerZ = new Float32Array([0, 0.001, 0.003, 0.005, 0.006, 0.007]);
+const funnelGlideX = new Float32Array([0, 0.002, 0.007, 0.015, 0.025, 0.034]);
+const funnelGlideZ = new Float32Array([0, -0.001, -0.002, -0.004, -0.006, -0.008]);
 
 export function WaveCanvas({
   amplitude,
@@ -156,8 +167,11 @@ export function WaveCanvas({
     const previewPass = /^(A|B)$/.test(previewParams.get('spiritPass') ?? '') && localPreview
       ? previewParams.get('spiritPass')
       : null;
-    const spiritDebug = /^(neutral|closeup|power|glide|funnel-neutral|funnel-power|funnel-glide)$/.test(previewParams.get('spiritDebug') ?? '') && localPreview
+    const spiritDebug = /^(neutral|closeup|power|glide|funnel-neutral|funnel-power|funnel-glide|softbody)$/.test(previewParams.get('spiritDebug') ?? '') && localPreview
       ? previewParams.get('spiritDebug')
+      : null;
+    const softbodyDebug = /^(rest|active)$/.test(previewParams.get('softbody') ?? '') && localPreview
+      ? previewParams.get('softbody')
       : null;
     const spiritLayer = /^(body|filaments|motes)$/.test(previewParams.get('spiritLayer') ?? '') && localPreview
       ? previewParams.get('spiritLayer')
@@ -353,8 +367,23 @@ export function WaveCanvas({
     let repulsorEscapeUntil = 0;
     const wingSpring = [new Float32Array(5), new Float32Array(5)];
     const wingVelocity = [new Float32Array(5), new Float32Array(5)];
-    const bodyFollowState = new Float32Array(4);
-    const bodyFollowVelocity = new Float32Array(4);
+    const funnelRingCount = 6;
+    const funnelCenterX = new Float32Array(funnelRingCount);
+    const funnelCenterZ = new Float32Array(funnelRingCount);
+    const funnelRadiusX = new Float32Array(funnelRingCount).fill(1);
+    const funnelRadiusZ = new Float32Array(funnelRingCount).fill(1);
+    const funnelTilt = new Float32Array(funnelRingCount);
+    const funnelCompression = new Float32Array(funnelRingCount);
+    const funnelStretch = new Float32Array(funnelRingCount);
+    const funnelCenterVelocityX = new Float32Array(funnelRingCount);
+    const funnelCenterVelocityZ = new Float32Array(funnelRingCount);
+    const funnelRadiusVelocityX = new Float32Array(funnelRingCount);
+    const funnelRadiusVelocityZ = new Float32Array(funnelRingCount);
+    const funnelTiltVelocity = new Float32Array(funnelRingCount);
+    const funnelCompressionVelocity = new Float32Array(funnelRingCount);
+    const funnelStretchVelocity = new Float32Array(funnelRingCount);
+    let creatureAccelerationX = 0;
+    let creatureAccelerationY = 0;
     const moteStateX = new Float32Array(moteLimit);
     const moteStateY = new Float32Array(moteLimit);
     const moteVelocityX = new Float32Array(moteLimit);
@@ -725,6 +754,8 @@ export function WaveCanvas({
         const turn = Math.atan2(Math.sin(targetHeading - creatureHeading), Math.cos(targetHeading - creatureHeading));
         creatureHeading += turn * Math.min(1, deltaTime * (2.1 + midEnergy * 1.8 + startlePulse * 2.4));
       }
+      creatureAccelerationX = accelerationX;
+      creatureAccelerationY = accelerationY;
     };
 
 
@@ -782,57 +813,104 @@ export function WaveCanvas({
 
       const rootStroke = (wingSpring[0][0] + wingSpring[1][0]) * 0.5;
       const waterResistance = THREE.MathUtils.clamp(turnDelta, -1, 1) * Math.min(1, speed * 8.5) * 0.03;
-      const funnelDebugTarget = spiritDebug === 'funnel-power'
-        ? -0.042
-        : spiritDebug === 'funnel-glide' ? 0.03 : 0;
-      const upperBodyTarget = spiritDebug
-        ? funnelDebugTarget
-        : (rootStroke * 0.14 + waterResistance - creatureVelocityX * 0.045) * motionScale;
-      for (let bodyZone = 0; bodyZone < 4; bodyZone += 1) {
-        const source = bodyZone === 0 ? upperBodyTarget : bodyFollowState[bodyZone - 1];
-        const stiffness = bodyZone === 0 ? 54 : 24 - (bodyZone - 1) * 7;
-        const damping = 14.5 - bodyZone * 2.65;
-        bodyFollowVelocity[bodyZone] += (source - bodyFollowState[bodyZone]) * stiffness * deltaTime;
-        bodyFollowVelocity[bodyZone] *= Math.exp(-damping * deltaTime);
-        bodyFollowState[bodyZone] += bodyFollowVelocity[bodyZone] * deltaTime;
-      }
-      const bodySoftness = THREE.MathUtils.clamp(
-        (Math.abs(bodyFollowVelocity[0]) * 0.34
-          + Math.abs(bodyFollowVelocity[1]) * 0.48
-          + Math.abs(bodyFollowVelocity[2]) * 0.62
-          + Math.abs(bodyFollowVelocity[3]) * 0.74
-          + Math.abs(turnDelta) * speed * 1.8) * motionScale,
-        0,
-        0.11,
-      );
-      let bodyFollow = bodyFollowState[0];
-      let midFollow = bodyFollowState[1];
-      let lowerFollow = bodyFollowState[2] * 0.94;
-      let terminalFollow = bodyFollowState[3] * 0.86;
-      if (spiritDebug === 'funnel-power') {
-        bodyFollow = -0.034;
-        midFollow = -0.018;
-        lowerFollow = 0.003;
-        terminalFollow = 0.016;
-      } else if (spiritDebug === 'funnel-glide') {
-        bodyFollow = 0.012;
-        midFollow = 0.002;
-        lowerFollow = -0.018;
-        terminalFollow = -0.03;
+      const softbodyRest = spiritDebug === 'softbody' && softbodyDebug !== 'active';
+      const softbodyActive = spiritDebug === 'softbody' && softbodyDebug === 'active';
+      const funnelPower = spiritDebug === 'funnel-power';
+      const funnelGlide = spiritDebug === 'funnel-glide';
+      const propulsion = rootStroke * 0.18 * motionScale;
+      const dragX = -creatureVelocityX * 0.65 - creatureAccelerationX * 0.12 + waterResistance * 1.8 + propulsion;
+      const dragZ = -creatureVelocityY * 0.16 - creatureAccelerationY * 0.055 + Math.abs(turnDelta) * speed * 0.09;
+      for (let ring = 0; ring < funnelRingCount; ring += 1) {
+        const progress = ring / (funnelRingCount - 1);
+        const previousX = ring === 0 ? 0 : funnelCenterX[ring - 1];
+        const previousZ = ring === 0 ? 0 : funnelCenterZ[ring - 1];
+        let targetX = previousX + dragX * (0.08 + progress * 0.27);
+        let targetZ = previousZ + dragZ * (0.055 + progress * 0.17);
+        if (softbodyRest || spiritDebug === 'funnel-neutral') {
+          targetX = 0;
+          targetZ = 0;
+        } else if (softbodyActive) {
+          targetX = softbodyActiveX[ring];
+          targetZ = softbodyActiveZ[ring];
+        } else if (funnelPower) {
+          targetX = funnelPowerX[ring];
+          targetZ = funnelPowerZ[ring];
+        } else if (funnelGlide) {
+          targetX = funnelGlideX[ring];
+          targetZ = funnelGlideZ[ring];
+        }
+        const centerStiffness = 68 - ring * 7.4;
+        const centerDamping = 15.5 + ring * 1.05;
+        funnelCenterVelocityX[ring] += (targetX - funnelCenterX[ring]) * centerStiffness * deltaTime;
+        funnelCenterVelocityZ[ring] += (targetZ - funnelCenterZ[ring]) * centerStiffness * deltaTime;
+        const centerDrag = Math.exp(-centerDamping * deltaTime);
+        funnelCenterVelocityX[ring] *= centerDrag;
+        funnelCenterVelocityZ[ring] *= centerDrag;
+        funnelCenterX[ring] += funnelCenterVelocityX[ring] * deltaTime;
+        funnelCenterZ[ring] += funnelCenterVelocityZ[ring] * deltaTime;
+
+        const localBend = Math.abs(targetX - previousX) + Math.abs(targetZ - previousZ);
+        let targetCompression = THREE.MathUtils.clamp(
+          Math.abs(propulsion) * (0.65 + progress * 0.9) + localBend * (1.4 + progress),
+          0,
+          0.12,
+        );
+        let targetStretch = THREE.MathUtils.clamp(
+          (speed * 0.16 + localBend * 1.1) * progress,
+          0,
+          0.07,
+        );
+        if (softbodyRest || spiritDebug === 'funnel-neutral') {
+          targetCompression = 0;
+          targetStretch = 0;
+        } else if (softbodyActive) {
+          targetCompression = softbodyActiveCompression[ring];
+          targetStretch = softbodyActiveStretch[ring];
+        }
+        const tissueStiffness = 59 - ring * 4.7;
+        const tissueDamping = 16 + ring * 0.95;
+        funnelCompressionVelocity[ring] += (targetCompression - funnelCompression[ring]) * tissueStiffness * deltaTime;
+        funnelStretchVelocity[ring] += (targetStretch - funnelStretch[ring]) * tissueStiffness * deltaTime;
+        const tissueDrag = Math.exp(-tissueDamping * deltaTime);
+        funnelCompressionVelocity[ring] *= tissueDrag;
+        funnelStretchVelocity[ring] *= tissueDrag;
+        funnelCompression[ring] += funnelCompressionVelocity[ring] * deltaTime;
+        funnelStretch[ring] += funnelStretchVelocity[ring] * deltaTime;
+
+        const targetRadiusX = 1 + funnelCompression[ring] * 0.95 - funnelStretch[ring] * 0.2;
+        const targetRadiusZ = 1 - funnelCompression[ring] * 0.52 + funnelStretch[ring] * 0.08;
+        const radiusStiffness = 62 - ring * 5.2;
+        const radiusDamping = 16.5 + ring * 0.85;
+        funnelRadiusVelocityX[ring] += (targetRadiusX - funnelRadiusX[ring]) * radiusStiffness * deltaTime;
+        funnelRadiusVelocityZ[ring] += (targetRadiusZ - funnelRadiusZ[ring]) * radiusStiffness * deltaTime;
+        const radiusDrag = Math.exp(-radiusDamping * deltaTime);
+        funnelRadiusVelocityX[ring] *= radiusDrag;
+        funnelRadiusVelocityZ[ring] *= radiusDrag;
+        funnelRadiusX[ring] += funnelRadiusVelocityX[ring] * deltaTime;
+        funnelRadiusZ[ring] += funnelRadiusVelocityZ[ring] * deltaTime;
+
+        let targetTilt = THREE.MathUtils.clamp((targetX - previousX) * 2.8, -0.16, 0.16);
+        if (softbodyRest || spiritDebug === 'funnel-neutral') targetTilt = 0;
+        if (softbodyActive) targetTilt = softbodyActiveTilt[ring];
+        funnelTiltVelocity[ring] += (targetTilt - funnelTilt[ring]) * (58 - ring * 4.8) * deltaTime;
+        funnelTiltVelocity[ring] *= Math.exp(-(15.5 + ring * 0.9) * deltaTime);
+        funnelTilt[ring] += funnelTiltVelocity[ring] * deltaTime;
       }
       unifiedSpirit.visible = true;
       unifiedSpirit.position.set(spiritDebug ? 0 : creatureX, spiritDebug ? -0.03 : creatureY, 0);
       unifiedSpirit.rotation.z = spiritDebug || previewPass ? 0 : THREE.MathUtils.clamp(turnDelta * musicAwake * 0.025, -0.035, 0.035);
       const debugScale = spiritDebug === 'closeup'
         ? 0.9
-        : spiritDebug === 'power' || spiritDebug === 'glide' || spiritDebug === 'funnel-power' || spiritDebug === 'funnel-glide'
+        : spiritDebug === 'power' || spiritDebug === 'glide' || spiritDebug === 'funnel-power' || spiritDebug === 'funnel-glide' || spiritDebug === 'softbody'
           ? 0.72
           : spiritDebug ? 0.47 : 0.37;
       unifiedSpirit.scale.set(debugScale * viewportAspect * scale, debugScale * scale, 1);
       spiritRig.surfaces.forEach(({ mesh, finalMaterial, geometryMaterial }) => {
         mesh.material = previewPass === 'A' ? geometryMaterial : finalMaterial;
         const kind = finalMaterial.uniforms.uKind.value as number;
-        mesh.visible = spiritLayer === null || (spiritLayer === 'body' && kind < 0.5);
+        mesh.visible = spiritDebug === 'softbody'
+          ? kind < 0.5
+          : spiritLayer === null || (spiritLayer === 'body' && kind < 0.5);
       });
       spiritRig.finalMaterials.forEach((material) => {
         material.uniforms.uTime.value = time;
@@ -841,11 +919,15 @@ export function WaveCanvas({
         material.uniforms.uBass.value = bassEnergy;
         material.uniforms.uMid.value = midEnergy;
         material.uniforms.uTreble.value = trebleEnergy;
-        material.uniforms.uBodyFollow.value = bodyFollow;
-        material.uniforms.uMidFollow.value = midFollow;
-        material.uniforms.uLowerFollow.value = lowerFollow;
-        material.uniforms.uTerminalFollow.value = terminalFollow;
-        material.uniforms.uBodySoftness.value = bodySoftness;
+        for (let ring = 0; ring < funnelRingCount; ring += 1) {
+          material.uniforms[funnelRingUniformNames[ring]].value.set(
+            funnelCenterX[ring],
+            funnelCenterZ[ring],
+            funnelRadiusX[ring],
+            funnelRadiusZ[ring],
+          );
+          material.uniforms[funnelTiltUniformNames[ring]].value = funnelTilt[ring];
+        }
         material.uniforms.uMembraneTension.value = membraneTension;
         material.uniforms.uEnergyFlow.value = energyFlow;
         material.uniforms.uRimActivity.value = rimActivity;
@@ -890,7 +972,7 @@ export function WaveCanvas({
           : 0.075 + lifeEnergy * 0.035 + propagation * 0.52 + rhythmImpulse * 0.015;
       });
 
-      const funnelTipX = (spiritDebug ? 0 : creatureX) + terminalFollow * debugScale * scale * viewportAspect;
+      const funnelTipX = (spiritDebug ? 0 : creatureX) + funnelCenterX[funnelRingCount - 1] * debugScale * scale * viewportAspect;
       const funnelTipY = (spiritDebug ? -0.03 : creatureY) - 0.72 * debugScale * scale;
       if (!trailInitialized) {
         for (let index = 0; index < wakePointCount; index += 1) {
@@ -1059,8 +1141,22 @@ export function WaveCanvas({
         repulsorEscapeUntil = 0;
         wingSpring.forEach((state) => state.fill(0));
         wingVelocity.forEach((state) => state.fill(0));
-        bodyFollowState.fill(0);
-        bodyFollowVelocity.fill(0);
+        funnelCenterX.fill(0);
+        funnelCenterZ.fill(0);
+        funnelRadiusX.fill(1);
+        funnelRadiusZ.fill(1);
+        funnelTilt.fill(0);
+        funnelCompression.fill(0);
+        funnelStretch.fill(0);
+        funnelCenterVelocityX.fill(0);
+        funnelCenterVelocityZ.fill(0);
+        funnelRadiusVelocityX.fill(0);
+        funnelRadiusVelocityZ.fill(0);
+        funnelTiltVelocity.fill(0);
+        funnelCompressionVelocity.fill(0);
+        funnelStretchVelocity.fill(0);
+        creatureAccelerationX = 0;
+        creatureAccelerationY = 0;
         moteStateX.fill(0);
         moteStateY.fill(0);
         moteVelocityX.fill(0);
@@ -1516,9 +1612,10 @@ function createMasterBodyGeometry(compact: boolean) {
   const rows = compact ? 48 : 84;
   const columns = compact ? 28 : 48;
   const positions = new Float32Array(rows * columns * 3);
-  const bodyCoordinates = new Float32Array(rows * columns * 2);
-  const bodyCenters = new Float32Array(rows * columns * 3);
-  const bodyRadii = new Float32Array(rows * columns * 2);
+  const funnelCoordinates = new Float32Array(rows * columns * 2);
+  const funnelCenters = new Float32Array(rows * columns * 2);
+  const funnelRadii = new Float32Array(rows * columns * 2);
+  const funnelMasks = new Float32Array(rows * columns);
   for (let row = 0; row < rows; row += 1) {
     const progress = row / (rows - 1);
     const profileProgress = progress * (bodyProfile.length - 1);
@@ -1540,19 +1637,21 @@ function createMasterBodyGeometry(compact: boolean) {
       positions[offset] = centerX + Math.cos(angle) * radiusX + asymmetry;
       positions[offset + 1] = vertical + crown;
       positions[offset + 2] = centerDepth + Math.sin(angle) * radiusDepth;
-      bodyCoordinates[(row * columns + column) * 2] = progress;
-      bodyCoordinates[(row * columns + column) * 2 + 1] = angle;
-      bodyCenters[offset] = centerX;
-      bodyCenters[offset + 1] = vertical;
-      bodyCenters[offset + 2] = centerDepth;
-      bodyRadii[(row * columns + column) * 2] = radiusX;
-      bodyRadii[(row * columns + column) * 2 + 1] = radiusDepth;
+      const vertex = row * columns + column;
+      funnelCoordinates[vertex * 2] = progress;
+      funnelCoordinates[vertex * 2 + 1] = angle;
+      funnelCenters[vertex * 2] = centerX;
+      funnelCenters[vertex * 2 + 1] = centerDepth;
+      funnelRadii[vertex * 2] = radiusX;
+      funnelRadii[vertex * 2 + 1] = radiusDepth;
+      funnelMasks[vertex] = 1 - smoothstep(0.48, 0.72, progress);
     }
   }
   const geometry = dynamicSurfaceGeometry(positions, rows, columns);
-  geometry.setAttribute('bodyCoord', new THREE.BufferAttribute(bodyCoordinates, 2));
-  geometry.setAttribute('bodyCenter', new THREE.BufferAttribute(bodyCenters, 3));
-  geometry.setAttribute('bodyRadius', new THREE.BufferAttribute(bodyRadii, 2));
+  geometry.setAttribute('funnelCoord', new THREE.BufferAttribute(funnelCoordinates, 2));
+  geometry.setAttribute('funnelCenter', new THREE.BufferAttribute(funnelCenters, 2));
+  geometry.setAttribute('funnelRadius', new THREE.BufferAttribute(funnelRadii, 2));
+  geometry.setAttribute('funnelMask', new THREE.BufferAttribute(funnelMasks, 1));
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -1753,11 +1852,18 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uBass: { value: 0 },
       uMid: { value: 0 },
       uTreble: { value: 0 },
-      uBodyFollow: { value: 0 },
-      uMidFollow: { value: 0 },
-      uLowerFollow: { value: 0 },
-      uTerminalFollow: { value: 0 },
-      uBodySoftness: { value: 0 },
+      uFunnelRing0: { value: new THREE.Vector4(0, 0, 1, 1) },
+      uFunnelRing1: { value: new THREE.Vector4(0, 0, 1, 1) },
+      uFunnelRing2: { value: new THREE.Vector4(0, 0, 1, 1) },
+      uFunnelRing3: { value: new THREE.Vector4(0, 0, 1, 1) },
+      uFunnelRing4: { value: new THREE.Vector4(0, 0, 1, 1) },
+      uFunnelRing5: { value: new THREE.Vector4(0, 0, 1, 1) },
+      uFunnelTilt0: { value: 0 },
+      uFunnelTilt1: { value: 0 },
+      uFunnelTilt2: { value: 0 },
+      uFunnelTilt3: { value: 0 },
+      uFunnelTilt4: { value: 0 },
+      uFunnelTilt5: { value: 0 },
       uHeartBeat: { value: 0 },
       uBeatAge: { value: 10 },
       uBeatStrength: { value: 0 },
@@ -1779,14 +1885,22 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       attribute vec3 restPosition;
       attribute vec2 wingCoord;
       attribute float wingMask;
-      attribute vec2 bodyCoord;
-      attribute vec3 bodyCenter;
-      attribute vec2 bodyRadius;
-      uniform float uBodyFollow;
-      uniform float uMidFollow;
-      uniform float uLowerFollow;
-      uniform float uTerminalFollow;
-      uniform float uBodySoftness;
+      attribute vec2 funnelCoord;
+      attribute vec2 funnelCenter;
+      attribute vec2 funnelRadius;
+      attribute float funnelMask;
+      uniform vec4 uFunnelRing0;
+      uniform vec4 uFunnelRing1;
+      uniform vec4 uFunnelRing2;
+      uniform vec4 uFunnelRing3;
+      uniform vec4 uFunnelRing4;
+      uniform vec4 uFunnelRing5;
+      uniform float uFunnelTilt0;
+      uniform float uFunnelTilt1;
+      uniform float uFunnelTilt2;
+      uniform float uFunnelTilt3;
+      uniform float uFunnelTilt4;
+      uniform float uFunnelTilt5;
       uniform float uRhythmPulse;
       uniform float uKind;
       uniform float uTime;
@@ -1803,23 +1917,22 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       varying float vSpan;
       varying float vChord;
       varying float vWingMask;
-      varying float vBodyStrain;
-      float bodySpine(float progress) {
-        float t = clamp(progress, 0.0, 1.0);
-        float segment = min(2.0, floor(t * 3.0));
-        float localT = t * 3.0 - segment;
-        float p0 = segment < 0.5 ? uBodyFollow : segment < 1.5 ? uMidFollow : uLowerFollow;
-        float p1 = segment < 0.5 ? uMidFollow : segment < 1.5 ? uLowerFollow : uTerminalFollow;
-        float before = segment < 0.5 ? uBodyFollow : segment < 1.5 ? uBodyFollow : uMidFollow;
-        float after = segment < 0.5 ? uLowerFollow : segment < 1.5 ? uTerminalFollow : uTerminalFollow;
-        float m0 = (p1 - before) * 0.5;
-        float m1 = (after - p0) * 0.5;
-        float t2 = localT * localT;
-        float t3 = t2 * localT;
-        return (2.0 * t3 - 3.0 * t2 + 1.0) * p0
-          + (t3 - 2.0 * t2 + localT) * m0
-          + (-2.0 * t3 + 3.0 * t2) * p1
-          + (t3 - t2) * m1;
+      varying float vFunnelResponse;
+      vec4 sampleFunnelRing(float progress) {
+        float scaled = clamp(progress, 0.0, 1.0) * 5.0;
+        if (scaled < 1.0) return mix(uFunnelRing0, uFunnelRing1, smoothstep(0.0, 1.0, scaled));
+        if (scaled < 2.0) return mix(uFunnelRing1, uFunnelRing2, smoothstep(0.0, 1.0, scaled - 1.0));
+        if (scaled < 3.0) return mix(uFunnelRing2, uFunnelRing3, smoothstep(0.0, 1.0, scaled - 2.0));
+        if (scaled < 4.0) return mix(uFunnelRing3, uFunnelRing4, smoothstep(0.0, 1.0, scaled - 3.0));
+        return mix(uFunnelRing4, uFunnelRing5, smoothstep(0.0, 1.0, scaled - 4.0));
+      }
+      float sampleFunnelTilt(float progress) {
+        float scaled = clamp(progress, 0.0, 1.0) * 5.0;
+        if (scaled < 1.0) return mix(uFunnelTilt0, uFunnelTilt1, smoothstep(0.0, 1.0, scaled));
+        if (scaled < 2.0) return mix(uFunnelTilt1, uFunnelTilt2, smoothstep(0.0, 1.0, scaled - 1.0));
+        if (scaled < 3.0) return mix(uFunnelTilt2, uFunnelTilt3, smoothstep(0.0, 1.0, scaled - 2.0));
+        if (scaled < 4.0) return mix(uFunnelTilt3, uFunnelTilt4, smoothstep(0.0, 1.0, scaled - 3.0));
+        return mix(uFunnelTilt4, uFunnelTilt5, smoothstep(0.0, 1.0, scaled - 4.0));
       }
       float zoneStroke(float span) {
         if (span < 0.25) return mix(uWingA.x, uWingA.y, span * 4.0);
@@ -1832,40 +1945,17 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float wingSurface = step(0.5, uKind) * (1.0 - step(2.5, uKind))
           + step(3.5, uKind) * (1.0 - step(7.5, uKind));
         if (uKind < 0.5) {
-          float funnelT = bodyCoord.x;
-          float funnelMask = smoothstep(0.02, 0.16, funnelT);
-          float sampleStep = 0.018;
-          float spine = bodySpine(funnelT);
-          float spineBefore = bodySpine(max(0.0, funnelT - sampleStep));
-          float spineAfter = bodySpine(min(1.0, funnelT + sampleStep));
-          float slope = (spineAfter - spineBefore) / (sampleStep * 2.0);
-          float curvature = (spineAfter - 2.0 * spine + spineBefore) / (sampleStep * sampleStep);
-          float slopeY = -1.24;
-          vec2 tangent = normalize(vec2(slope, slopeY));
-          vec2 crossNormal = vec2(-tangent.y, tangent.x);
-          float localX = position.x - bodyCenter.x;
-          float localY = position.y - bodyCenter.y;
-          float localZ = position.z - bodyCenter.z;
-          float side = localX / max(0.012, bodyRadius.x);
-          float bendStrain = clamp(curvature * side * 0.018, -0.075, 0.075);
-          float pathStretch = sqrt(1.0 + pow(slope / 1.24, 2.0));
-          float volumeCompensation = pow(pathStretch, -0.34);
-          float softWave = sin(funnelT * 7.1 - uTime * 1.12) * uBodySoftness
-            * smoothstep(0.12, 0.92, funnelT) * (1.0 - smoothstep(0.9, 1.0, funnelT));
-          float longitudinalCompression = clamp(-curvature * spine * 0.65 + softWave * 0.3, -0.045, 0.045);
-          float crossScale = volumeCompensation * (1.0 + bendStrain - longitudinalCompression * 0.42);
-          float depthScale = volumeCompensation * (1.0 - bendStrain * 0.34 - longitudinalCompression * 0.32);
-          float tissueContraction = uRhythmPulse * funnelMask * (0.006 + funnelT * 0.009);
-          crossScale *= 1.0 - tissueContraction;
-          depthScale *= 1.0 - tissueContraction * 0.72;
-          float spineOffset = spine * funnelMask * (0.66 + funnelT * 0.78) + softWave * (0.18 + funnelT * 0.24);
-          vec2 rebuilt = vec2(bodyCenter.x + spineOffset, bodyCenter.y)
-            + crossNormal * localX * crossScale
-            + tangent * localY;
-          transformed.x = rebuilt.x;
-          transformed.y = rebuilt.y;
-          transformed.z = bodyCenter.z + localZ * depthScale + curvature * funnelMask * (0.0025 + funnelT * 0.0045);
-          vBodyStrain = abs(bendStrain) + abs(longitudinalCompression) + uBodySoftness * 0.08;
+          float ringProgress = clamp((0.72 - funnelCoord.x) / 0.72, 0.0, 1.0);
+          vec4 ring = sampleFunnelRing(ringProgress);
+          float tilt = sampleFunnelTilt(ringProgress);
+          float localX = position.x - funnelCenter.x;
+          float localZ = position.z - funnelCenter.y;
+          vec3 deformed = position;
+          deformed.x = funnelCenter.x + localX * ring.z + ring.x;
+          deformed.y = position.y + localX * sin(tilt);
+          deformed.z = funnelCenter.y + localZ * ring.w + ring.y;
+          transformed = mix(position, deformed, funnelMask);
+          vFunnelResponse = funnelMask * (abs(ring.x) + abs(ring.y) + abs(ring.z - 1.0) + abs(ring.w - 1.0));
         }
         if (wingSurface > 0.5) {
           transformed = restPosition;
@@ -1887,12 +1977,12 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
           vSpan = span;
           vChord = chord;
           vWingMask = wingMask;
-          vBodyStrain = 0.0;
+          vFunnelResponse = 0.0;
         } else {
           vSpan = 0.0;
           vChord = 0.0;
           vWingMask = 1.0;
-          if (uKind >= 0.5) vBodyStrain = 0.0;
+          if (uKind >= 0.5) vFunnelResponse = 0.0;
         }
         vLocal = transformed;
         vNormalView = normalize(normalMatrix * normal);
@@ -1927,7 +2017,7 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       varying float vSpan;
       varying float vChord;
       varying float vWingMask;
-      varying float vBodyStrain;
+      varying float vFunnelResponse;
       void main() {
         vec3 viewDirection = normalize(-vViewPosition);
         float fresnel = pow(1.0 - abs(dot(normalize(vNormalView), viewDirection)), 1.55);
@@ -1963,9 +2053,9 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float membraneLight = (1.0 - clamp(vein + rim, 0.0, 1.0)) * (0.64 + fresnel * 0.72 + spectral * 0.18);
         vec3 coolLight = wingPalette * wing * (membraneLight + vein * (0.12 + energyPulse * uEnergyFlow * 0.3) + localRimActivity);
         vec3 warmLight = vec3(1.0, 0.5, 0.22) * heart * (0.09 + uBass * 0.03 + uHeartBeat * 1.48);
-        vec3 finalColor = uColor * (0.65 + depthGlow * 0.28 + uLife * 0.1 + vBodyStrain * 0.8) + coolLight + warmLight;
+        vec3 finalColor = uColor * (0.65 + depthGlow * 0.28 + uLife * 0.1 + vFunnelResponse * 0.8) + coolLight + warmLight;
         finalColor += vec3(1.0, 0.82, 0.5) * heart * uHeartBeat * 0.72;
-        finalColor += vec3(0.24, 0.76, 0.92) * vBodyStrain * (0.35 + fresnel * 0.9);
+        finalColor += vec3(0.24, 0.76, 0.92) * vFunnelResponse * (0.35 + fresnel * 0.9);
         finalColor += vec3(0.34, 0.88, 1.0) * funnelTravel * 0.94;
         finalColor += mix(vec3(0.25, 0.8, 1.0), vec3(0.72, 0.46, 1.0), vSpan) * wingTravel * 0.82;
         finalColor += vec3(1.0, 0.7, 0.32) * warmRoot * (vein + rootBlend + spectral * 0.35);
@@ -1973,7 +2063,7 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float detailAlpha = 1.0 + spectral * 0.12 + vein * (energyPulse * uEnergyFlow * 0.42) + localRimActivity * 0.32;
         float featheredMask = mix(1.0, vWingMask, clamp(wing + spectral + rootBlend, 0.0, 1.0));
         float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
-        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vBodyStrain * 0.36 + funnelTravel * 0.5 + wingTravel * 0.34 + rootBlend * uRootPulse * 0.22 + heart * (0.12 + uHeartBeat * 0.48) + membraneDepth + uMid * wing * 0.06);
+        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vFunnelResponse * 0.36 + funnelTravel * 0.5 + wingTravel * 0.34 + rootBlend * uRootPulse * 0.22 + heart * (0.12 + uHeartBeat * 0.48) + membraneDepth + uMid * wing * 0.06);
         if (alpha < 0.008) discard;
         gl_FragColor = vec4(finalColor, alpha);
       }
