@@ -31,6 +31,8 @@ interface WaveCanvasProps {
   pointer: PointerPoint;
 }
 
+type SpiritLifeState = 'drift' | 'cruise' | 'glide' | 'curious' | 'startled';
+
 const wavePointLimit = 768;
 const samplePointLimit = 64;
 const spectrumBandCount = 64;
@@ -40,6 +42,7 @@ const moteLimit = 36;
 const particleCount = 220;
 const heartLobeDelays = new Float32Array([0.026, 0.05, 0.072, 0.038, 0]);
 const silentSpectrumData = new Uint8Array(512);
+const noRepulsors: Repulsor[] = [];
 const funnelRingUniformNames = ['uFunnelRing0', 'uFunnelRing1', 'uFunnelRing2', 'uFunnelRing3', 'uFunnelRing4', 'uFunnelRing5'] as const;
 const funnelTiltUniformNames = ['uFunnelTilt0', 'uFunnelTilt1', 'uFunnelTilt2', 'uFunnelTilt3', 'uFunnelTilt4', 'uFunnelTilt5'] as const;
 const softbodyActiveX = new Float32Array([0, 0.006, 0.018, 0.038, 0.065, 0.09]);
@@ -51,6 +54,8 @@ const funnelPowerX = new Float32Array([0, -0.003, -0.009, -0.018, -0.026, -0.031
 const funnelPowerZ = new Float32Array([0, 0.001, 0.003, 0.005, 0.006, 0.007]);
 const funnelGlideX = new Float32Array([0, 0.002, 0.007, 0.015, 0.025, 0.034]);
 const funnelGlideZ = new Float32Array([0, -0.001, -0.002, -0.004, -0.006, -0.008]);
+const funnelCenterStiffness = new Float32Array([68, 60, 47, 38, 30, 23]);
+const funnelCenterDamping = new Float32Array([15.5, 16.5, 17.5, 18.5, 19.5, 20.5]);
 
 export function WaveCanvas({
   amplitude,
@@ -173,6 +178,11 @@ export function WaveCanvas({
     const softbodyDebug = /^(rest|active)$/.test(previewParams.get('softbody') ?? '') && localPreview
       ? previewParams.get('softbody')
       : null;
+    const lifeDebug = /^(drift|cruise|glide|curious|startled)$/.test(previewParams.get('spiritLife') ?? '') && localPreview
+      ? previewParams.get('spiritLife') as SpiritLifeState
+      : null;
+    const interactionDebugOff = previewParams.get('spiritHands') === 'off' && localPreview;
+    const anchorDebug = previewParams.get('spiritAnchor') === 'center' && localPreview;
     const spiritLayer = /^(body|filaments|motes)$/.test(previewParams.get('spiritLayer') ?? '') && localPreview
       ? previewParams.get('spiritLayer')
       : null;
@@ -365,6 +375,27 @@ export function WaveCanvas({
     let repulsorEscapeX = 0;
     let repulsorEscapeY = 0;
     let repulsorEscapeUntil = 0;
+    let lifeState: SpiritLifeState = 'drift';
+    let lifeStateUntil = 0;
+    let lifeTargetX = creatureX;
+    let lifeTargetY = creatureY;
+    let lifeRandomState = (musicVisualSeed * 2654435761) >>> 0;
+    let wingCycle = creatureGenome.breathPhase;
+    let curiousResponse = 0;
+    let interactionX = creatureX;
+    let interactionY = creatureY;
+    let releaseLookUntil = 0;
+    let contactPulse = 0;
+    let contactAge = 10;
+    let contactPointX = 0;
+    let contactPointY = 0;
+    let contactKind = 0;
+    let contactFunnelRing = 0;
+    let contactFunnelDirection = 0;
+    let heartStartlePulse = 0;
+    const wingContactPulse = new Float32Array(2);
+    const wingContactSpan = new Float32Array(2);
+    let lastDebugTelemetryTick = -1;
     const wingSpring = [new Float32Array(5), new Float32Array(5)];
     const wingVelocity = [new Float32Array(5), new Float32Array(5)];
     const funnelRingCount = 6;
@@ -617,11 +648,42 @@ export function WaveCanvas({
       positions[index * 3 + 2] = 0;
     };
 
+    const nextLifeRandom = () => {
+      lifeRandomState = (Math.imul(lifeRandomState, 1664525) + 1013904223) >>> 0;
+      return lifeRandomState / 4294967296;
+    };
+
+    const selectLifeState = (time: number, horizontalLimit: number, verticalLimit: number) => {
+      const choice = nextLifeRandom();
+      lifeState = choice < 0.3 ? 'drift' : choice < 0.76 ? 'cruise' : 'glide';
+      const reach = lifeState === 'drift' ? 0.22 : lifeState === 'cruise' ? 0.68 : 0.42;
+      lifeTargetX = THREE.MathUtils.clamp(
+        creatureX + (nextLifeRandom() * 2 - 1) * horizontalLimit * reach,
+        -horizontalLimit * 0.88,
+        horizontalLimit * 0.88,
+      );
+      lifeTargetY = THREE.MathUtils.clamp(
+        creatureY + (nextLifeRandom() * 2 - 1) * verticalLimit * reach,
+        -verticalLimit * 0.84,
+        verticalLimit * 0.84,
+      );
+      const duration = lifeState === 'drift'
+        ? 4.5 + nextLifeRandom() * 4.2
+        : lifeState === 'cruise'
+          ? 5.2 + nextLifeRandom() * 5.4
+          : 2.4 + nextLifeRandom() * 2.8;
+      lifeStateUntil = time + duration;
+    };
+
     const updateSpiritPhysics = (time: number, deltaTime: number, current: WaveCanvasProps) => {
       const motionScale = reducedMotion ? 0.24 : 1;
       const scale = current.creatureScale ?? 1;
-      const activity = current.musicPlaying ? 0.16 + overallEnergy * 0.84 : 0.1;
       startlePulse *= Math.exp(-deltaTime * 5.6);
+      contactPulse *= Math.exp(-deltaTime * 3.8);
+      contactAge += deltaTime;
+      heartStartlePulse *= Math.exp(-deltaTime * 4.6);
+      wingContactPulse[0] *= Math.exp(-deltaTime * 3.5);
+      wingContactPulse[1] *= Math.exp(-deltaTime * 3.5);
       const visualRadius = creatureGenome.bodyRadius * scale;
       const horizontalLimit = Math.max(0.18, 0.84 - visualRadius * 0.9);
       const verticalLimit = Math.max(0.16, 0.72 - visualRadius * 0.82);
@@ -635,19 +697,47 @@ export function WaveCanvas({
         inwardY /= inwardLength;
       }
 
-      const wanderAngle = creatureGenome.wanderPhase
-        + Math.sin(time * creatureGenome.wanderSpeed) * creatureGenome.turningTendency
-        + Math.sin(time * 0.17 + creatureGenome.wanderPhase) * 0.65
-        + midEnergy * creatureGenome.midSensitivity * Math.sin(time * 1.7);
-      const desiredSpeed = (0.014 + activity * creatureGenome.wanderSpeed * 0.13 + rhythmImpulse * 0.045) * motionScale;
-      let accelerationX = (Math.cos(wanderAngle) * desiredSpeed - creatureVelocityX) * (0.42 + creatureGenome.turningTendency);
-      let accelerationY = (Math.sin(wanderAngle) * desiredSpeed - creatureVelocityY) * (0.42 + creatureGenome.turningTendency);
+      if (lifeDebug) {
+        if (lifeState !== lifeDebug || time >= lifeStateUntil) {
+          lifeState = lifeDebug;
+          lifeTargetX = lifeDebug === 'curious' ? horizontalLimit * 0.28 : -horizontalLimit * 0.38;
+          lifeTargetY = lifeDebug === 'glide' ? verticalLimit * 0.24 : -verticalLimit * 0.18;
+          lifeStateUntil = time + 60;
+        }
+      } else if (time >= lifeStateUntil && time >= repulsorEscapeUntil && time >= releaseLookUntil) {
+        selectLifeState(time, horizontalLimit, verticalLimit);
+      }
+
+      const targetDeltaX = lifeTargetX - creatureX;
+      const targetDeltaY = lifeTargetY - creatureY;
+      const targetDistance = Math.max(0.001, Math.hypot(targetDeltaX, targetDeltaY));
+      const arrival = 0.22 + smoothstep(0.025, 0.42, targetDistance) * 0.78;
+      const stateSpeed = lifeState === 'drift'
+        ? 0.014
+        : lifeState === 'cruise'
+          ? 0.038
+          : lifeState === 'glide'
+            ? 0.025
+            : lifeState === 'curious' ? 0.019 : 0.12;
+      const musicMotion = current.musicPlaying ? overallEnergy * 0.032 + rhythmImpulse * 0.018 : 0;
+      const desiredSpeed = (stateSpeed + musicMotion) * arrival * motionScale;
+      let desiredVelocityX = targetDeltaX / targetDistance * desiredSpeed;
+      let desiredVelocityY = targetDeltaY / targetDistance * desiredSpeed;
+      if (lifeState === 'glide') {
+        desiredVelocityX = creatureVelocityX * 0.985 + desiredVelocityX * 0.015;
+        desiredVelocityY = creatureVelocityY * 0.985 + desiredVelocityY * 0.015;
+      }
+      const steering = lifeState === 'drift' ? 0.48 : lifeState === 'glide' ? 0.22 : 0.72;
+      let accelerationX = (desiredVelocityX - creatureVelocityX) * steering;
+      let accelerationY = (desiredVelocityY - creatureVelocityY) * steering;
       const insideEdgeZone = Math.abs(creatureX) > horizontalLimit || Math.abs(creatureY) > verticalLimit;
 
       let nearestThreat = 0;
       let repulsorAwayX = 0;
       let repulsorAwayY = 0;
-      for (const repulsor of current.repulsors ?? []) {
+      let curiousTarget = 0;
+      const activeRepulsors = interactionDebugOff ? noRepulsors : current.repulsors ?? noRepulsors;
+      for (const repulsor of activeRepulsors) {
         const repulsorX = repulsor.x * 1.8 - 0.9;
         const repulsorY = (1 - repulsor.y) * 1.34 - 0.67;
         const deltaX = creatureX - repulsorX;
@@ -661,14 +751,56 @@ export function WaveCanvas({
         const radius = repulsor.type === 'ripple' ? repulsor.currentRadius ?? repulsor.radius : repulsor.radius + collisionRadius;
         const rippleDistance = repulsor.type === 'ripple' ? Math.abs(Math.max(0, distance - collisionRadius) - radius) : distance;
         const influence = Math.max(0, 1 - rippleDistance / Math.max(0.06, repulsor.type === 'ripple' ? repulsor.radius : radius));
-        if (influence <= 0) continue;
-        const force = influence * influence * repulsor.strength * creatureGenome.avoidanceSensitivity * 1.35;
-        repulsorAwayX += awayX * force;
-        repulsorAwayY += awayY * force;
+        const awareness = Math.max(0, 1 - distance / Math.max(0.12, collisionRadius + 0.42));
+        if (influence <= 0 && awareness <= 0) continue;
         const isNewRepulsorUpdate = repulsor.updatedAt !== undefined && repulsor.updatedAt !== lastRepulsorUpdate;
-        if (isNewRepulsorUpdate) {
-          const swipeSpeed = Math.hypot(repulsor.velocityX ?? 0, repulsor.velocityY ?? 0);
-          const impulse = influence * (0.04 + Math.min(0.18, swipeSpeed * 0.06));
+        const swipeSpeed = Math.hypot(repulsor.velocityX ?? 0, repulsor.velocityY ?? 0);
+        const fastApproach = repulsor.type === 'ripple' || (swipeSpeed > 0.72 && awareness > 0.12);
+        const directContact = Boolean(repulsor.contact) && distance < collisionRadius + 0.045;
+        interactionX = repulsorX;
+        interactionY = repulsorY;
+
+        if (!fastApproach && !directContact) {
+          curiousTarget = Math.max(curiousTarget, awareness);
+          if (awareness > 0.08) {
+            const approach = Math.max(0, distance - collisionRadius * 1.15);
+            lifeTargetX = repulsorX + awayX * Math.min(0.2, approach);
+            lifeTargetY = repulsorY + awayY * Math.min(0.16, approach);
+          }
+        }
+
+        if (isNewRepulsorUpdate && directContact) {
+          const spiritScale = 0.37 * scale;
+          const localX = (repulsorX - creatureX) / Math.max(0.001, spiritScale * Math.min(1, canvasHeight / canvasWidth));
+          const localY = (repulsorY - creatureY) / Math.max(0.001, spiritScale);
+          contactPointX = localX;
+          contactPointY = localY;
+          contactPulse = 1;
+          contactAge = 0;
+          if (localY > 0.34 && localY < 0.73 && Math.abs(localX) < 0.17) {
+            contactKind = 3;
+            heartStartlePulse = 1;
+          } else if (localY > 0.16 && Math.abs(localX) > 0.16) {
+            contactKind = 1;
+            const sideIndex = localX < 0 ? 0 : 1;
+            wingContactPulse[sideIndex] = 1;
+            wingContactSpan[sideIndex] = THREE.MathUtils.clamp((Math.abs(localX) - 0.12) / 0.62, 0, 1);
+          } else {
+            contactKind = 2;
+            contactFunnelRing = THREE.MathUtils.clamp(Math.round((0.35 - localY) / 1.08 * (funnelRingCount - 1)), 0, funnelRingCount - 1);
+            contactFunnelDirection = localX < 0 ? 1 : -1;
+          }
+        }
+
+        if (fastApproach) {
+          const force = Math.max(influence, awareness) * Math.max(0.5, repulsor.strength) * creatureGenome.avoidanceSensitivity;
+          repulsorAwayX += awayX * force;
+          repulsorAwayY += awayY * force;
+          nearestThreat = Math.max(nearestThreat, Math.max(influence, awareness));
+        }
+
+        if (isNewRepulsorUpdate && fastApproach) {
+          const impulse = Math.max(influence, awareness) * (0.035 + Math.min(0.16, swipeSpeed * 0.045));
           const safeAwayX = awayX + inwardX * Math.max(horizontalEdge, verticalEdge) * 0.9;
           const safeAwayY = awayY + inwardY * Math.max(horizontalEdge, verticalEdge) * 0.9;
           const safeLength = Math.max(0.001, Math.hypot(safeAwayX, safeAwayY));
@@ -677,24 +809,16 @@ export function WaveCanvas({
           repulsorEscapeX = safeAwayX / safeLength;
           repulsorEscapeY = safeAwayY / safeLength;
           repulsorEscapeUntil = time + creatureGenome.repulsorCommitment;
-          startlePulse = Math.max(startlePulse, Math.min(1, influence * 0.72 + swipeSpeed * 0.2));
+          lifeState = 'startled';
+          lifeStateUntil = repulsorEscapeUntil;
+          startlePulse = Math.max(startlePulse, Math.min(1, awareness * 0.62 + swipeSpeed * 0.24));
+          lastRepulsorUpdate = repulsor.updatedAt ?? lastRepulsorUpdate;
+        } else if (isNewRepulsorUpdate) {
           lastRepulsorUpdate = repulsor.updatedAt ?? lastRepulsorUpdate;
         }
-        if (repulsor.type === 'ripple' && influence > threatResponse + 0.16) {
-          const rippleImpulse = influence * 0.09;
-          const safeAwayX = awayX + inwardX * Math.max(horizontalEdge, verticalEdge) * 0.9;
-          const safeAwayY = awayY + inwardY * Math.max(horizontalEdge, verticalEdge) * 0.9;
-          const safeLength = Math.max(0.001, Math.hypot(safeAwayX, safeAwayY));
-          creatureVelocityX += safeAwayX / safeLength * rippleImpulse;
-          creatureVelocityY += safeAwayY / safeLength * rippleImpulse;
-          repulsorEscapeX = safeAwayX / safeLength;
-          repulsorEscapeY = safeAwayY / safeLength;
-          repulsorEscapeUntil = time + creatureGenome.repulsorCommitment;
-          startlePulse = Math.max(startlePulse, influence);
-        }
-        nearestThreat = Math.max(nearestThreat, influence);
       }
 
+      curiousResponse += (curiousTarget - curiousResponse) * (1 - Math.exp(-deltaTime * (curiousTarget > curiousResponse ? 5.2 : 1.45)));
       if (nearestThreat > 0) {
         repulsorAwayX += inwardX * Math.max(horizontalEdge, verticalEdge) * 2.2;
         repulsorAwayY += inwardY * Math.max(horizontalEdge, verticalEdge) * 2.2;
@@ -706,6 +830,19 @@ export function WaveCanvas({
         accelerationY = (awayY * escapeSpeed - creatureVelocityY) * 4.4;
         repulsorEscapeX = awayX;
         repulsorEscapeY = awayY;
+      } else if (time < repulsorEscapeUntil) {
+        accelerationX = (repulsorEscapeX * 0.11 * motionScale - creatureVelocityX) * 2.4;
+        accelerationY = (repulsorEscapeY * 0.11 * motionScale - creatureVelocityY) * 2.4;
+      } else if (curiousResponse > 0.06) {
+        lifeState = 'curious';
+        lifeStateUntil = time + 0.8;
+        releaseLookUntil = time + 1.4;
+        const observeX = interactionX - creatureX;
+        const observeY = interactionY - creatureY;
+        const observeDistance = Math.max(0.001, Math.hypot(observeX, observeY));
+        const curiousSpeed = 0.016 * smoothstep(0.08, 0.42, observeDistance) * motionScale;
+        accelerationX = (observeX / observeDistance * curiousSpeed - creatureVelocityX) * 0.62;
+        accelerationY = (observeY / observeDistance * curiousSpeed - creatureVelocityY) * 0.62;
       } else if (insideEdgeZone) {
         if (time >= escapeUntil) {
           const phase = creatureGenome.escapePhase + time * 1.618;
@@ -723,9 +860,12 @@ export function WaveCanvas({
         const escapeSpeed = (0.12 + visualRadius * 0.08) * motionScale;
         accelerationX = (escapeX / escapeLength * escapeSpeed - creatureVelocityX) * 3.8;
         accelerationY = (escapeY / escapeLength * escapeSpeed - creatureVelocityY) * 3.8;
-      } else if (time < repulsorEscapeUntil) {
-        accelerationX = (repulsorEscapeX * 0.11 * motionScale - creatureVelocityX) * 2.4;
-        accelerationY = (repulsorEscapeY * 0.11 * motionScale - creatureVelocityY) * 2.4;
+      } else if (time < releaseLookUntil) {
+        const observeX = interactionX - creatureX;
+        const observeY = interactionY - creatureY;
+        const observeDistance = Math.max(0.001, Math.hypot(observeX, observeY));
+        accelerationX += (observeX / observeDistance * 0.009 * motionScale - creatureVelocityX) * 0.28;
+        accelerationY += (observeY / observeDistance * 0.009 * motionScale - creatureVelocityY) * 0.28;
       } else if (time < escapeUntil) {
         const escapeX = escapeTargetX - creatureX;
         const escapeY = escapeTargetY - creatureY;
@@ -754,8 +894,24 @@ export function WaveCanvas({
         const turn = Math.atan2(Math.sin(targetHeading - creatureHeading), Math.cos(targetHeading - creatureHeading));
         creatureHeading += turn * Math.min(1, deltaTime * (2.1 + midEnergy * 1.8 + startlePulse * 2.4));
       }
+      if (anchorDebug) {
+        creatureX = 0;
+        creatureY = 0;
+        creatureVelocityX = 0;
+        creatureVelocityY = 0;
+      }
       creatureAccelerationX = accelerationX;
       creatureAccelerationY = accelerationY;
+      const telemetryTick = Math.floor(time * 4);
+      if (localPreview && telemetryTick !== lastDebugTelemetryTick) {
+        lastDebugTelemetryTick = telemetryTick;
+        mount.dataset.spiritLife = lifeState;
+        mount.dataset.spiritCurious = curiousResponse.toFixed(2);
+        mount.dataset.spiritContact = contactKind === 1 ? 'wing' : contactKind === 2 ? 'body' : contactKind === 3 ? 'heart' : 'none';
+        mount.dataset.spiritStartled = startlePulse.toFixed(2);
+        mount.dataset.spiritX = creatureX.toFixed(3);
+        mount.dataset.spiritY = creatureY.toFixed(3);
+      }
     };
 
 
@@ -774,37 +930,60 @@ export function WaveCanvas({
       const veinBeatPulse = sampleHeartEnvelope(beatAge - 0.09, heartRelease * 0.86) * rhythmStrength;
       const rimBeatPulse = sampleHeartEnvelope(beatAge - 0.145, heartRelease * 0.75) * rhythmStrength;
       const funnelBeatPulse = sampleHeartEnvelope(beatAge - 0.075, heartRelease) * rhythmStrength;
-      const vitality = 0.16 + musicAwake * (0.09 + musicEnergy * 0.18 + grooveEnergy * 0.32) + accentPulse * 0.16;
-      const strokeRate = Math.min(0.42, 0.13 + musicAwake * (0.06 + grooveEnergy * 0.18 + musicEnergy * 0.06));
-      const strokePower = 0.16 + musicAwake * (0.2 + grooveEnergy * 0.34 + bassEnergy * 0.18) + accentPulse * 0.08;
+      const idleLife = 0.1 + curiousResponse * 0.08 + startlePulse * 0.14;
+      const vitality = idleLife + 0.06 + musicAwake * (0.09 + musicEnergy * 0.18 + grooveEnergy * 0.32) + accentPulse * 0.16;
+      const autonomousStrokeRate = lifeState === 'drift'
+        ? 0.085
+        : lifeState === 'cruise'
+          ? 0.145
+          : lifeState === 'glide'
+            ? 0.042
+            : lifeState === 'curious' ? 0.068 : 0.29;
+      const autonomousStrokePower = lifeState === 'drift'
+        ? 0.28
+        : lifeState === 'cruise'
+          ? 0.58
+          : lifeState === 'glide'
+            ? 0.12
+            : lifeState === 'curious' ? 0.2 : 0.92;
+      const musicStrokeRate = Math.min(0.42, 0.19 + grooveEnergy * 0.18 + musicEnergy * 0.06);
+      const musicStrokePower = 0.36 + grooveEnergy * 0.34 + bassEnergy * 0.18 + accentPulse * 0.08;
+      const strokeRate = THREE.MathUtils.lerp(autonomousStrokeRate, musicStrokeRate, musicAwake);
+      const strokePower = THREE.MathUtils.lerp(autonomousStrokePower, musicStrokePower, musicAwake);
       const membraneTension = 0.28 + midEnergy * 0.2 + grooveEnergy * 0.22 + rootBeatPulse * 0.18;
       const energyFlow = 0.18 + musicAwake * (0.08 + musicEnergy * 0.2 + grooveEnergy * 0.24) + veinBeatPulse * 0.22;
       const rimActivity = 0.15 + musicAwake * (0.06 + trebleEnergy * 0.2 + grooveEnergy * 0.18) + rimBeatPulse * 0.28;
       const debugPhase = spiritDebug === 'power' || spiritDebug === 'funnel-power'
         ? 0.54
         : spiritDebug === 'glide' || spiritDebug === 'funnel-glide' ? 0.76 : 0.1;
-      const cycle = spiritDebug ? debugPhase : (time * strokeRate + creatureGenome.breathPhase) % 1;
+      wingCycle = (wingCycle + deltaTime * strokeRate) % 1;
+      const cycle = spiritDebug ? debugPhase : wingCycle;
       const phasePower = spiritDebug === 'power' || spiritDebug === 'funnel-power'
         ? 0.82
         : spiritDebug === 'glide' || spiritDebug === 'funnel-glide' ? 0.24 : strokePower;
-      const idleStrokeWindow = smoothstep(0.8, 0.98, 0.5 + Math.sin(time * 0.16 + creatureGenome.breathPhase * 6.28318) * 0.5);
-      const actionStrength = spiritDebug ? 1 : musicAwake + (1 - musicAwake) * idleStrokeWindow * 0.3;
+      const actionStrength = spiritDebug ? 1 : 0.72 + musicAwake * 0.28;
 
       for (let sideIndex = 0; sideIndex < 2; sideIndex += 1) {
-        const sidePhase = sideIndex === 0 ? -0.008 : 0.008;
+        const sidePhase = sideIndex === 0 ? -0.014 : 0.014;
         for (let zone = 0; zone < 5; zone += 1) {
           const zoneProgress = zone / 4;
-          const delayedCycle = (cycle - zoneProgress * 0.082 + sidePhase + 1) % 1;
+          const delayedCycle = (cycle - zoneProgress * 0.112 + sidePhase + 1) % 1;
           const phaseStroke = sampleSwimmingCycle(delayedCycle);
-          const idleUndulation = Math.sin(time * 0.29 - zoneProgress * 1.4 + sidePhase * 6) * (0.012 + zoneProgress * 0.018);
-          const zoneAmplitude = 1 + zone * 0.1;
+          const idleUndulation = Math.sin(time * 0.24 - zoneProgress * 1.55 + sidePhase * 6) * (0.006 + zoneProgress * 0.022);
+          const zoneAmplitude = 0.72 + zone * 0.135;
+          const rootStability = 0.08 + Math.pow(zoneProgress, 0.72) * 0.92;
+          const membraneDrag = (-creatureAccelerationY * 0.08 - creatureAccelerationX * (sideIndex === 0 ? -0.035 : 0.035)) * zoneProgress;
+          const contactDistance = Math.abs(zoneProgress - wingContactSpan[sideIndex]);
+          const localContact = wingContactPulse[sideIndex] * Math.max(0, 1 - contactDistance * 3.2) * (0.035 + zoneProgress * 0.055);
           const target = spiritDebug === 'neutral' || spiritDebug === 'closeup' || spiritDebug === 'funnel-neutral'
             ? 0
-            : phaseStroke * phasePower * actionStrength * (0.12 + zoneProgress * 0.88) * zoneAmplitude
-              + idleUndulation * (1 - musicAwake * 0.72)
-              + turnDelta * (sideIndex === 0 ? -0.012 : 0.012) * zoneProgress;
-          const stiffness = 21 - zone * 3.15;
-          const damping = 8.8 - zone * 1.02;
+            : phaseStroke * phasePower * actionStrength * rootStability * zoneAmplitude
+              + idleUndulation * (1 - musicAwake * 0.58)
+              + turnDelta * (sideIndex === 0 ? -0.014 : 0.014) * zoneProgress
+              + membraneDrag
+              - localContact;
+          const stiffness = 24 - zone * 4.45;
+          const damping = 10 - zone * 1.22;
           wingVelocity[sideIndex][zone] += (target - wingSpring[sideIndex][zone]) * stiffness * deltaTime;
           wingVelocity[sideIndex][zone] *= Math.exp(-damping * deltaTime);
           wingSpring[sideIndex][zone] += wingVelocity[sideIndex][zone] * deltaTime;
@@ -839,8 +1018,14 @@ export function WaveCanvas({
           targetX = funnelGlideX[ring];
           targetZ = funnelGlideZ[ring];
         }
-        const centerStiffness = 68 - ring * 7.4;
-        const centerDamping = 15.5 + ring * 1.05;
+        if (contactKind === 2 && contactPulse > 0.01) {
+          const rippleRing = Math.min(funnelRingCount - 1, contactFunnelRing + contactAge * 2.1);
+          const contactFalloff = Math.max(0, 1 - Math.abs(ring - rippleRing) * 0.58);
+          targetX += contactFunnelDirection * contactPulse * contactFalloff * 0.022;
+          targetZ += contactPulse * contactFalloff * 0.006;
+        }
+        const centerStiffness = funnelCenterStiffness[ring];
+        const centerDamping = funnelCenterDamping[ring];
         funnelCenterVelocityX[ring] += (targetX - funnelCenterX[ring]) * centerStiffness * deltaTime;
         funnelCenterVelocityZ[ring] += (targetZ - funnelCenterZ[ring]) * centerStiffness * deltaTime;
         const centerDrag = Math.exp(-centerDamping * deltaTime);
@@ -866,6 +1051,11 @@ export function WaveCanvas({
         } else if (softbodyActive) {
           targetCompression = softbodyActiveCompression[ring];
           targetStretch = softbodyActiveStretch[ring];
+        }
+        if (contactKind === 2 && contactPulse > 0.01) {
+          const rippleRing = Math.min(funnelRingCount - 1, contactFunnelRing + contactAge * 2.1);
+          const contactFalloff = Math.max(0, 1 - Math.abs(ring - rippleRing) * 0.58);
+          targetCompression += contactPulse * contactFalloff * 0.026;
         }
         const tissueStiffness = 59 - ring * 4.7;
         const tissueDamping = 16 + ring * 0.95;
@@ -898,7 +1088,7 @@ export function WaveCanvas({
       }
       unifiedSpirit.visible = true;
       unifiedSpirit.position.set(spiritDebug ? 0 : creatureX, spiritDebug ? -0.03 : creatureY, 0);
-      unifiedSpirit.rotation.z = spiritDebug || previewPass ? 0 : THREE.MathUtils.clamp(turnDelta * musicAwake * 0.025, -0.035, 0.035);
+      unifiedSpirit.rotation.z = spiritDebug || previewPass ? 0 : THREE.MathUtils.clamp(turnDelta * (0.014 + musicAwake * 0.011), -0.035, 0.035);
       const debugScale = spiritDebug === 'closeup'
         ? 0.9
         : spiritDebug === 'power' || spiritDebug === 'glide' || spiritDebug === 'funnel-power' || spiritDebug === 'funnel-glide' || spiritDebug === 'softbody'
@@ -914,7 +1104,7 @@ export function WaveCanvas({
       });
       spiritRig.finalMaterials.forEach((material) => {
         material.uniforms.uTime.value = time;
-        material.uniforms.uLife.value = previewPass === 'B' || spiritLayer === 'body' ? 0 : lifeEnergy;
+        material.uniforms.uLife.value = previewPass === 'B' || spiritLayer === 'body' ? 0 : Math.max(lifeEnergy, idleLife);
         material.uniforms.uMusicAwake.value = previewPass === 'B' ? 0 : musicAwake;
         material.uniforms.uBass.value = bassEnergy;
         material.uniforms.uMid.value = midEnergy;
@@ -940,6 +1130,10 @@ export function WaveCanvas({
         material.uniforms.uVeinPulse.value = spiritLayer === 'body' ? 0 : veinBeatPulse;
         material.uniforms.uRimPulse.value = spiritLayer === 'body' ? 0 : rimBeatPulse;
         material.uniforms.uFunnelPulse.value = spiritLayer === 'body' ? 0 : funnelBeatPulse;
+        material.uniforms.uContactPoint.value.set(contactPointX, contactPointY);
+        material.uniforms.uContactPulse.value = contactPulse;
+        material.uniforms.uContactAge.value = contactAge;
+        material.uniforms.uContactKind.value = contactKind;
       });
       const wingMotion = previewPass || spiritDebug === 'neutral' || spiritDebug === 'closeup' ? 0 : 1;
       spiritRig.leftWing.userData.materials.forEach((material: THREE.ShaderMaterial) => {
@@ -952,12 +1146,12 @@ export function WaveCanvas({
       });
 
       spiritRig.heartLobes.forEach((lobe, index) => {
-        const idlePhase = (time * 0.34 + index * 0.075) % 1;
-        const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.09, 2)) * 0.055;
+        const idlePhase = (time * 0.3 + index * 0.075) % 1;
+        const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.1, 2)) * (0.052 + curiousResponse * 0.018);
         const lobeAge = beatAge - heartLobeDelays[index];
         const audioBeat = sampleHeartEnvelope(lobeAge, heartRelease) * rhythmStrength;
         const rebound = sampleHeartEnvelope(lobeAge - 0.1, heartRelease * 0.64) * rhythmStrength;
-        const visibleBeat = THREE.MathUtils.lerp(idleBeat, audioBeat, musicAwake);
+        const visibleBeat = THREE.MathUtils.lerp(idleBeat, audioBeat, musicAwake) + heartStartlePulse * 0.24;
         const beat = 1 - visibleBeat * 0.22 + rebound * musicAwake * 0.13;
         lobe.scale.copy(lobe.userData.baseScale).multiplyScalar(beat);
         lobe.rotation.z = Math.sin(time * 0.2 + index * 1.31) * 0.038;
@@ -969,7 +1163,7 @@ export function WaveCanvas({
           ? 0
           : previewPass === 'A'
           ? 0.58
-          : 0.075 + lifeEnergy * 0.035 + propagation * 0.52 + rhythmImpulse * 0.015;
+          : 0.075 + Math.max(lifeEnergy, idleLife) * 0.05 + propagation * 0.52 + rhythmImpulse * 0.015 + contactPulse * 0.035;
       });
 
       const funnelTipX = (spiritDebug ? 0 : creatureX) + funnelCenterX[funnelRingCount - 1] * debugScale * scale * viewportAspect;
@@ -1093,6 +1287,26 @@ export function WaveCanvas({
         creatureVelocityX = Math.cos(creatureGenome.wanderPhase) * 0.025;
         creatureVelocityY = Math.sin(creatureGenome.wanderPhase) * 0.025;
         creatureHeading = creatureGenome.wanderPhase;
+        lifeState = 'drift';
+        lifeStateUntil = 0;
+        lifeTargetX = creatureX;
+        lifeTargetY = creatureY;
+        lifeRandomState = ((profileSeed || 1) * 2654435761) >>> 0;
+        wingCycle = creatureGenome.breathPhase;
+        curiousResponse = 0;
+        interactionX = creatureX;
+        interactionY = creatureY;
+        releaseLookUntil = 0;
+        contactPulse = 0;
+        contactAge = 10;
+        contactPointX = 0;
+        contactPointY = 0;
+        contactKind = 0;
+        contactFunnelRing = 0;
+        contactFunnelDirection = 0;
+        heartStartlePulse = 0;
+        wingContactPulse.fill(0);
+        wingContactSpan.fill(0);
         fastEnergy = 0;
         slowEnergy = 0;
         adaptivePeak = 0.025;
@@ -1872,6 +2086,10 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uVeinPulse: { value: 0 },
       uRimPulse: { value: 0 },
       uFunnelPulse: { value: 0 },
+      uContactPoint: { value: new THREE.Vector2() },
+      uContactPulse: { value: 0 },
+      uContactAge: { value: 10 },
+      uContactKind: { value: 0 },
       uWingA: { value: new THREE.Vector3() },
       uWingB: { value: new THREE.Vector2() },
       uWingSide: { value: 0 },
@@ -2011,6 +2229,10 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uniform float uVeinPulse;
       uniform float uRimPulse;
       uniform float uFunnelPulse;
+      uniform vec2 uContactPoint;
+      uniform float uContactPulse;
+      uniform float uContactAge;
+      uniform float uContactKind;
       varying vec3 vLocal;
       varying vec3 vNormalView;
       varying vec3 vViewPosition;
@@ -2033,6 +2255,12 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float funnelProgress = clamp((0.5 - vLocal.y) / 1.24, 0.0, 1.0);
         float funnelTravel = exp(-pow(funnelProgress - (uBeatAge - 0.08) * 1.75, 2.0) / 0.018)
           * uFunnelPulse * step(funnelProgress, 0.24 + uBeatStrength * 0.76) * (1.0 - step(0.5, uKind));
+        float contactDistance = distance(vLocal.xy, uContactPoint);
+        float contactCore = exp(-contactDistance * contactDistance / 0.012) * uContactPulse * exp(-uContactAge * 2.8);
+        float contactRadius = min(0.42, uContactAge * 0.24);
+        float contactWave = exp(-pow(contactDistance - contactRadius, 2.0) / 0.0045)
+          * uContactPulse * exp(-uContactAge * 1.9);
+        float contactEnergy = (contactCore + contactWave * 0.72) * (0.82 + uContactKind * 0.06);
         vec3 pearl = vec3(0.78, 0.97, 1.0);
         vec3 cyan = vec3(0.22, 0.78, 1.0);
         vec3 blue = vec3(0.2, 0.42, 1.0);
@@ -2057,13 +2285,14 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         finalColor += vec3(1.0, 0.82, 0.5) * heart * uHeartBeat * 0.72;
         finalColor += vec3(0.24, 0.76, 0.92) * vFunnelResponse * (0.35 + fresnel * 0.9);
         finalColor += vec3(0.34, 0.88, 1.0) * funnelTravel * 0.94;
+        finalColor += vec3(0.28, 0.9, 1.0) * contactEnergy * 1.15;
         finalColor += mix(vec3(0.25, 0.8, 1.0), vec3(0.72, 0.46, 1.0), vSpan) * wingTravel * 0.82;
         finalColor += vec3(1.0, 0.7, 0.32) * warmRoot * (vein + rootBlend + spectral * 0.35);
         finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.06 + localRimActivity * 0.14);
         float detailAlpha = 1.0 + spectral * 0.12 + vein * (energyPulse * uEnergyFlow * 0.42) + localRimActivity * 0.32;
         float featheredMask = mix(1.0, vWingMask, clamp(wing + spectral + rootBlend, 0.0, 1.0));
         float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
-        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vFunnelResponse * 0.36 + funnelTravel * 0.5 + wingTravel * 0.34 + rootBlend * uRootPulse * 0.22 + heart * (0.12 + uHeartBeat * 0.48) + membraneDepth + uMid * wing * 0.06);
+        float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vFunnelResponse * 0.36 + funnelTravel * 0.5 + contactEnergy * 0.42 + wingTravel * 0.34 + rootBlend * uRootPulse * 0.22 + heart * (0.12 + uHeartBeat * 0.48) + membraneDepth + uMid * wing * 0.06);
         if (alpha < 0.008) discard;
         gl_FragColor = vec4(finalColor, alpha);
       }

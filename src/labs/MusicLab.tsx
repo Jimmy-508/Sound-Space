@@ -78,7 +78,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
     controller.seek(time);
   };
 
-  const updateSpectrumRepulsor = (event: PointerEvent<HTMLDivElement>) => {
+  const updateSpectrumRepulsor = (event: PointerEvent<HTMLDivElement>, contact: boolean) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
     const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / Math.max(1, rect.height)));
@@ -91,12 +91,13 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
     setRepulsor({
       x,
       y,
-      radius: 0.238 + Math.min(0.154, speed * 0.028),
-      strength: 1.5 + Math.min(2.5, speed * 0.45),
+      radius: contact ? 0.238 + Math.min(0.154, speed * 0.028) : 0.31,
+      strength: contact ? 1.5 + Math.min(2.5, speed * 0.45) : 0.22,
       velocityX,
       velocityY,
       type: 'pointer',
       updatedAt: now,
+      contact,
     });
     lastRepulsorPointRef.current = { x, y, time: now };
   };
@@ -140,7 +141,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
         return;
       }
       if (event.detail > 1) return;
-      updateSpectrumRepulsor(event);
+      updateSpectrumRepulsor(event, true);
       return;
     }
     if (viewMode !== 'wave' || !session.duration || !session.sourceUrl) return;
@@ -175,6 +176,10 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
   const pointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
       const tracked = touchPointersRef.current.get(event.pointerId);
+      if (event.pointerType !== 'touch' && !tracked) {
+        updateSpectrumRepulsor(event, event.buttons > 0);
+        return;
+      }
       if (tracked) {
         tracked.x = event.clientX;
         tracked.y = event.clientY;
@@ -187,7 +192,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
         return;
       }
       if (tracked && Math.hypot(tracked.x - tracked.startX, tracked.y - tracked.startY) > 6) {
-        updateSpectrumRepulsor(event);
+        updateSpectrumRepulsor(event, true);
       }
       return;
     }
@@ -225,6 +230,8 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
         setRepulsor(null);
         lastRepulsorPointRef.current = null;
         if (touchPointersRef.current.size < 2) pinchRef.current = null;
+      } else {
+        updateSpectrumRepulsor(event, false);
       }
       return;
     }

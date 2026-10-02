@@ -11,4 +11,5 @@ export interface Repulsor {
   currentRadius?: number;
   decay?: number;
   updatedAt?: number;
+  contact?: boolean;
 }
