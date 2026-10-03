@@ -150,6 +150,7 @@ export default function App() {
       gestureSessionRef.current = null;
       gestureStoreRef.current?.clear();
       dwellControllerRef.current.reset();
+      window.dispatchEvent(new Event('soundspace:gesture-reset'));
       return;
     }
 

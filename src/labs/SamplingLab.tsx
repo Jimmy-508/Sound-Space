@@ -81,8 +81,16 @@ export function SamplingLab({ interactionRecorder, gestureController }: Sampling
       const id = (event as CustomEvent<{ id?: string }>).detail?.id;
       if (gestureStateRef.current.tab === 'size' && id?.startsWith('size-')) setActiveGestureControl(id);
     };
+    const resetGestureSelection = () => {
+      setActiveGestureControl(null);
+      gestureAccumulatorRef.current.reset();
+    };
     window.addEventListener('soundspace:gesture-control-selected', selectControl);
-    return () => window.removeEventListener('soundspace:gesture-control-selected', selectControl);
+    window.addEventListener('soundspace:gesture-reset', resetGestureSelection);
+    return () => {
+      window.removeEventListener('soundspace:gesture-control-selected', selectControl);
+      window.removeEventListener('soundspace:gesture-reset', resetGestureSelection);
+    };
   }, []);
 
   useEffect(() => {
