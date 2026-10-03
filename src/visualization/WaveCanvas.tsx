@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import * as THREE from 'three';
 import type { PointerPoint, Waveform } from '../types';
-import type { Repulsor } from './repulsor';
+import type { Repulsor, SpiritGestureForces } from './repulsor';
 import {
   DEFAULT_SOUND_SPIRIT_PHENOTYPE,
   type SoundSpiritPhenotypeConfig,
@@ -26,6 +26,7 @@ interface WaveCanvasProps {
   musicPlaying?: boolean;
   creatureScale?: number;
   repulsors?: Repulsor[];
+  gestureForcesRef?: RefObject<SpiritGestureForces>;
   homeSoundEnvelope?: Float32Array | null;
   homeSoundStartedAt?: number;
   homeSoundDuration?: number;
@@ -81,6 +82,7 @@ export function WaveCanvas({
   musicPlaying = false,
   creatureScale = 1,
   repulsors = [],
+  gestureForcesRef,
   homeSoundEnvelope = null,
   homeSoundStartedAt = 0,
   homeSoundDuration = 0,
@@ -110,6 +112,7 @@ export function WaveCanvas({
     musicPlaying,
     creatureScale,
     repulsors,
+    gestureForcesRef,
     homeSoundEnvelope,
     homeSoundStartedAt,
     homeSoundDuration,
@@ -139,6 +142,7 @@ export function WaveCanvas({
     musicPlaying,
     creatureScale,
     repulsors,
+    gestureForcesRef,
     homeSoundEnvelope,
     homeSoundStartedAt,
     homeSoundDuration,
@@ -760,7 +764,11 @@ export function WaveCanvas({
       let repulsorAwayY = 0;
       let curiousTarget = 0;
       const activeRepulsors = interactionDebugOff ? noRepulsors : current.repulsors ?? noRepulsors;
-      for (const repulsor of activeRepulsors) {
+      const gestureForces = interactionDebugOff ? undefined : current.gestureForcesRef?.current;
+      const gestureRepulsor = gestureForces?.displacement?.active ? gestureForces.displacement : undefined;
+      const repulsorCount = activeRepulsors.length + (gestureRepulsor ? 1 : 0);
+      for (let repulsorIndex = 0; repulsorIndex < repulsorCount; repulsorIndex += 1) {
+        const repulsor = repulsorIndex < activeRepulsors.length ? activeRepulsors[repulsorIndex] : gestureRepulsor!;
         const repulsorX = repulsor.x * 1.8 - 0.9;
         const repulsorY = (1 - repulsor.y) * 1.34 - 0.67;
         const deltaX = creatureX - repulsorX;
@@ -834,6 +842,21 @@ export function WaveCanvas({
         } else if (isNewRepulsorUpdate) {
           lastRepulsorUpdate = repulsor.updatedAt ?? lastRepulsorUpdate;
         }
+      }
+
+      const attraction = gestureForces?.attraction;
+      if (attraction?.active && nearestThreat < 0.2) {
+        const targetX = attraction.x * 1.8 - 0.9;
+        const targetY = (1 - attraction.y) * 1.34 - 0.67;
+        const towardX = targetX - creatureX;
+        const towardY = targetY - creatureY;
+        const towardDistance = Math.max(0.001, Math.hypot(towardX, towardY));
+        const approach = smoothstep(0.05, 0.72, towardDistance) * attraction.strength;
+        accelerationX += towardX / towardDistance * approach * 0.052;
+        accelerationY += towardY / towardDistance * approach * 0.052;
+        curiousTarget = Math.max(curiousTarget, Math.min(0.72, attraction.strength * 0.54));
+        interactionX = targetX;
+        interactionY = targetY;
       }
 
       curiousResponse += (curiousTarget - curiousResponse) * (1 - Math.exp(-deltaTime * (curiousTarget > curiousResponse ? 5.2 : 1.45)));

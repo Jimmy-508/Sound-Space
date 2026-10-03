@@ -16,3 +16,15 @@ export interface Repulsor {
   source?: 'mouse' | 'touch' | 'hand' | 'system';
   speed?: number;
 }
+
+export interface SpiritAttractor {
+  x: number;
+  y: number;
+  strength: number;
+  active: boolean;
+}
+
+export interface SpiritGestureForces {
+  attraction?: SpiritAttractor;
+  displacement?: Repulsor;
+}

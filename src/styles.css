@@ -93,13 +93,24 @@ button:disabled {
 .gesture-overlay {
   position: fixed;
   inset: 0;
-  z-index: 4;
+  z-index: 120;
   display: block;
   width: 100%;
   height: 100%;
   overflow: hidden;
   pointer-events: none;
   touch-action: none;
+}
+
+.gesture-effects-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 115;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .top-nav {
@@ -184,28 +195,9 @@ button:disabled {
   box-shadow: 0 0 12px rgba(115, 219, 255, 0.78);
 }
 
-.gesture-nav-separator {
-  flex: 0 0 1px;
-  align-self: stretch;
-  margin: 0.35rem 0.05rem;
-  background: linear-gradient(180deg, transparent, rgba(176, 234, 255, 0.34), transparent);
-}
-
-.top-nav .gesture-toggle.ready {
-  border-color: rgba(188, 245, 255, 0.88);
-}
-
-.top-nav .gesture-toggle.error {
-  border-color: rgba(255, 180, 188, 0.58);
-}
-
-.gesture-spinner {
-  animation: gesture-spin 850ms linear infinite;
-}
-
 .gesture-error {
   position: fixed;
-  z-index: 9;
+  z-index: 110;
   top: calc(76px + env(safe-area-inset-top));
   left: 50%;
   width: max-content;
@@ -222,10 +214,6 @@ button:disabled {
   text-align: center;
   backdrop-filter: blur(14px) saturate(130%);
   -webkit-backdrop-filter: blur(14px) saturate(130%);
-}
-
-@keyframes gesture-spin {
-  to { transform: rotate(1turn); }
 }
 
 .home {
@@ -480,6 +468,99 @@ h1 {
 
 .control strong {
   color: #9fefff;
+}
+
+.control.gesture-control-selected {
+  position: relative;
+  padding: 0.65rem;
+  outline: 2px solid rgba(255, 224, 133, 0.82);
+  outline-offset: 3px;
+  background: rgba(255, 194, 73, 0.06);
+  box-shadow: 0 0 22px rgba(255, 177, 52, 0.16), inset 0 0 18px rgba(255, 230, 149, 0.05);
+}
+
+.gesture-control-marker {
+  display: inline-flex;
+  margin-top: 0.35rem;
+  padding: 0.16rem 0.42rem;
+  border: 1px solid rgba(255, 229, 155, 0.64);
+  border-radius: 999px;
+  color: #fff0bd;
+  font-size: 0.72rem;
+  font-style: normal;
+}
+
+.gesture-dwell-hover {
+  outline: 2px solid rgba(255, 226, 137, 0.76);
+  outline-offset: 3px;
+  box-shadow: 0 0 22px rgba(255, 181, 51, 0.2);
+}
+
+.home.gesture-dwell-hover {
+  outline: 0;
+  box-shadow: none;
+}
+
+.settings-page {
+  position: relative;
+  z-index: 1;
+  width: min(820px, 100%);
+  margin: clamp(2rem, 8dvh, 5rem) auto 0;
+}
+
+.settings-page header {
+  margin-bottom: 1.5rem;
+}
+
+.settings-page h1 {
+  margin: 0.15rem 0 0;
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  letter-spacing: 0;
+}
+
+.settings-list {
+  border-top: 1px solid rgba(172, 231, 248, 0.2);
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 86px;
+  padding: 1rem 0;
+  border-bottom: 1px solid rgba(172, 231, 248, 0.16);
+}
+
+.settings-row-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(181, 238, 255, 0.24);
+  border-radius: 50%;
+  background: rgba(11, 40, 62, 0.58);
+}
+
+.settings-copy strong,
+.settings-copy small {
+  display: block;
+}
+
+.settings-copy small {
+  margin-top: 0.25rem;
+  color: #b8d7df;
+  line-height: 1.45;
+}
+
+.settings-switch {
+  min-width: 88px;
+  border-radius: 999px;
+}
+
+.settings-switch[aria-pressed="true"]::before {
+  content: "✓";
+  font-weight: 800;
 }
 
 input[type="range"] {
@@ -886,8 +967,16 @@ input.timeline-slider::-moz-range-thumb {
     transition-duration: 1ms;
   }
 
-  .gesture-spinner {
-    animation-duration: 1.6s;
+}
+
+@media (max-width: 520px) {
+  .settings-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .settings-switch {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 

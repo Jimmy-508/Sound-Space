@@ -4,6 +4,8 @@ import { useAudioEngine } from '../audio/useAudioEngine';
 import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { createPointerCommand, type CommandHandler } from '../interaction/commandLayer';
+import type { GestureInteractionController } from '../gesture/interactionController';
+import { mapWaveAmplitude, mapWaveFrequency } from '../gesture/gestureMappings';
 import type { PointerPoint, Waveform } from '../types';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 import {
@@ -21,9 +23,10 @@ const frequencySliderMax = 1000;
 
 interface WaveLabProps {
   interactionRecorder: SoundSpiritInteractionRecorder;
+  gestureController: GestureInteractionController;
 }
 
-export function WaveLab({ interactionRecorder }: WaveLabProps) {
+export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps) {
   const audio = useAudioEngine();
   const [amplitude, setAmplitude] = useState(0.5);
   const [frequency, setFrequency] = useState(440);
@@ -58,6 +61,34 @@ export function WaveLab({ interactionRecorder }: WaveLabProps) {
   useEffect(() => audio.setAmplitude(amplitude), [amplitude, audio]);
   useEffect(() => audio.setFrequency(frequency), [frequency, audio]);
   useEffect(() => audio.setWaveform(waveform), [waveform, audio]);
+
+  useEffect(() => {
+    let frame = 0;
+    let lastTimestamp = -1;
+    const update = () => {
+      frame = requestAnimationFrame(update);
+      const gesture = gestureController.read();
+      if (!gesture.timestamp || gesture.timestamp === lastTimestamp) return;
+      lastTimestamp = gesture.timestamp;
+      if (gesture.twoHand.gesture !== 'none') {
+        setFrequency((current) => {
+          const next = mapWaveFrequency(current, gesture.twoHand.gesture, gesture.twoHand.rate);
+          if (next !== current) interactionRecorder.observeFrequency(current, next);
+          return next;
+        });
+        return;
+      }
+      if (gesture.fist?.axis === 'y' && gesture.fist.deltaY !== 0) {
+        setAmplitude((current) => {
+          const next = mapWaveAmplitude(current, gesture.fist!.deltaY);
+          if (Math.abs(next - current) > 0.0001) interactionRecorder.observeAmplitude(current, next);
+          return next;
+        });
+      }
+    };
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, [gestureController, interactionRecorder]);
 
   return (
     <section className="lab-layout">

@@ -21,21 +21,33 @@ const createOpenHand = (id: number, centerX: number, centerY: number, scale: num
   };
 };
 
-export function startGesturePreview(store: GestureFrameStore, handCount: 1 | 2) {
+export type GesturePreviewMode = 'one' | 'two' | 'pointing' | 'sweep' | 'explosion';
+
+export function startGesturePreview(store: GestureFrameStore, mode: GesturePreviewMode) {
   let frame = 0;
   let previousUpdate = 0;
   const tick = (timestamp: number) => {
     frame = requestAnimationFrame(tick);
     if (timestamp - previousUpdate < 1000 / 30) return;
     previousUpdate = timestamp;
-    const drift = Math.sin(timestamp * 0.00075) * 0.012;
-    const hands = handCount === 2
+    const drift = Math.sin(timestamp * (mode === 'sweep' ? 0.004 : 0.00075)) * (mode === 'sweep' ? 0.2 : 0.012);
+    const hands = mode === 'two'
       ? [
           createOpenHand(1, 0.3 + drift, 0.53, 0.25, timestamp),
           createOpenHand(2, 0.7 - drift, 0.55, 0.23, timestamp),
         ]
       : [createOpenHand(1, 0.5 + drift, 0.53, 0.3, timestamp)];
-    store.write({ hands, twoHandsPresent: handCount === 2, timestamp });
+    if (mode === 'pointing') {
+      const params = new URLSearchParams(window.location.search);
+      hands[0].gesture = 'pointing';
+      hands[0].landmarks[8] = {
+        x: Math.min(1, Math.max(0, Number(params.get('gestureX') ?? 0.5))),
+        y: Math.min(1, Math.max(0, Number(params.get('gestureY') ?? 0.5))),
+        z: 0,
+      };
+    }
+    if (mode === 'explosion') hands[0].gesture = Math.floor(timestamp / 900) % 2 === 0 ? 'fist' : 'openPalm';
+    store.write({ hands, twoHandsPresent: mode === 'two', timestamp });
   };
   frame = requestAnimationFrame(tick);
   return () => {

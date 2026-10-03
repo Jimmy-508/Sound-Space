@@ -2,12 +2,14 @@ import { Download, Pause, Play, StopCircle } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from 'react';
 import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
+import { gesturePointToElement } from '../gesture/coordinateTransform';
+import type { GestureInteractionController } from '../gesture/interactionController';
 import type { MusicSessionState } from '../music/musicSession';
 import { audioAccept, type MusicAudioController } from '../music/useMusicAudioController';
 import type { PointerPoint } from '../types';
 import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
-import type { Repulsor } from '../visualization/repulsor';
+import type { Repulsor, SpiritGestureForces } from '../visualization/repulsor';
 import type { SoundSpiritPhenotypeConfig } from '../spirit/soundSpiritIdentity';
 
 type ViewMode = 'wave' | 'spectrum';
@@ -18,9 +20,10 @@ interface MusicLabProps {
   onSessionChange: (patch: Partial<MusicSessionState>) => void;
   controller: MusicAudioController;
   spiritPhenotype: SoundSpiritPhenotypeConfig;
+  gestureController: GestureInteractionController;
 }
 
-export function MusicLab({ session, onSessionChange, controller, spiritPhenotype }: MusicLabProps) {
+export function MusicLab({ session, onSessionChange, controller, spiritPhenotype, gestureController }: MusicLabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('wave');
   const [repulsor, setRepulsor] = useState<Repulsor | null>(null);
   const [creatureScale, setCreatureScale] = useState(masterCreatureScale);
@@ -36,6 +39,10 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
   const lastRepulsorPointRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const lastTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const scaleAnimationRef = useRef(0);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const gestureForcesRef = useRef<SpiritGestureForces>({});
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
 
   useEffect(() => {
@@ -47,6 +54,91 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
   }, [viewMode]);
 
   useEffect(() => () => cancelAnimationFrame(scaleAnimationRef.current), []);
+
+  useEffect(() => {
+    let frame = 0;
+    let lastTimestamp = -1;
+    let displacementUntil = 0;
+    let explosionStartedAt = 0;
+    const unsubscribe = gestureController.subscribe((event) => {
+      const stage = stageRef.current;
+      if (!stage || viewModeRef.current !== 'spectrum') return;
+      const local = gesturePointToElement(event.point, stage);
+      if (!local.inside) return;
+      if (event.type === 'sweep') {
+        gestureForcesRef.current.displacement = {
+          x: local.x,
+          y: local.y,
+          radius: 0.28,
+          strength: 0.72,
+          velocityX: event.velocityX,
+          velocityY: event.velocityY,
+          type: 'hand',
+          updatedAt: event.timestamp,
+          contact: true,
+          active: true,
+          source: 'hand',
+          speed: event.speed,
+        };
+        displacementUntil = event.timestamp + 190;
+        explosionStartedAt = 0;
+      } else {
+        gestureForcesRef.current.displacement = {
+          x: local.x,
+          y: local.y,
+          radius: 0.22,
+          currentRadius: 0.04,
+          strength: 4.8,
+          type: 'ripple',
+          updatedAt: event.timestamp,
+          contact: true,
+          active: true,
+          source: 'hand',
+          speed: 4.2,
+        };
+        explosionStartedAt = event.timestamp;
+        displacementUntil = event.timestamp + 720;
+      }
+    });
+    const update = (now: number) => {
+      frame = requestAnimationFrame(update);
+      const stage = stageRef.current;
+      const gesture = gestureController.read();
+      if (!stage) return;
+      if (gesture.timestamp !== lastTimestamp) {
+        lastTimestamp = gesture.timestamp;
+        if (gesture.fist?.axis === 'y') {
+          const local = gesturePointToElement(gesture.fist.point, stage);
+          if (!local.inside) window.scrollBy({ top: gesture.fist.deltaY * 920, behavior: 'auto' });
+        }
+      }
+      if (viewModeRef.current !== 'spectrum') {
+        gestureForcesRef.current = {};
+        return;
+      }
+      if (gesture.pointer) {
+        const local = gesturePointToElement(gesture.pointer.point, stage);
+        gestureForcesRef.current.attraction = local.inside
+          ? { x: local.x, y: local.y, strength: 0.72, active: true }
+          : undefined;
+      } else {
+        gestureForcesRef.current.attraction = undefined;
+      }
+      const displacement = gestureForcesRef.current.displacement;
+      if (displacement && now >= displacementUntil) gestureForcesRef.current.displacement = undefined;
+      if (displacement?.type === 'ripple' && explosionStartedAt) {
+        const progress = Math.min(1, (now - explosionStartedAt) / 720);
+        displacement.currentRadius = 0.04 + progress * 0.62;
+        displacement.strength = 4.8 * (1 - progress * 0.58);
+      }
+    };
+    frame = requestAnimationFrame(update);
+    return () => {
+      unsubscribe();
+      cancelAnimationFrame(frame);
+      gestureForcesRef.current = {};
+    };
+  }, [gestureController]);
 
   useEffect(() => {
     if (!session.duration || session.zoom <= 1) {
@@ -286,7 +378,9 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
   return (
     <section className="lab-layout">
       <div
+        ref={stageRef}
         className="stage music-stage"
+        data-gesture-zone={viewMode === 'spectrum' ? 'spirit' : undefined}
         onPointerDown={pointerDown}
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}
@@ -317,6 +411,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           musicPlaying={controller.playing}
           creatureScale={creatureScale}
           repulsors={repulsor ? [repulsor] : []}
+          gestureForcesRef={gestureForcesRef}
           spiritPhenotype={spiritPhenotype}
         />
       </div>

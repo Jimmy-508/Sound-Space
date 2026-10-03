@@ -28,3 +28,13 @@ export function gesturePointToViewport(
     z: point.z,
   };
 }
+
+export function gesturePointToElement(point: GesturePoint, element: Element) {
+  const rect = element.getBoundingClientRect();
+  const viewport = gesturePointToViewport(point, window.innerWidth, window.innerHeight);
+  return {
+    x: clamp01((viewport.x - rect.left) / Math.max(1, rect.width)),
+    y: clamp01((viewport.y - rect.top) / Math.max(1, rect.height)),
+    inside: viewport.x >= rect.left && viewport.x <= rect.right && viewport.y >= rect.top && viewport.y <= rect.bottom,
+  };
+}

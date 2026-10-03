@@ -1,8 +1,13 @@
-import { Calculator, Camera, Hand, Home, LoaderCircle, Music, Waves } from 'lucide-react';
+import { Calculator, Home, Music, Settings, Waves } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { interactionSound, type InteractionPlayback } from './audio/interactionSound';
+import { SettingsPanel } from './components/SettingsPanel';
+import { GestureEffectsOverlay } from './gesture/GestureEffectsOverlay';
 import { GestureOverlay } from './gesture/GestureOverlay';
 import { CameraStartError, HandTrackingSession } from './gesture/HandTrackingSession';
+import { gesturePointToViewport } from './gesture/coordinateTransform';
+import { DwellSelectionController } from './gesture/dwellController';
+import { GestureInteractionController } from './gesture/interactionController';
 import { GestureFrameStore } from './gesture/types';
 import { createPointerCommand } from './interaction/commandLayer';
 import { MusicLab } from './labs/MusicLab';
@@ -27,6 +32,7 @@ const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: stri
   { id: 'sampling', title: '數位取樣實驗室', description: '看看聲音如何變成數位資料', icon: <Calculator size={22} /> },
   { id: 'music', title: '音樂實驗室', description: '匯入自己的音樂，觀察聲音的波形', icon: <Music size={22} /> },
 ];
+type ActiveView = LabId | 'settings';
 
 export default function App() {
   const previewParams = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search);
@@ -38,10 +44,10 @@ export default function App() {
   const gesturePreviewParam = previewParams.get('gesturePreview');
   const localGesturePreview = typeof window !== 'undefined'
     && (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
-    && /^(one|two)$/.test(gesturePreviewParam ?? '')
-      ? gesturePreviewParam as 'one' | 'two'
+    && /^(one|two|pointing|sweep|explosion)$/.test(gesturePreviewParam ?? '')
+      ? gesturePreviewParam as 'one' | 'two' | 'pointing' | 'sweep' | 'explosion'
       : null;
-  const [activeLab, setActiveLab] = useState<LabId>(localSpiritPreview ? 'music' : 'home');
+  const [activeView, setActiveView] = useState<ActiveView>(localSpiritPreview ? 'music' : 'home');
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
   const [musicSession, setMusicSession] = useState<MusicSessionState>(initialMusicSession);
   const [spiritPhenotype, setSpiritPhenotype] = useState(
@@ -53,6 +59,7 @@ export default function App() {
   const [gestureEnabled, setGestureEnabled] = useState(Boolean(localGesturePreview));
   const [gestureStatus, setGestureStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>(localGesturePreview ? 'ready' : 'idle');
   const [gestureError, setGestureError] = useState('');
+  const [sfxEnabled, setSfxEnabled] = useState(true);
   const spiritInteractionRef = useRef(createSoundSpiritInteractionRecorder());
   const musicUrlRef = useRef<string | null>(null);
   const visualImpulseRef = useRef<VisualImpulseHandle | null>(null);
@@ -60,6 +67,11 @@ export default function App() {
   const gestureSessionRef = useRef<HandTrackingSession | null>(null);
   const gestureStoreRef = useRef<GestureFrameStore | null>(null);
   if (!gestureStoreRef.current) gestureStoreRef.current = new GestureFrameStore();
+  const gestureInteractionRef = useRef<GestureInteractionController | null>(null);
+  if (!gestureInteractionRef.current) gestureInteractionRef.current = new GestureInteractionController(gestureStoreRef.current);
+  const dwellControllerRef = useRef(new DwellSelectionController());
+  const activeViewRef = useRef(activeView);
+  activeViewRef.current = activeView;
 
   const updateMusicSession = useCallback((patch: Partial<MusicSessionState>) => {
     setMusicSession((current) => ({ ...current, ...patch }));
@@ -102,10 +114,42 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    interactionSound.setEnabled(sfxEnabled);
+  }, [sfxEnabled]);
+
+  useEffect(() => {
+    const controller = gestureInteractionRef.current!;
+    controller.start();
+    return () => controller.stop();
+  }, []);
+
+  useEffect(() => {
+    const controller = gestureInteractionRef.current!;
+    const unsubscribe = controller.subscribe((event) => {
+      if (event.type !== 'explosion') return;
+      const view = activeViewRef.current;
+      if (view !== 'home' && view !== 'music') return;
+      if (view === 'music') {
+        const stage = document.querySelector<HTMLElement>('.music-stage[data-gesture-zone="spirit"]');
+        if (!stage) return;
+        const point = gesturePointToViewport(event.point, window.innerWidth, window.innerHeight);
+        const rect = stage.getBoundingClientRect();
+        if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) return;
+      }
+      void interactionSound.play('explosion').then((playback) => {
+        if (playback && view === 'home') setHomePlayback(playback);
+      });
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    gestureInteractionRef.current?.setEnabled(gestureEnabled);
     if (!gestureEnabled) {
       gestureSessionRef.current?.stop();
       gestureSessionRef.current = null;
       gestureStoreRef.current?.clear();
+      dwellControllerRef.current.reset();
       return;
     }
 
@@ -119,7 +163,7 @@ export default function App() {
       setGestureStatus('ready');
       void import('./gesture/devGesturePreview').then(({ startGesturePreview }) => {
         if (!active) return;
-        stopPreview = startGesturePreview(store, localGesturePreview === 'two' ? 2 : 1);
+        stopPreview = startGesturePreview(store, localGesturePreview);
       });
       return () => {
         active = false;
@@ -156,15 +200,58 @@ export default function App() {
     };
   }, [gestureEnabled, localGesturePreview]);
 
-  const toggleGesture = () => {
-    if (gestureEnabled) {
-      setGestureEnabled(false);
-      setGestureStatus('idle');
-      setGestureError('');
-      return;
-    }
+  useEffect(() => {
+    let frame = 0;
+    let hovered: HTMLElement | null = null;
+    const clearHover = () => {
+      hovered?.classList.remove('gesture-dwell-hover');
+      hovered = null;
+      gestureInteractionRef.current?.setDwell(false, 0);
+    };
+    const update = (now: number) => {
+      frame = requestAnimationFrame(update);
+      const interaction = gestureInteractionRef.current!;
+      const pointer = interaction.read().pointer;
+      if (!gestureEnabled || !pointer) {
+        clearHover();
+        dwellControllerRef.current.update(undefined, now, false);
+        return;
+      }
+      const point = gesturePointToViewport(pointer.point, window.innerWidth, window.innerHeight);
+      const hit = document.elementFromPoint(point.x, point.y);
+      const blocked = hit?.closest('.music-stage[data-gesture-zone="spirit"]');
+      const target = blocked ? null : hit?.closest<HTMLElement>('[data-gesture-clickable="true"], button:not(:disabled), .file-picker');
+      if (target !== hovered) {
+        hovered?.classList.remove('gesture-dwell-hover');
+        hovered = target ?? null;
+        hovered?.classList.add('gesture-dwell-hover');
+      }
+      const result = dwellControllerRef.current.update(target, now, true);
+      interaction.setDwell(result.active, result.progress);
+      if (!result.activated || !target) return;
+      const controlId = target.dataset.gestureControlId;
+      if (controlId) {
+        window.dispatchEvent(new CustomEvent('soundspace:gesture-control-selected', { detail: { id: controlId } }));
+        return;
+      }
+      if (target.classList.contains('home')) {
+        target.dispatchEvent(new PointerEvent('click', { bubbles: true, clientX: point.x, clientY: point.y, pointerType: 'touch' }));
+      } else {
+        target.click();
+      }
+    };
+    frame = requestAnimationFrame(update);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearHover();
+      dwellControllerRef.current.reset();
+    };
+  }, [gestureEnabled]);
+
+  const setGestureInteraction = (enabled: boolean) => {
     setGestureError('');
-    setGestureEnabled(true);
+    setGestureStatus(enabled ? 'starting' : 'idle');
+    setGestureEnabled(enabled);
   };
 
   const playControlSound = (event: MouseEvent<HTMLElement>) => {
@@ -175,9 +262,11 @@ export default function App() {
     void interactionSound.play();
   };
 
-  const selectLab = (lab: LabId) => {
-    if (lab === 'wave' || lab === 'sampling') musicController.pause();
-    setActiveLab(lab);
+  const selectView = (view: ActiveView) => {
+    if (view === 'wave' || view === 'sampling') musicController.pause();
+    dwellControllerRef.current.reset();
+    gestureInteractionRef.current?.setDwell(false, 0);
+    setActiveView(view);
   };
 
   const activateHomeImpulse = (event: MouseEvent<HTMLElement>) => {
@@ -198,38 +287,30 @@ export default function App() {
       />
       <video ref={gestureVideoRef} className="gesture-camera-sensor" muted playsInline aria-hidden="true" />
       <StarfieldBackground />
-      <GestureOverlay store={gestureStoreRef.current} />
+      <GestureEffectsOverlay controller={gestureInteractionRef.current} enabled={gestureEnabled} scene={activeView} />
+      <GestureOverlay store={gestureStoreRef.current} interaction={gestureInteractionRef.current} />
       <nav className="top-nav" aria-label="主要導覽">
         <div className="top-nav-track">
-          <button type="button" className={activeLab === 'home' ? 'active' : ''} onClick={() => selectLab('home')}>
+          <button type="button" className={activeView === 'home' ? 'active' : ''} onClick={() => selectView('home')}>
             <Home size={18} />首頁
           </button>
           {labs.map((lab) => (
-            <button key={lab.id} type="button" className={activeLab === lab.id ? 'active' : ''} onClick={() => selectLab(lab.id)}>
+            <button key={lab.id} type="button" className={activeView === lab.id ? 'active' : ''} onClick={() => selectView(lab.id)}>
               {lab.icon}{lab.title}
             </button>
           ))}
-          <span className="gesture-nav-separator" aria-hidden="true" />
-          <button
-            type="button"
-            className={`gesture-toggle ${gestureEnabled ? 'active' : ''} ${gestureStatus}`}
-            aria-pressed={gestureEnabled}
-            aria-label={gestureEnabled ? '關閉手勢辨識' : '開啟手勢辨識'}
-            onClick={toggleGesture}
-          >
-            {gestureStatus === 'starting'
-              ? <LoaderCircle size={18} className="gesture-spinner" />
-              : gestureEnabled ? <Hand size={18} /> : <Camera size={18} />}
-            {gestureStatus === 'starting' ? '啟動中' : gestureStatus === 'error' ? '重試手勢' : gestureEnabled ? '手勢開啟' : '手勢'}
+          <button type="button" className={activeView === 'settings' ? 'active' : ''} onClick={() => selectView('settings')}>
+            <Settings size={18} />設定
           </button>
         </div>
       </nav>
 
       {gestureError && <p className="gesture-error" role="status">{gestureError}</p>}
 
-      {activeLab === 'home' && (
+      {activeView === 'home' && (
         <section
           className="home"
+          data-gesture-clickable="true"
           onClick={activateHomeImpulse}
           onContextMenu={(event) => event.preventDefault()}
           onPointerMove={(event) => {
@@ -258,14 +339,24 @@ export default function App() {
         </section>
       )}
 
-      {activeLab === 'wave' && <WaveLab interactionRecorder={spiritInteractionRef.current} />}
-      {activeLab === 'sampling' && <SamplingLab interactionRecorder={spiritInteractionRef.current} />}
-      {activeLab === 'music' && (
+      {activeView === 'wave' && <WaveLab interactionRecorder={spiritInteractionRef.current} gestureController={gestureInteractionRef.current} />}
+      {activeView === 'sampling' && <SamplingLab interactionRecorder={spiritInteractionRef.current} gestureController={gestureInteractionRef.current} />}
+      {activeView === 'music' && (
         <MusicLab
           session={musicSession}
           onSessionChange={updateMusicSession}
           controller={musicController}
           spiritPhenotype={spiritPhenotype}
+          gestureController={gestureInteractionRef.current}
+        />
+      )}
+      {activeView === 'settings' && (
+        <SettingsPanel
+          gestureEnabled={gestureEnabled}
+          gestureStatus={gestureStatus}
+          sfxEnabled={sfxEnabled}
+          onGestureChange={setGestureInteraction}
+          onSfxChange={setSfxEnabled}
         />
       )}
 

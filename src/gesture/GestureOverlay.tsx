@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { gesturePointToViewport } from './coordinateTransform';
+import type { GestureInteractionController } from './interactionController';
 import type { GestureFrameStore } from './types';
 
 const CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
@@ -18,9 +19,10 @@ interface TrailPoint {
 
 interface GestureOverlayProps {
   store: GestureFrameStore;
+  interaction: GestureInteractionController;
 }
 
-export function GestureOverlay({ store }: GestureOverlayProps) {
+export function GestureOverlay({ store, interaction }: GestureOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -64,13 +66,14 @@ export function GestureOverlay({ store }: GestureOverlayProps) {
           const start = points[from];
           const end = points[to];
           const gradient = context.createLinearGradient(start.x, start.y, end.x, end.y);
-          gradient.addColorStop(0, `rgba(105, 221, 255, ${0.7 * opacity})`);
-          gradient.addColorStop(1, `rgba(188, 132, 255, ${0.62 * opacity})`);
+          gradient.addColorStop(0, `rgba(255, 246, 205, ${0.82 * opacity})`);
+          gradient.addColorStop(0.5, `rgba(255, 204, 92, ${0.72 * opacity})`);
+          gradient.addColorStop(1, `rgba(255, 155, 52, ${0.58 * opacity})`);
           context.beginPath();
           context.moveTo(start.x, start.y);
           context.lineTo(end.x, end.y);
-          context.strokeStyle = `rgba(91, 126, 255, ${0.16 * opacity})`;
-          context.shadowColor = 'rgba(72, 194, 255, 0.62)';
+          context.strokeStyle = `rgba(255, 174, 45, ${0.2 * opacity})`;
+          context.shadowColor = 'rgba(255, 183, 57, 0.7)';
           context.shadowBlur = 13;
           context.lineWidth = 4;
           context.stroke();
@@ -85,8 +88,8 @@ export function GestureOverlay({ store }: GestureOverlayProps) {
           const radius = index === 8 ? 4.9 : isTip ? 3.7 : index === 0 ? 4.2 : 2.6;
           context.beginPath();
           context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-          context.fillStyle = `rgba(229, 252, 255, ${0.92 * opacity})`;
-          context.shadowColor = index % 2 === 0 ? 'rgba(71, 224, 255, 0.95)' : 'rgba(190, 126, 255, 0.9)';
+          context.fillStyle = `rgba(255, 252, 226, ${0.96 * opacity})`;
+          context.shadowColor = index % 2 === 0 ? 'rgba(255, 216, 93, 0.98)' : 'rgba(255, 162, 48, 0.92)';
           context.shadowBlur = isTip ? 18 : 11;
           context.fill();
         });
@@ -104,8 +107,8 @@ export function GestureOverlay({ store }: GestureOverlayProps) {
           const life = 1 - (timestamp - point.timestamp) / 190;
           context.beginPath();
           context.arc(point.x, point.y, 1 + (index / Math.max(1, trail.length)) * 1.5, 0, Math.PI * 2);
-          context.fillStyle = `rgba(118, 229, 255, ${Math.max(0, life) * 0.46 * opacity})`;
-          context.shadowColor = 'rgba(105, 184, 255, 0.8)';
+          context.fillStyle = `rgba(255, 220, 117, ${Math.max(0, life) * 0.5 * opacity})`;
+          context.shadowColor = 'rgba(255, 170, 58, 0.84)';
           context.shadowBlur = 8;
           context.fill();
         });
@@ -119,6 +122,36 @@ export function GestureOverlay({ store }: GestureOverlayProps) {
           if (!trail.length) trails.delete(id);
         }
       }
+
+      const pointer = interaction.read().pointer;
+      if (pointer) {
+        const point = gesturePointToViewport(pointer.point, width, height);
+        const progress = interaction.read().dwellActive ? interaction.read().dwellProgress : 0;
+        context.save();
+        context.globalCompositeOperation = 'lighter';
+        context.translate(point.x, point.y);
+        context.rotate(timestamp * 0.0013);
+        context.beginPath();
+        context.arc(0, 0, 12, 0, Math.PI * 2);
+        context.strokeStyle = 'rgba(255, 229, 139, 0.86)';
+        context.lineWidth = 1.4;
+        context.shadowColor = 'rgba(255, 178, 48, 0.95)';
+        context.shadowBlur = 18;
+        context.stroke();
+        context.beginPath();
+        context.arc(0, 0, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+        context.strokeStyle = 'rgba(255, 250, 220, 0.96)';
+        context.lineWidth = 3;
+        context.stroke();
+        for (let spark = 0; spark < 4; spark += 1) {
+          const angle = spark * Math.PI / 2;
+          context.beginPath();
+          context.arc(Math.cos(angle) * 22, Math.sin(angle) * 22, 1.3, 0, Math.PI * 2);
+          context.fillStyle = 'rgba(255, 213, 91, 0.86)';
+          context.fill();
+        }
+        context.restore();
+      }
       frame = requestAnimationFrame(draw);
     };
 
@@ -131,7 +164,7 @@ export function GestureOverlay({ store }: GestureOverlayProps) {
       window.removeEventListener('resize', resize);
       window.visualViewport?.removeEventListener('resize', resize);
     };
-  }, [store]);
+  }, [interaction, store]);
 
   return <canvas ref={canvasRef} className="gesture-overlay" aria-hidden="true" />;
 }

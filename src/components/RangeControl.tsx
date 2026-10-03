@@ -6,12 +6,18 @@ interface RangeControlProps {
   step: number;
   display: string;
   ariaValueText?: string;
+  gestureControlId?: string;
+  gestureSelected?: boolean;
   onChange: (value: number) => void;
 }
 
-export function RangeControl({ label, value, min, max, step, display, ariaValueText, onChange }: RangeControlProps) {
+export function RangeControl({ label, value, min, max, step, display, ariaValueText, gestureControlId, gestureSelected = false, onChange }: RangeControlProps) {
   return (
-    <label className="control">
+    <label
+      className={`control ${gestureSelected ? 'gesture-control-selected' : ''}`}
+      data-gesture-control-id={gestureControlId}
+      data-gesture-clickable={gestureControlId ? 'true' : undefined}
+    >
       <span>
         {label}
         <strong>{display}</strong>
@@ -26,6 +32,7 @@ export function RangeControl({ label, value, min, max, step, display, ariaValueT
         aria-valuetext={ariaValueText ?? display}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
       />
+      {gestureSelected && <em className="gesture-control-marker">已選取</em>}
     </label>
   );
 }

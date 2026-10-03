@@ -7,15 +7,27 @@ export interface InteractionPlayback {
 
 const envelopePointCount = 512;
 const minimumPlayIntervalMs = 45;
+export type InteractionSfx = 'select' | 'explosion' | 'blueTears';
+
+const soundAssets: Record<InteractionSfx, string | null> = {
+  select: 'audio/03_select_confirm.wav',
+  explosion: 'audio/04_compound_shatter.wav',
+  blueTears: null,
+};
 
 class InteractionSoundPlayer {
   private context: AudioContext | null = null;
   private gain: GainNode | null = null;
-  private buffer: AudioBuffer | null = null;
-  private envelope: Float32Array | null = null;
+  private buffers = new Map<InteractionSfx, AudioBuffer>();
+  private envelopes = new Map<InteractionSfx, Float32Array>();
   private preloadPromise: Promise<void> | null = null;
   private lastStartedAt = -Infinity;
   private token = 0;
+  private enabled = true;
+
+  setEnabled(enabled: boolean) {
+    this.enabled = enabled;
+  }
 
   preload() {
     if (this.preloadPromise) return this.preloadPromise;
@@ -23,22 +35,25 @@ class InteractionSoundPlayer {
     return this.preloadPromise;
   }
 
-  async play(): Promise<InteractionPlayback | null> {
+  async play(kind: InteractionSfx = 'select'): Promise<InteractionPlayback | null> {
+    if (!this.enabled || !soundAssets[kind]) return null;
     if (performance.now() - this.lastStartedAt < minimumPlayIntervalMs) return null;
     await this.preload();
-    if (!this.context || !this.gain || !this.buffer || !this.envelope) return null;
+    const buffer = this.buffers.get(kind);
+    const envelope = this.envelopes.get(kind);
+    if (!this.context || !this.gain || !buffer || !envelope) return null;
     if (this.context.state === 'suspended') await this.context.resume();
 
     const source = this.context.createBufferSource();
-    source.buffer = this.buffer;
+    source.buffer = buffer;
     source.connect(this.gain);
     source.start();
     this.lastStartedAt = performance.now();
     this.token += 1;
     return {
       startedAt: this.lastStartedAt,
-      duration: this.buffer.duration,
-      envelope: this.envelope,
+      duration: buffer.duration,
+      envelope,
       token: this.token,
     };
   }
@@ -50,14 +65,20 @@ class InteractionSoundPlayer {
       const gain = context.createGain();
       gain.gain.value = 0.56;
       gain.connect(context.destination);
-      const assetUrl = new URL('audio/03_select_confirm.wav', document.baseURI);
-      const response = await fetch(assetUrl);
-      if (!response.ok) throw new Error(`Unable to preload interaction sound: ${response.status}`);
-      const buffer = await context.decodeAudioData(await response.arrayBuffer());
+      const entries = await Promise.all(Object.entries(soundAssets).map(async ([kind, path]) => {
+        if (!path) return null;
+        const response = await fetch(new URL(path, document.baseURI));
+        if (!response.ok) throw new Error(`Unable to preload interaction sound: ${response.status}`);
+        const buffer = await context.decodeAudioData(await response.arrayBuffer());
+        return [kind as InteractionSfx, buffer] as const;
+      }));
       this.context = context;
       this.gain = gain;
-      this.buffer = buffer;
-      this.envelope = buildEnvelope(buffer, envelopePointCount);
+      entries.forEach((entry) => {
+        if (!entry) return;
+        this.buffers.set(entry[0], entry[1]);
+        this.envelopes.set(entry[0], buildEnvelope(entry[1], envelopePointCount));
+      });
     } catch (error) {
       this.preloadPromise = null;
       console.warn('Interaction sound unavailable.', error);
