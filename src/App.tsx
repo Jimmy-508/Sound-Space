@@ -1,6 +1,9 @@
-import { Calculator, Home, Music, Waves } from 'lucide-react';
+import { Calculator, Camera, Hand, Home, LoaderCircle, Music, Waves } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { interactionSound, type InteractionPlayback } from './audio/interactionSound';
+import { GestureOverlay } from './gesture/GestureOverlay';
+import { CameraStartError, HandTrackingSession } from './gesture/HandTrackingSession';
+import { GestureFrameStore } from './gesture/types';
 import { createPointerCommand } from './interaction/commandLayer';
 import { MusicLab } from './labs/MusicLab';
 import { SamplingLab } from './labs/SamplingLab';
@@ -32,6 +35,12 @@ export default function App() {
     && (/^(A|B)$/.test(previewParams.get('spiritPass') ?? '')
       || /^(neutral|closeup|power|glide)$/.test(previewParams.get('spiritDebug') ?? '')
       || /^(default|energy|frequency|diversity|precision|depth)$/.test(previewParams.get('spiritIdentity') ?? ''));
+  const gesturePreviewParam = previewParams.get('gesturePreview');
+  const localGesturePreview = typeof window !== 'undefined'
+    && (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
+    && /^(one|two)$/.test(gesturePreviewParam ?? '')
+      ? gesturePreviewParam as 'one' | 'two'
+      : null;
   const [activeLab, setActiveLab] = useState<LabId>(localSpiritPreview ? 'music' : 'home');
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
   const [musicSession, setMusicSession] = useState<MusicSessionState>(initialMusicSession);
@@ -41,9 +50,16 @@ export default function App() {
       : DEFAULT_SOUND_SPIRIT_PHENOTYPE,
   );
   const [homePlayback, setHomePlayback] = useState<InteractionPlayback | null>(null);
+  const [gestureEnabled, setGestureEnabled] = useState(Boolean(localGesturePreview));
+  const [gestureStatus, setGestureStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>(localGesturePreview ? 'ready' : 'idle');
+  const [gestureError, setGestureError] = useState('');
   const spiritInteractionRef = useRef(createSoundSpiritInteractionRecorder());
   const musicUrlRef = useRef<string | null>(null);
   const visualImpulseRef = useRef<VisualImpulseHandle | null>(null);
+  const gestureVideoRef = useRef<HTMLVideoElement | null>(null);
+  const gestureSessionRef = useRef<HandTrackingSession | null>(null);
+  const gestureStoreRef = useRef<GestureFrameStore | null>(null);
+  if (!gestureStoreRef.current) gestureStoreRef.current = new GestureFrameStore();
 
   const updateMusicSession = useCallback((patch: Partial<MusicSessionState>) => {
     setMusicSession((current) => ({ ...current, ...patch }));
@@ -85,6 +101,72 @@ export default function App() {
     void interactionSound.preload();
   }, []);
 
+  useEffect(() => {
+    if (!gestureEnabled) {
+      gestureSessionRef.current?.stop();
+      gestureSessionRef.current = null;
+      gestureStoreRef.current?.clear();
+      return;
+    }
+
+    const video = gestureVideoRef.current;
+    const store = gestureStoreRef.current;
+    if (!video || !store) return;
+    let active = true;
+
+    if (localGesturePreview) {
+      let stopPreview: (() => void) | undefined;
+      setGestureStatus('ready');
+      void import('./gesture/devGesturePreview').then(({ startGesturePreview }) => {
+        if (!active) return;
+        stopPreview = startGesturePreview(store, localGesturePreview === 'two' ? 2 : 1);
+      });
+      return () => {
+        active = false;
+        stopPreview?.();
+      };
+    }
+
+    const session = new HandTrackingSession(store);
+    gestureSessionRef.current = session;
+    setGestureStatus('starting');
+    setGestureError('');
+
+    void session.start(video).then(() => {
+      if (active) setGestureStatus('ready');
+    }).catch((error: unknown) => {
+      if (!active) return;
+      const kind = error instanceof CameraStartError ? error.kind : 'initialization';
+      const messages = {
+        denied: '無法啟用攝影機，請允許攝影機權限。',
+        unavailable: '找不到可用的前置攝影機。',
+        busy: '攝影機正被其他程式使用。',
+        insecure: '手勢功能需要 HTTPS 安全連線。',
+        initialization: '手勢辨識無法啟動，請稍後再試。',
+      };
+      setGestureError(messages[kind]);
+      setGestureStatus('error');
+      setGestureEnabled(false);
+    });
+
+    return () => {
+      active = false;
+      session.stop();
+      if (gestureSessionRef.current === session) gestureSessionRef.current = null;
+    };
+  }, [gestureEnabled, localGesturePreview]);
+
+  const toggleGesture = () => {
+    if (gestureEnabled) {
+      setGestureEnabled(false);
+      setGestureStatus('idle');
+      setGestureError('');
+      return;
+    }
+    setGestureError('');
+    setGestureEnabled(true);
+  };
+
   const playControlSound = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     if (target.closest('input[type="range"], .control, .progress-wrap')) return;
@@ -114,7 +196,9 @@ export default function App() {
         onError={musicController.handleAudioError}
         onEnded={musicController.handleEnded}
       />
+      <video ref={gestureVideoRef} className="gesture-camera-sensor" muted playsInline aria-hidden="true" />
       <StarfieldBackground />
+      <GestureOverlay store={gestureStoreRef.current} />
       <nav className="top-nav" aria-label="主要導覽">
         <div className="top-nav-track">
           <button type="button" className={activeLab === 'home' ? 'active' : ''} onClick={() => selectLab('home')}>
@@ -125,8 +209,23 @@ export default function App() {
               {lab.icon}{lab.title}
             </button>
           ))}
+          <span className="gesture-nav-separator" aria-hidden="true" />
+          <button
+            type="button"
+            className={`gesture-toggle ${gestureEnabled ? 'active' : ''} ${gestureStatus}`}
+            aria-pressed={gestureEnabled}
+            aria-label={gestureEnabled ? '關閉手勢辨識' : '開啟手勢辨識'}
+            onClick={toggleGesture}
+          >
+            {gestureStatus === 'starting'
+              ? <LoaderCircle size={18} className="gesture-spinner" />
+              : gestureEnabled ? <Hand size={18} /> : <Camera size={18} />}
+            {gestureStatus === 'starting' ? '啟動中' : gestureStatus === 'error' ? '重試手勢' : gestureEnabled ? '手勢開啟' : '手勢'}
+          </button>
         </div>
       </nav>
+
+      {gestureError && <p className="gesture-error" role="status">{gestureError}</p>}
 
       {activeLab === 'home' && (
         <section

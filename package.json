@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:spirit": "esbuild ./scripts/verify-spirit-identity.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-spirit-identity.mjs && node node_modules/.tmp/verify-spirit-identity.mjs"
+    "test:spirit": "esbuild ./scripts/verify-spirit-identity.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-spirit-identity.mjs && node node_modules/.tmp/verify-spirit-identity.mjs",
+    "test:gesture": "esbuild ./scripts/verify-gesture-foundation.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-gesture-foundation.mjs && node node_modules/.tmp/verify-gesture-foundation.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.35",
     "@vitejs/plugin-react": "^5.0.3",
     "vite": "^7.1.7",
     "typescript": "^5.9.2",
