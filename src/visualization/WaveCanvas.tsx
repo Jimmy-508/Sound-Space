@@ -2,6 +2,10 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import type { PointerPoint, Waveform } from '../types';
 import type { Repulsor } from './repulsor';
+import {
+  DEFAULT_SOUND_SPIRIT_PHENOTYPE,
+  type SoundSpiritPhenotypeConfig,
+} from '../spirit/soundSpiritIdentity';
 
 interface WaveCanvasProps {
   amplitude: number;
@@ -28,6 +32,7 @@ interface WaveCanvasProps {
   homeSoundToken?: number;
   homeMusicData?: Uint8Array | null;
   homeMusicPlaying?: boolean;
+  spiritPhenotype?: SoundSpiritPhenotypeConfig;
   pointer: PointerPoint;
 }
 
@@ -82,6 +87,7 @@ export function WaveCanvas({
   homeSoundToken = 0,
   homeMusicData = null,
   homeMusicPlaying = false,
+  spiritPhenotype = DEFAULT_SOUND_SPIRIT_PHENOTYPE,
   pointer,
 }: WaveCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +116,7 @@ export function WaveCanvas({
     homeSoundToken,
     homeMusicData,
     homeMusicPlaying,
+    spiritPhenotype,
     pointer,
   });
 
@@ -138,6 +145,7 @@ export function WaveCanvas({
     homeSoundToken,
     homeMusicData,
     homeMusicPlaying,
+    spiritPhenotype,
     pointer,
   };
 
@@ -164,9 +172,9 @@ export function WaveCanvas({
     const wavePointMaterial = new THREE.PointsMaterial({ color: 0xbef7ff, depthTest: false, size: 1.2, transparent: true, opacity: 0.5, sizeAttenuation: false });
     const playheadMaterial = new THREE.LineBasicMaterial({ color: 0xf2bd62, depthTest: false, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending });
     const playheadMarkerMaterial = new THREE.PointsMaterial({ color: 0xffdda0, depthTest: false, size: 7, transparent: true, opacity: 0.98, sizeAttenuation: false, blending: THREE.AdditiveBlending });
-    const wakeMaterial = new THREE.MeshBasicMaterial({ color: 0x77dbff, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.11, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const wakeMaterial = new THREE.MeshBasicMaterial({ color: spiritPhenotype.isDefault ? 0x77dbff : spiritPhenotype.primaryColor, vertexColors: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.11, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
     const moteMaterial = new THREE.PointsMaterial({ color: 0xffe4a8, depthTest: false, size: 4, transparent: true, opacity: 0.86, sizeAttenuation: false, blending: THREE.AdditiveBlending });
-    const particleMaterial = new THREE.PointsMaterial({ color: 0x65cfff, depthTest: false, size: 1.2, transparent: true, opacity: 0.34, sizeAttenuation: false, blending: THREE.AdditiveBlending });
+    const particleMaterial = new THREE.PointsMaterial({ color: spiritPhenotype.isDefault ? 0x65cfff : spiritPhenotype.primaryColor, depthTest: false, size: 1.2, transparent: true, opacity: 0.34, sizeAttenuation: false, blending: THREE.AdditiveBlending });
     const previewParams = new URLSearchParams(window.location.search);
     const localPreview = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
     const previewPass = /^(A|B)$/.test(previewParams.get('spiritPass') ?? '') && localPreview
@@ -186,7 +194,7 @@ export function WaveCanvas({
     const spiritLayer = /^(body|filaments|motes)$/.test(previewParams.get('spiritLayer') ?? '') && localPreview
       ? previewParams.get('spiritLayer')
       : null;
-    const spiritRig = createMasterSpirit(compact);
+    const spiritRig = createMasterSpirit(compact, spiritPhenotype);
     const unifiedSpirit = spiritRig.group;
     unifiedSpirit.visible = false;
 
@@ -361,7 +369,7 @@ export function WaveCanvas({
     let pendingMotePulse = 0;
     let pendingMoteAt = -1;
     let profileSeed = -1;
-    let creatureGenome = createSpiritProfile(musicVisualSeed);
+    let creatureGenome = createSpiritProfile(spiritPhenotype.seed, spiritPhenotype);
     let creatureX = creatureGenome.spawnX;
     let creatureY = creatureGenome.spawnY;
     let creatureVelocityX = Math.cos(creatureGenome.wanderPhase) * 0.025;
@@ -380,7 +388,7 @@ export function WaveCanvas({
     let lifeStateUntil = 0;
     let lifeTargetX = creatureX;
     let lifeTargetY = creatureY;
-    let lifeRandomState = (musicVisualSeed * 2654435761) >>> 0;
+    let lifeRandomState = (spiritPhenotype.seed * 2654435761) >>> 0;
     let wingCycle = creatureGenome.breathPhase;
     let curiousResponse = 0;
     let interactionX = creatureX;
@@ -1176,11 +1184,12 @@ export function WaveCanvas({
       }
       spiritRig.energyMaterials.forEach((material, index) => {
         const propagation = sampleHeartEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * rhythmStrength;
-        material.opacity = spiritLayer !== null
+        const phenotypeEnergy = (material.userData.opacityFactor as number | undefined) ?? 1;
+        material.opacity = (spiritLayer !== null
           ? 0
           : previewPass === 'A'
           ? 0.58
-          : 0.035 + Math.max(lifeEnergy, idleLife) * 0.025 + propagation * 0.86 + rhythmImpulse * 0.01 + contactPulse * 0.035;
+          : 0.035 + Math.max(lifeEnergy, idleLife) * 0.025 + propagation * 0.86 + rhythmImpulse * 0.01 + contactPulse * 0.035) * phenotypeEnergy;
       });
 
       const funnelTipX = (spiritDebug ? 0 : creatureX) + funnelCenterX[funnelRingCount - 1] * debugScale * scale * viewportAspect;
@@ -1241,7 +1250,7 @@ export function WaveCanvas({
       }
 
       const activeMotes = atmosphereVisible || spiritLayer === 'motes'
-        ? Math.min(compact ? 5 : 9, creatureGenome.moteCount)
+        ? Math.min(Math.round((compact ? 5 : 9) * creatureGenome.particleRichness), creatureGenome.moteCount)
         : 0;
       if (!motesInitialized && activeMotes > 0) {
         for (let index = 0; index < activeMotes; index += 1) {
@@ -1296,9 +1305,9 @@ export function WaveCanvas({
     };
 
     const drawSpectrum = (current: WaveCanvasProps, time: number, deltaTime: number) => {
-      if (profileSeed !== current.musicVisualSeed) {
-        profileSeed = current.musicVisualSeed ?? 1;
-        creatureGenome = createSpiritProfile(profileSeed);
+      if (profileSeed !== current.spiritPhenotype?.seed) {
+        profileSeed = current.spiritPhenotype?.seed ?? 1;
+        creatureGenome = createSpiritProfile(profileSeed, current.spiritPhenotype ?? DEFAULT_SOUND_SPIRIT_PHENOTYPE);
         creatureX = creatureGenome.spawnX;
         creatureY = creatureGenome.spawnY;
         creatureVelocityX = Math.cos(creatureGenome.wanderPhase) * 0.025;
@@ -1669,7 +1678,7 @@ export function WaveCanvas({
       haloTexture.dispose();
       [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, ...spiritRig.materials, moteMaterial, particleMaterial, wakeMaterial].forEach((material) => material.dispose());
     };
-  }, []);
+  }, [spiritPhenotype.key]);
 
   return <div className="wave-canvas" ref={mountRef} aria-hidden="true" />;
 }
@@ -1705,12 +1714,16 @@ const bodyProfile = [
   [1.0197, 0.0279, 0.0092, 0.0747, 0.0199],
 ] as const;
 
-function createMasterSpirit(compact: boolean): MasterSpiritRig {
+function createMasterSpirit(compact: boolean, phenotype: SoundSpiritPhenotypeConfig): MasterSpiritRig {
   const group = new THREE.Group();
   const leftWing = new THREE.Group();
   const rightWing = new THREE.Group();
   leftWing.position.x = -0.145;
   rightWing.position.x = 0.145;
+  leftWing.scale.set(phenotype.wingSpan * (1 - phenotype.wingAsymmetry), phenotype.wingHeight, 1);
+  rightWing.scale.set(phenotype.wingSpan * (1 + phenotype.wingAsymmetry), phenotype.wingHeight, 1);
+  leftWing.rotation.z = -(phenotype.wingSweep - 1) * 0.16;
+  rightWing.rotation.z = (phenotype.wingSweep - 1) * 0.16;
   leftWing.userData.materials = [];
   rightWing.userData.materials = [];
   group.add(leftWing, rightWing);
@@ -1748,10 +1761,12 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
   };
 
   const bodyGeometry = createMasterBodyGeometry(compact);
-  const bodyOuter = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0x7bd7e8, 0.27, 0), geometryMaterials.body, 8.6);
-  const bodyInner = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0xd8fbff, 0.16, 0), geometryMaterials.body, 5);
-  bodyOuter.scale.set(1.025, 1.01, 1.04);
-  bodyInner.scale.set(0.92, 0.965, 0.86);
+  const bodyOuter = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0x7bd7e8, 0.27, 0, phenotype), geometryMaterials.body, 8.6);
+  const bodyInner = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0xd8fbff, 0.16, 0, phenotype), geometryMaterials.body, 5);
+  bodyOuter.scale.set(1.025 * phenotype.bodyFullness, 1.01 * phenotype.bodyLength, 1.04 * phenotype.bodyFullness);
+  bodyInner.scale.set(0.92 * phenotype.bodyFullness, 0.965 * phenotype.bodyLength, 0.86 * phenotype.bodyFullness);
+  bodyOuter.position.x = phenotype.bodyAsymmetry;
+  bodyInner.position.x = phenotype.bodyAsymmetry * 0.7;
   bodyInner.position.z = 0.008;
 
   for (const side of [-1, 1] as const) {
@@ -1767,15 +1782,15 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
       order: number,
       delay: number,
     ) => {
-      const material = createMasterSpiritMaterial(color, opacity, kind);
+      const material = createMasterSpiritMaterial(color, opacity, kind, phenotype);
       material.uniforms.uWingSide.value = side;
       material.uniforms.uLayerDelay.value = delay;
       wingGroup.userData.materials.push(material);
       return addSurface(wingGroup, geometry, material, geometryMaterial, order);
     };
 
-    addWingSurface(mainGeometry, 0xb9f5ff, 0.43, 1, geometryMaterials.wing, 3, 0);
-    addWingSurface(veilGeometry, 0x91dcff, 0.25, 2, geometryMaterials.veil, 3.35, 0.065);
+    addWingSurface(mainGeometry, phenotype.isDefault ? 0xb9f5ff : phenotype.primaryColor, 0.43 * phenotype.membraneOpacity, 1, geometryMaterials.wing, 3, 0);
+    addWingSurface(veilGeometry, phenotype.isDefault ? 0x91dcff : phenotype.secondaryColor, 0.25 * phenotype.membraneOpacity, 2, geometryMaterials.veil, 3.35, 0.065);
     addWingSurface(createWingRootBlendGeometry(side, compact), 0xd8fbff, 0.24, 7, geometryMaterials.wing, 3.7, 0.025);
 
     const spectralRegions = [
@@ -1787,18 +1802,25 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
       const geometry = createWingRegionGeometry(side, start, end, lower, upper, compact, index);
       addWingSurface(geometry, 0x675cff, 0.17, 4, geometryMaterials.spectral, 4.2 + index * 0.04, 0.095 + index * 0.012);
     });
+    if (phenotype.membraneLayerExtra) {
+      const geometry = createWingRegionGeometry(side, 0.2, 0.91, -0.58, 0.66, compact, 1);
+      addWingSurface(geometry, phenotype.accentColor, 0.09 * phenotype.iridescence, 4, geometryMaterials.spectral, 4.36, 0.13);
+    }
 
     for (let index = 0; index < 5; index += 1) {
       const geometry = createWingVeinGeometry(side, index, false, compact);
-      addWingSurface(geometry, 0x3c8dff, 0.18, 5, geometryMaterials.detail, 6, 0.035 + index * 0.006);
+      addWingSurface(geometry, phenotype.isDefault ? 0x3c8dff : phenotype.primaryColor, 0.18 * phenotype.veinOpacity, 5, geometryMaterials.detail, 6, 0.035 + index * 0.006);
     }
-    const secondaryCount = compact ? 3 : 5;
+    const secondaryCount = (compact ? 3 : 5) + Math.min(1, phenotype.veinExtra);
     for (let index = 0; index < secondaryCount; index += 1) {
       const geometry = createWingVeinGeometry(side, index, true, compact);
-      addWingSurface(geometry, 0x745ee8, 0.1, 5.5, geometryMaterials.detail, 6.1, 0.065 + index * 0.006);
+      addWingSurface(geometry, phenotype.isDefault ? 0x745ee8 : phenotype.secondaryColor, 0.1 * phenotype.veinOpacity, 5.5, geometryMaterials.detail, 6.1, 0.065 + index * 0.006);
     }
-    addWingSurface(createWingRimGeometry(side, compact, 0.009), 0xd9faff, 0.34, 6, geometryMaterials.detail, 6.4, 0.035);
-    addWingSurface(createWingRimGeometry(side, compact, 0.023), 0x9b8cff, 0.11, 6.5, geometryMaterials.spectral, 6.2, 0.05);
+    addWingSurface(createWingRimGeometry(side, compact, 0.009), 0xd9faff, 0.34 * phenotype.rimOpacity, 6, geometryMaterials.detail, 6.4, 0.035);
+    addWingSurface(createWingRimGeometry(side, compact, 0.023), phenotype.isDefault ? 0x9b8cff : phenotype.secondaryColor, 0.11 * phenotype.rimOpacity, 6.5, geometryMaterials.spectral, 6.2, 0.05);
+    if (phenotype.veinExtra > 1) {
+      addWingSurface(createWingRimGeometry(side, compact, 0.035), phenotype.accentColor, 0.065 * phenotype.rimOpacity, 6.5, geometryMaterials.spectral, 6.25, 0.075);
+    }
   }
 
   const internalPathControls = [
@@ -1807,9 +1829,19 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
     [[0.02, 0.028, 0.55], [-0.032, 0.016, 0.411], [-0.04, 0.041, 0.095], [-0.048, 0.047, -0.216], [-0.1, -0.003, -0.4]],
     [[0, 0.027, 0.48], [0.049, 0.016, 0.37], [0.05, 0.058, 0.122], [0.051, 0.039, -0.125], [0.1, 0.008, -0.28]],
   ];
+  if (phenotype.energyPathExtra > 0) {
+    internalPathControls.push([[0, 0.02, 0.5], [-0.1, 0.035, 0.36], [0.08, 0.045, 0.17], [-0.12, 0.04, -0.02], [0.04, 0.01, -0.34]]);
+  }
+  if (phenotype.energyPathExtra > 1) {
+    internalPathControls.push([[0, 0.018, 0.49], [0.11, 0.032, 0.34], [-0.07, 0.05, 0.12], [0.13, 0.036, -0.08], [-0.03, 0.008, -0.38]]);
+  }
   internalPathControls.forEach((controls, index) => {
     const geometry = createMasterPathGeometry(controls, compact ? 34 : 70);
-    const material = createEnergyLineMaterial(index < 2 ? 0x96eeff : 0xffca8d, index < 2 ? 0.22 : 0.28);
+    const material = createEnergyLineMaterial(
+      phenotype.isDefault ? (index < 2 ? 0x96eeff : 0xffca8d) : (index < 2 ? phenotype.primaryColor : phenotype.energyColor),
+      (index < 2 ? 0.22 : 0.28) * phenotype.energyOpacity,
+    );
+    material.userData.opacityFactor = phenotype.energyOpacity;
     const line = new THREE.Line(geometry, material);
     line.renderOrder = 7;
     group.add(line);
@@ -1828,10 +1860,11 @@ function createMasterSpirit(compact: boolean): MasterSpiritRig {
   const heartLobes: THREE.Mesh[] = [];
   heartProfiles.forEach((profile, index) => {
     const geometry = createHeartLobeGeometry(compact, index);
-    const material = createMasterSpiritMaterial(index < 2 ? 0xff997e : 0xffd28d, 0.43, 3);
+    const material = createMasterSpiritMaterial(phenotype.isDefault ? (index < 2 ? 0xff997e : 0xffd28d) : phenotype.energyColor, 0.43 * phenotype.heartGlow, 3, phenotype);
     const lobe = addSurface(group, geometry, material, geometryMaterials.heart, 8);
     lobe.position.set(profile[0], profile[2], profile[1] + 0.012);
-    const baseScale = new THREE.Vector3(profile[3], profile[5], profile[4]);
+    const variation = 1 + (index - 2) * phenotype.heartVariation * 0.34;
+    const baseScale = new THREE.Vector3(profile[3], profile[5], profile[4]).multiplyScalar(phenotype.heartScale * variation);
     lobe.scale.copy(baseScale);
     lobe.userData.baseScale = baseScale;
     heartLobes.push(lobe);
@@ -2072,7 +2105,10 @@ function createEnergyLineMaterial(color: number, opacity: number) {
   });
 }
 
-function createMasterSpiritMaterial(color: number, opacity: number, kind: number) {
+function createMasterSpiritMaterial(color: number, opacity: number, kind: number, phenotype: SoundSpiritPhenotypeConfig) {
+  const primary = phenotype.isDefault ? 0x38c7ff : phenotype.primaryColor;
+  const secondary = phenotype.isDefault ? 0x8557f5 : phenotype.secondaryColor;
+  const accent = phenotype.isDefault ? 0xeb61d1 : phenotype.accentColor;
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(color) },
@@ -2116,6 +2152,11 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uEnergyFlow: { value: 0.2 },
       uRimActivity: { value: 0.15 },
       uCycle: { value: 0 },
+      uPrimary: { value: new THREE.Color(primary) },
+      uSecondary: { value: new THREE.Color(secondary) },
+      uAccent: { value: new THREE.Color(accent) },
+      uIridescence: { value: phenotype.iridescence },
+      uGlowIntensity: { value: phenotype.glowIntensity },
     },
     vertexShader: `
       attribute vec3 restPosition;
@@ -2251,6 +2292,11 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uniform float uContactPulse;
       uniform float uContactAge;
       uniform float uContactKind;
+      uniform vec3 uPrimary;
+      uniform vec3 uSecondary;
+      uniform vec3 uAccent;
+      uniform float uIridescence;
+      uniform float uGlowIntensity;
       varying vec3 vLocal;
       varying vec3 vNormalView;
       varying vec3 vViewPosition;
@@ -2280,16 +2326,16 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
           * uContactPulse * exp(-uContactAge * 1.9);
         float contactEnergy = (contactCore + contactWave * 0.72) * (0.82 + uContactKind * 0.06);
         vec3 pearl = vec3(0.78, 0.97, 1.0);
-        vec3 cyan = vec3(0.22, 0.78, 1.0);
+        vec3 cyan = uPrimary;
         vec3 blue = vec3(0.2, 0.42, 1.0);
-        vec3 violet = vec3(0.52, 0.34, 0.96);
-        vec3 magenta = vec3(0.92, 0.38, 0.82);
+        vec3 violet = uSecondary;
+        vec3 magenta = uAccent;
         vec3 wingPalette = mix(pearl, cyan, smoothstep(0.02, 0.3, vSpan));
         wingPalette = mix(wingPalette, blue, smoothstep(0.3, 0.58, vSpan));
         wingPalette = mix(wingPalette, violet, smoothstep(0.58, 0.82, vSpan));
         wingPalette = mix(wingPalette, magenta, smoothstep(0.82, 1.0, vSpan));
         float iridescence = fresnel * (0.45 + 0.25 * sin(vSpan * 9.0 + vChord * 3.0 + uTime * 0.16));
-        wingPalette = mix(wingPalette, mix(cyan, violet, fresnel), iridescence * (0.18 + uTreble * 0.2));
+        wingPalette = mix(wingPalette, mix(cyan, violet, fresnel), iridescence * (0.18 + uTreble * 0.2) * uIridescence);
         float energyPulse = 0.5 + 0.5 * sin(vSpan * 12.0 - uTime * (1.1 + uEnergyFlow * 2.2) - uCycle * 6.28318);
         float wingTravel = exp(-pow(vSpan - (uBeatAge - 0.1) * 1.85, 2.0) / 0.022)
           * uVeinPulse * step(vSpan, 0.3 + uBeatStrength * 0.7) * wing;
@@ -2308,6 +2354,7 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         finalColor += mix(vec3(0.25, 0.8, 1.0), vec3(0.72, 0.46, 1.0), vSpan) * wingTravel * 1.34;
         finalColor += vec3(1.0, 0.7, 0.32) * warmRoot * (vein + rootBlend + spectral * 0.35);
         finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.06 + localRimActivity * 0.14);
+        finalColor *= uGlowIntensity;
         float detailAlpha = 1.0 + spectral * 0.12 + vein * (energyPulse * uEnergyFlow * 0.42) + localRimActivity * 0.32;
         float featheredMask = mix(1.0, vWingMask, clamp(wing + spectral + rootBlend, 0.0, 1.0));
         float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
@@ -2529,10 +2576,10 @@ function logarithmicBin(index: number, bandCount: number, binCount: number) {
   return Math.min(binCount - 1, Math.max(1, Math.round(Math.exp(index / bandCount * Math.log(binCount)))));
 }
 
-function createSpiritProfile(seed: number) {
+function createSpiritProfile(seed: number, phenotype: SoundSpiritPhenotypeConfig) {
   const random = seededRandom(seed);
   const orientation = Math.PI * 0.5 + 0.24;
-  const moteCount = 12;
+  const moteCount = Math.min(moteLimit, Math.round(12 * phenotype.particleRichness));
   const motes = Array.from({ length: moteCount }, () => ({
     along: -1.15 + random() * 2,
     side: (random() - 0.5) * (0.8 + random() * 0.55),
@@ -2542,19 +2589,19 @@ function createSpiritProfile(seed: number) {
   }));
 
   return {
-    bodyRadius: 0.225,
-    bodyLength: 2.55,
-    bodyWidth: 0.78,
-    bodyAsymmetry: 0.1,
+    bodyRadius: 0.225 * phenotype.bodyFullness,
+    bodyLength: 2.55 * phenotype.bodyLength,
+    bodyWidth: 0.78 * phenotype.bodyFullness,
+    bodyAsymmetry: 0.1 + Math.abs(phenotype.bodyAsymmetry),
     orientation,
     flowDirection: orientation,
-    wingLength: 1.62,
-    wingChord: 0.52,
+    wingLength: 1.62 * phenotype.wingSpan,
+    wingChord: 0.52 * phenotype.wingHeight,
     wingPhaseOffset: Math.PI * 0.18,
     wakePhase: random() * Math.PI * 2,
     moteCount,
     motes,
-    trailDensity: 88,
+    trailDensity: Math.min(118, Math.round(88 * phenotype.particleRichness)),
     bassSensitivity: 1.02,
     midSensitivity: 1.08,
     trebleSensitivity: 1.06,
@@ -2563,7 +2610,7 @@ function createSpiritProfile(seed: number) {
     veilDelay: 0.04 + random() * 0.04,
     ribbonDelay: 0.07 + random() * 0.06,
     moteDelay: 0.1 + random() * 0.06,
-    glowIntensity: 0.86,
+    glowIntensity: 0.86 * phenotype.glowIntensity,
     wanderSpeed: 0.2,
     wanderPhase: 2.34,
     turningTendency: 0.42,
@@ -2574,10 +2621,11 @@ function createSpiritProfile(seed: number) {
     avoidanceSensitivity: 1.04,
     spawnX: 0,
     spawnY: 0,
-    primaryHue: 0x6ee7ff,
-    secondaryHue: 0xa48bff,
-    highlightHue: 0xffcf86,
-    highlightColor: 0xffb968,
+    particleRichness: phenotype.particleRichness,
+    primaryHue: phenotype.primaryColor,
+    secondaryHue: phenotype.secondaryColor,
+    highlightHue: phenotype.accentColor,
+    highlightColor: phenotype.energyColor,
   };
 }
 

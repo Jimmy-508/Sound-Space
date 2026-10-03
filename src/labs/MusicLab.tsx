@@ -8,6 +8,7 @@ import type { PointerPoint } from '../types';
 import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 import type { Repulsor } from '../visualization/repulsor';
+import type { SoundSpiritPhenotypeConfig } from '../spirit/soundSpiritIdentity';
 
 type ViewMode = 'wave' | 'spectrum';
 const masterCreatureScale = 0.7;
@@ -16,9 +17,10 @@ interface MusicLabProps {
   session: MusicSessionState;
   onSessionChange: (patch: Partial<MusicSessionState>) => void;
   controller: MusicAudioController;
+  spiritPhenotype: SoundSpiritPhenotypeConfig;
 }
 
-export function MusicLab({ session, onSessionChange, controller }: MusicLabProps) {
+export function MusicLab({ session, onSessionChange, controller, spiritPhenotype }: MusicLabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('wave');
   const [repulsor, setRepulsor] = useState<Repulsor | null>(null);
   const [creatureScale, setCreatureScale] = useState(masterCreatureScale);
@@ -315,6 +317,7 @@ export function MusicLab({ session, onSessionChange, controller }: MusicLabProps
           musicPlaying={controller.playing}
           creatureScale={creatureScale}
           repulsors={repulsor ? [repulsor] : []}
+          spiritPhenotype={spiritPhenotype}
         />
       </div>
 

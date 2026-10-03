@@ -6,17 +6,24 @@ import { SegmentedControl } from '../components/SegmentedControl';
 import { createPointerCommand, type CommandHandler } from '../interaction/commandLayer';
 import type { PointerPoint, Waveform } from '../types';
 import { WaveCanvas } from '../visualization/WaveCanvas';
+import {
+  WAVE_FREQUENCY_MAX,
+  WAVE_FREQUENCY_MIN,
+  type SoundSpiritInteractionRecorder,
+} from '../spirit/soundSpiritIdentity';
 
 const waveOptions: Array<{ value: Waveform; label: string }> = [
   { value: 'sine', label: '正弦波' },
   { value: 'square', label: '方波' },
   { value: 'triangle', label: '三角波' },
 ];
-const frequencyMin = 120;
-const frequencyMax = 4000;
 const frequencySliderMax = 1000;
 
-export function WaveLab() {
+interface WaveLabProps {
+  interactionRecorder: SoundSpiritInteractionRecorder;
+}
+
+export function WaveLab({ interactionRecorder }: WaveLabProps) {
   const audio = useAudioEngine();
   const [amplitude, setAmplitude] = useState(0.5);
   const [frequency, setFrequency] = useState(440);
@@ -27,14 +34,19 @@ export function WaveLab() {
 
   const dispatch: CommandHandler = (command) => {
     if (command.type === 'AMPLITUDE_SET') {
+      interactionRecorder.observeAmplitude(amplitude, command.value);
       setAmplitude(command.value);
       setHint(command.value > amplitude ? '振幅變大，聲音也變大了！' : '振幅變小，聲音也變小了。');
     }
     if (command.type === 'FREQUENCY_SET') {
+      interactionRecorder.observeFrequency(frequency, command.value);
       setFrequency(command.value);
       setHint(command.value > frequency ? '頻率變高，聲波變得更密集。' : '頻率變低，聲波變得比較疏。');
     }
-    if (command.type === 'WAVEFORM_SET') setWaveform(command.value);
+    if (command.type === 'WAVEFORM_SET') {
+      interactionRecorder.observeWaveform(waveform, command.value);
+      setWaveform(command.value);
+    }
     if (command.type === 'POINTER_MOVE') setPointer({ x: command.x, y: command.y });
     if (command.type === 'PLAY') void audio.play().then(() => setPlaying(true));
     if (command.type === 'STOP') {
@@ -93,10 +105,10 @@ export function WaveLab() {
 }
 
 function frequencyToSlider(frequency: number) {
-  return Math.round(Math.log(frequency / frequencyMin) / Math.log(frequencyMax / frequencyMin) * frequencySliderMax);
+  return Math.round(Math.log(frequency / WAVE_FREQUENCY_MIN) / Math.log(WAVE_FREQUENCY_MAX / WAVE_FREQUENCY_MIN) * frequencySliderMax);
 }
 
 function sliderToFrequency(value: number) {
-  const frequency = frequencyMin * (frequencyMax / frequencyMin) ** (value / frequencySliderMax);
-  return Math.min(frequencyMax, Math.max(frequencyMin, Math.round(frequency / 10) * 10));
+  const frequency = WAVE_FREQUENCY_MIN * (WAVE_FREQUENCY_MAX / WAVE_FREQUENCY_MIN) ** (value / frequencySliderMax);
+  return Math.min(WAVE_FREQUENCY_MAX, Math.max(WAVE_FREQUENCY_MIN, Math.round(frequency / 10) * 10));
 }

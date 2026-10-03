@@ -12,6 +12,12 @@ import { StarfieldBackground } from './visualization/StarfieldBackground';
 import { VisualImpulseLayer, type VisualImpulseHandle } from './visualization/VisualImpulseLayer';
 import { WaveCanvas } from './visualization/WaveCanvas';
 import { HomeMusicTitles } from './components/HomeMusicTitles';
+import {
+  DEFAULT_SOUND_SPIRIT_PHENOTYPE,
+  createLocalSpiritPreviewPhenotype,
+  createSoundSpiritInteractionRecorder,
+  createSoundSpiritPhenotype,
+} from './spirit/soundSpiritIdentity';
 
 const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: string; icon: React.ReactNode }> = [
   { id: 'wave', title: '聲波實驗室', description: '動手改變聲音的響度與音調', icon: <Waves size={22} /> },
@@ -24,11 +30,18 @@ export default function App() {
   const localSpiritPreview = typeof window !== 'undefined'
     && (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
     && (/^(A|B)$/.test(previewParams.get('spiritPass') ?? '')
-      || /^(neutral|closeup|power|glide)$/.test(previewParams.get('spiritDebug') ?? ''));
+      || /^(neutral|closeup|power|glide)$/.test(previewParams.get('spiritDebug') ?? '')
+      || /^(default|energy|frequency|diversity|precision|depth)$/.test(previewParams.get('spiritIdentity') ?? ''));
   const [activeLab, setActiveLab] = useState<LabId>(localSpiritPreview ? 'music' : 'home');
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
   const [musicSession, setMusicSession] = useState<MusicSessionState>(initialMusicSession);
+  const [spiritPhenotype, setSpiritPhenotype] = useState(
+    localSpiritPreview
+      ? createLocalSpiritPreviewPhenotype(previewParams.get('spiritIdentity'))
+      : DEFAULT_SOUND_SPIRIT_PHENOTYPE,
+  );
   const [homePlayback, setHomePlayback] = useState<InteractionPlayback | null>(null);
+  const spiritInteractionRef = useRef(createSoundSpiritInteractionRecorder());
   const musicUrlRef = useRef<string | null>(null);
   const visualImpulseRef = useRef<VisualImpulseHandle | null>(null);
 
@@ -53,10 +66,15 @@ export default function App() {
     return { sourceUrl, visualSeed };
   }, []);
 
+  const commitSpiritPhenotype = useCallback(() => {
+    setSpiritPhenotype(createSoundSpiritPhenotype(spiritInteractionRef.current.snapshot()));
+  }, []);
+
   const musicController = useMusicAudioController({
     session: musicSession,
     onSessionChange: updateMusicSession,
     onReplaceFile: replaceMusicFile,
+    onSuccessfulLoad: commitSpiritPhenotype,
   });
 
   useEffect(() => () => {
@@ -136,18 +154,19 @@ export default function App() {
           />
           <VisualImpulseLayer ref={visualImpulseRef} />
           <div className="home-content">
-            <HomeMusicTitles playing={musicController.playing} visualStateRef={musicController.visualStateRef} />
+            <HomeMusicTitles playing={musicController.playing} visualStateRef={musicController.visualStateRef} spiritPhenotype={spiritPhenotype} />
           </div>
         </section>
       )}
 
-      {activeLab === 'wave' && <WaveLab />}
-      {activeLab === 'sampling' && <SamplingLab />}
+      {activeLab === 'wave' && <WaveLab interactionRecorder={spiritInteractionRef.current} />}
+      {activeLab === 'sampling' && <SamplingLab interactionRecorder={spiritInteractionRef.current} />}
       {activeLab === 'music' && (
         <MusicLab
           session={musicSession}
           onSessionChange={updateMusicSession}
           controller={musicController}
+          spiritPhenotype={spiritPhenotype}
         />
       )}
 

@@ -1,12 +1,14 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import type { MusicVisualState } from '../music/useMusicAudioController';
+import type { SoundSpiritPhenotypeConfig } from '../spirit/soundSpiritIdentity';
 
 interface HomeMusicTitlesProps {
   playing: boolean;
   visualStateRef: RefObject<MusicVisualState>;
+  spiritPhenotype: SoundSpiritPhenotypeConfig;
 }
 
-export function HomeMusicTitles({ playing, visualStateRef }: HomeMusicTitlesProps) {
+export function HomeMusicTitles({ playing, visualStateRef, spiritPhenotype }: HomeMusicTitlesProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const playingRef = useRef(playing);
   playingRef.current = playing;
@@ -38,6 +40,11 @@ export function HomeMusicTitles({ playing, visualStateRef }: HomeMusicTitlesProp
       const enBeat = Math.min(1.2, englishBeat);
       const cnSplit = visual.trebleEnergy * 2;
       const enSplit = (visual.trebleEnergy + enBeat) * 2.4;
+      const richness = spiritPhenotype.isDefault ? 0 : spiritPhenotype.interactionDepth;
+      const primaryBase = spiritPhenotype.isDefault ? 188 : spiritPhenotype.primaryHue - 11;
+      const secondaryBase = spiritPhenotype.isDefault ? 196 : spiritPhenotype.secondaryHue - 11;
+      const accentBase = spiritPhenotype.isDefault ? 276 : spiritPhenotype.accentHue - 16;
+      const layeredGlow = 1 + richness * 0.24;
 
       root.dataset.neonAwake = awake > 0.012 ? 'true' : 'false';
       root.style.setProperty('--neon-awake', awake.toFixed(3));
@@ -48,9 +55,9 @@ export function HomeMusicTitles({ playing, visualStateRef }: HomeMusicTitlesProp
       root.style.setProperty('--cn-beat', cnBeat.toFixed(3));
       root.style.setProperty('--en-beat', enBeat.toFixed(3));
       root.style.setProperty('--club-flicker', doubleFlash.toFixed(3));
-      root.style.setProperty('--neon-hue', (188 + colorFlow * 22).toFixed(1));
-      root.style.setProperty('--en-hue', (196 + colorFlow * 22).toFixed(1));
-      root.style.setProperty('--accent-hue', (276 + colorFlow * 32).toFixed(1));
+      root.style.setProperty('--neon-hue', (primaryBase + colorFlow * 22).toFixed(1));
+      root.style.setProperty('--en-hue', (secondaryBase + colorFlow * 22).toFixed(1));
+      root.style.setProperty('--accent-hue', (accentBase + colorFlow * 32).toFixed(1));
       root.style.setProperty('--cn-lightness', `${78 + visual.midEnergy * 18}%`);
       root.style.setProperty('--en-lightness', `${76 + visual.midEnergy * 18}%`);
       root.style.setProperty('--cn-brightness', (1 + visual.overallEnergy * 0.62 + cnBeat * 0.78).toFixed(3));
@@ -68,15 +75,15 @@ export function HomeMusicTitles({ playing, visualStateRef }: HomeMusicTitlesProp
       root.style.setProperty('--cn-split-cyan-alpha', Math.min(0.9, visual.trebleEnergy * 0.9).toFixed(3));
       root.style.setProperty('--cn-split-magenta-alpha', Math.min(0.72, visual.trebleEnergy * 0.72).toFixed(3));
       root.style.setProperty('--cn-core-glow', `${7 + visual.midEnergy * 16}px`);
-      root.style.setProperty('--cn-near-glow', `${22 + visual.bassEnergy * 32 + cnBeat * 42}px`);
-      root.style.setProperty('--cn-outer-glow', `${48 + visual.bassEnergy * 58 + cnBeat * 72}px`);
+      root.style.setProperty('--cn-near-glow', `${(22 + visual.bassEnergy * 32 + cnBeat * 42) * layeredGlow}px`);
+      root.style.setProperty('--cn-outer-glow', `${(48 + visual.bassEnergy * 58 + cnBeat * 72) * layeredGlow}px`);
       root.style.setProperty('--cn-layer-blur', `${2 + visual.midEnergy * 3}px`);
       root.style.setProperty('--cn-layer-glow', `${18 + cnBeat * 28}px`);
       root.style.setProperty('--cn-bloom-blur', `${15 + visual.bassEnergy * 17}px`);
       root.style.setProperty('--cn-bloom-glow', `${40 + cnBeat * 58}px`);
       root.style.setProperty('--en-core-glow', `${8 + visual.midEnergy * 15}px`);
-      root.style.setProperty('--en-near-glow', `${26 + visual.trebleEnergy * 35 + enBeat * 38}px`);
-      root.style.setProperty('--en-outer-glow', `${58 + visual.overallEnergy * 62 + enBeat * 70}px`);
+      root.style.setProperty('--en-near-glow', `${(26 + visual.trebleEnergy * 35 + enBeat * 38) * layeredGlow}px`);
+      root.style.setProperty('--en-outer-glow', `${(58 + visual.overallEnergy * 62 + enBeat * 70) * layeredGlow}px`);
       root.style.setProperty('--en-layer-blur', `${2 + visual.trebleEnergy * 4}px`);
       root.style.setProperty('--en-layer-cyan-glow', `${10 + enBeat * 18}px`);
       root.style.setProperty('--en-layer-magenta-glow', `${12 + enBeat * 20}px`);
@@ -92,7 +99,7 @@ export function HomeMusicTitles({ playing, visualStateRef }: HomeMusicTitlesProp
 
     frame = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frame);
-  }, [visualStateRef]);
+  }, [visualStateRef, spiritPhenotype]);
 
   return (
     <div ref={rootRef} className="home-title-neon" data-neon-awake="false">

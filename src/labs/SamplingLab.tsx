@@ -4,13 +4,18 @@ import { SegmentedControl } from '../components/SegmentedControl';
 import type { PointerPoint, SamplingTab } from '../types';
 import { formatBytes } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
+import type { SoundSpiritInteractionRecorder } from '../spirit/soundSpiritIdentity';
 
 const sampleRates = [8000, 22050, 44100, 48000, 96000];
 const samplePointCounts = [9, 18, 30, 36, 60];
 const bitDepths = [8, 16, 24, 32];
 const quantizeBits = [1, 2, 4, 8, 16, 24];
 
-export function SamplingLab() {
+interface SamplingLabProps {
+  interactionRecorder: SoundSpiritInteractionRecorder;
+}
+
+export function SamplingLab({ interactionRecorder }: SamplingLabProps) {
   const [tab, setTab] = useState<SamplingTab>('sample');
   const [sampleRateIndex, setSampleRateIndex] = useState(0);
   const [sizeSampleRateIndex, setSizeSampleRateIndex] = useState(2);
@@ -28,6 +33,35 @@ export function SamplingLab() {
   const formatted = formatBytes(bytes);
   const levels = useMemo(() => 2 ** quantizeBit, [quantizeBit]);
   const coreIntensity = Math.min(1, Math.max(0, bytes / 70000000));
+  const setObservedSampleRateIndex = (next: number, sizeMode = false) => {
+    const previous = sizeMode ? sizeSampleRate : sampleRate;
+    const nextRate = sampleRates[next];
+    interactionRecorder.observeSampleRate(previous, nextRate);
+    if (sizeMode) {
+      setSizeSampleRateIndex(next);
+      interactionRecorder.observeSamplingCombination(nextRate, bitDepth, channels);
+    } else {
+      setSampleRateIndex(next);
+      interactionRecorder.observeSamplingCombination(nextRate, quantizeBit, channels);
+    }
+  };
+  const setObservedQuantizeBitIndex = (next: number) => {
+    const nextDepth = quantizeBits[next];
+    interactionRecorder.observeBitDepth(quantizeBit, nextDepth);
+    interactionRecorder.observeSamplingCombination(sampleRate, nextDepth, channels);
+    setQuantizeBitIndex(next);
+  };
+  const setObservedBitDepthIndex = (next: number) => {
+    const nextDepth = bitDepths[next];
+    interactionRecorder.observeBitDepth(bitDepth, nextDepth);
+    interactionRecorder.observeSamplingCombination(sizeSampleRate, nextDepth, channels);
+    setBitDepthIndex(next);
+  };
+  const setObservedChannels = (next: number) => {
+    interactionRecorder.observeChannels(channels, next);
+    interactionRecorder.observeSamplingCombination(sizeSampleRate, bitDepth, next);
+    setChannels(next);
+  };
 
   return (
     <section className="lab-layout">
@@ -82,7 +116,7 @@ export function SamplingLab() {
               step={1}
               display={`${sampleRate.toLocaleString('zh-TW')} Hz`}
               ariaValueText={`取樣頻率 ${sampleRate} Hz`}
-              onChange={setSampleRateIndex}
+              onChange={(value) => setObservedSampleRateIndex(value)}
             />
           </>
         )}
@@ -97,7 +131,7 @@ export function SamplingLab() {
               step={1}
               display={`${quantizeBit} 位元`}
               ariaValueText={`量化位元數 ${quantizeBit} 位元`}
-              onChange={setQuantizeBitIndex}
+              onChange={setObservedQuantizeBitIndex}
             />
             <div className="result-card">
               <strong>{levels.toLocaleString('zh-TW')} 個階層</strong>
@@ -116,7 +150,7 @@ export function SamplingLab() {
               step={1}
               display={`${sizeSampleRate.toLocaleString('zh-TW')} Hz`}
               ariaValueText={`取樣頻率 ${sizeSampleRate} Hz`}
-              onChange={setSizeSampleRateIndex}
+              onChange={(value) => setObservedSampleRateIndex(value, true)}
             />
             <RangeControl
               label="量化位元數"
@@ -126,9 +160,9 @@ export function SamplingLab() {
               step={1}
               display={`${bitDepth} 位元`}
               ariaValueText={`量化位元數 ${bitDepth} 位元`}
-              onChange={setBitDepthIndex}
+              onChange={setObservedBitDepthIndex}
             />
-            <SegmentedControl label="聲道" value={channels} options={[{ value: 1, label: '單聲道' }, { value: 2, label: '雙聲道（立體聲）' }]} onChange={setChannels} />
+            <SegmentedControl label="聲道" value={channels} options={[{ value: 1, label: '單聲道' }, { value: 2, label: '雙聲道（立體聲）' }]} onChange={setObservedChannels} />
             <RangeControl
               label="聲音長度"
               value={seconds}

@@ -21,6 +21,7 @@ interface ControllerOptions {
   session: MusicSessionState;
   onSessionChange: (patch: Partial<MusicSessionState>) => void;
   onReplaceFile: (file: File) => { sourceUrl: string; visualSeed: number };
+  onSuccessfulLoad: () => void;
 }
 
 export interface MusicAudioController {
@@ -73,7 +74,7 @@ interface HomeVisualBeatState {
   previousSpectrum: Float32Array | null;
 }
 
-export function useMusicAudioController({ session, onSessionChange, onReplaceFile }: ControllerOptions): MusicAudioController {
+export function useMusicAudioController({ session, onSessionChange, onReplaceFile, onSuccessfulLoad }: ControllerOptions): MusicAudioController {
   const [playing, setPlaying] = useState(false);
   const [spectrumData, setSpectrumData] = useState<Uint8Array | null>(null);
   const [timeDomainData, setTimeDomainData] = useState<Uint8Array | null>(null);
@@ -204,6 +205,7 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
       const buffer = await context.decodeAudioData(arrayBuffer.slice(0));
       if (loadVersion !== loadVersionRef.current) return;
       const channel = buffer.getChannelData(0);
+      onSuccessfulLoad();
       onSessionChange({
         duration: buffer.duration,
         current: 0,
@@ -217,7 +219,7 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
     } catch {
       if (loadVersion === loadVersionRef.current) setError(unsupportedAudioMessage);
     }
-  }, [onReplaceFile, onSessionChange]);
+  }, [onReplaceFile, onSessionChange, onSuccessfulLoad]);
 
   const play = useCallback(async () => {
     const audio = audioRef.current;
