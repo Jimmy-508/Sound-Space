@@ -4,6 +4,7 @@ import type { PointerPoint, Waveform } from '../types';
 import { computeAttractionSteering, computeWavefrontInfluence, type Repulsor, type SpiritGestureForces } from './repulsor';
 import {
   DEFAULT_SOUND_SPIRIT_PHENOTYPE,
+  SOUND_SPIRIT_SPECIES_GUARDRAILS,
   type SoundSpiritPhenotypeConfig,
 } from '../spirit/soundSpiritIdentity';
 
@@ -1752,12 +1753,14 @@ function createMasterSpirit(compact: boolean, phenotype: SoundSpiritPhenotypeCon
   const group = new THREE.Group();
   const leftWing = new THREE.Group();
   const rightWing = new THREE.Group();
-  leftWing.position.x = -0.145;
-  rightWing.position.x = 0.145;
+  leftWing.position.x = -SOUND_SPIRIT_SPECIES_GUARDRAILS.wingRootX;
+  rightWing.position.x = SOUND_SPIRIT_SPECIES_GUARDRAILS.wingRootX;
   leftWing.scale.set(phenotype.wingSpan * (1 - phenotype.wingAsymmetry), phenotype.wingHeight, 1);
   rightWing.scale.set(phenotype.wingSpan * (1 + phenotype.wingAsymmetry), phenotype.wingHeight, 1);
   leftWing.rotation.z = -(phenotype.wingSweep - 1) * 0.16;
   rightWing.rotation.z = (phenotype.wingSweep - 1) * 0.16;
+  leftWing.rotation.y = -phenotype.wingCurvature * 0.22;
+  rightWing.rotation.y = phenotype.wingCurvature * 0.22;
   leftWing.userData.materials = [];
   rightWing.userData.materials = [];
   group.add(leftWing, rightWing);
@@ -1870,7 +1873,12 @@ function createMasterSpirit(compact: boolean, phenotype: SoundSpiritPhenotypeCon
     internalPathControls.push([[0, 0.018, 0.49], [0.11, 0.032, 0.34], [-0.07, 0.05, 0.12], [0.13, 0.036, -0.08], [-0.03, 0.008, -0.38]]);
   }
   internalPathControls.forEach((controls, index) => {
-    const geometry = createMasterPathGeometry(controls, compact ? 34 : 70);
+    const routedControls = controls.map((control, controlIndex) => [
+      control[0] + Math.sin((controlIndex + 1) * 1.73 + index * 0.91) * phenotype.energyRouting,
+      control[1],
+      control[2],
+    ]);
+    const geometry = createMasterPathGeometry(routedControls, compact ? 34 : 70);
     const material = createEnergyLineMaterial(
       phenotype.isDefault ? (index < 2 ? 0x96eeff : 0xffca8d) : (index < 2 ? phenotype.primaryColor : phenotype.energyColor),
       (index < 2 ? 0.22 : 0.28) * phenotype.energyOpacity,

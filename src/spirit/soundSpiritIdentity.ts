@@ -11,6 +11,7 @@ interface FeatureSummary {
   weightedTotal: number;
   weight: number;
   sessions: number;
+  regions: Set<number>;
 }
 
 interface PendingObservation {
@@ -33,6 +34,8 @@ export interface SoundSpiritInteractionHistory {
   meaningfulSeconds: number;
   waveExplored: boolean;
   samplingExplored: boolean;
+  eventCounts: Map<string, number>;
+  orderedEvents: string[];
 }
 
 export interface SoundSpiritGenome {
@@ -44,6 +47,16 @@ export interface SoundSpiritGenome {
   interactionDepth: number;
   seed: number;
 }
+
+export const DEFAULT_SOUND_SPIRIT_GENOME: SoundSpiritGenome = Object.freeze({
+  hasHistory: false,
+  energy: 0.5,
+  frequency: 0.5,
+  diversity: 0.5,
+  precision: 0.5,
+  interactionDepth: 0,
+  seed: 1,
+});
 
 export interface SoundSpiritPhenotypeConfig {
   key: string;
@@ -60,6 +73,7 @@ export interface SoundSpiritPhenotypeConfig {
   wingSpan: number;
   wingHeight: number;
   wingSweep: number;
+  wingCurvature: number;
   wingAsymmetry: number;
   membraneOpacity: number;
   membraneLayerExtra: number;
@@ -71,6 +85,7 @@ export interface SoundSpiritPhenotypeConfig {
   heartGlow: number;
   energyOpacity: number;
   energyPathExtra: number;
+  energyRouting: number;
   particleRichness: number;
   iridescence: number;
   glowIntensity: number;
@@ -82,6 +97,33 @@ export interface SoundSpiritPhenotypeConfig {
   secondaryHue: number;
   accentHue: number;
 }
+
+export const SOUND_SPIRIT_SPECIES_GUARDRAILS = Object.freeze({
+  wingCount: 2,
+  wingRootX: 0.145,
+  heartPresent: true,
+  heartLobeCount: 5,
+  wingSpan: Object.freeze([0.88, 1.15] as const),
+  wingHeight: Object.freeze([0.9, 1.12] as const),
+  wingSweep: Object.freeze([0.92, 1.12] as const),
+  wingCurvature: Object.freeze([-0.12, 0.12] as const),
+  wingAsymmetry: Object.freeze([-0.055, 0.055] as const),
+  bodyFullness: Object.freeze([0.91, 1.11] as const),
+  bodyLength: Object.freeze([0.94, 1.07] as const),
+  bodyAsymmetry: Object.freeze([-0.035, 0.035] as const),
+  membraneOpacity: Object.freeze([0.88, 1.18] as const),
+  veinExtra: Object.freeze([0, 2] as const),
+  veinOpacity: Object.freeze([0.88, 1.35] as const),
+  rimOpacity: Object.freeze([0.9, 1.34] as const),
+  heartScale: Object.freeze([0.86, 1.2] as const),
+  heartVariation: Object.freeze([-0.07, 0.07] as const),
+  heartGlow: Object.freeze([0.82, 1.38] as const),
+  energyOpacity: Object.freeze([0.72, 1.48] as const),
+  energyRouting: Object.freeze([-0.09, 0.09] as const),
+  particleRichness: Object.freeze([1, 1.42] as const),
+  iridescence: Object.freeze([0.9, 1.38] as const),
+  glowIntensity: Object.freeze([0.84, 1.34] as const),
+});
 
 export interface SoundSpiritInteractionRecorder {
   observeAmplitude: (previous: number, value: number) => void;
@@ -117,6 +159,7 @@ export const DEFAULT_SOUND_SPIRIT_PHENOTYPE: SoundSpiritPhenotypeConfig = Object
   wingSpan: 1,
   wingHeight: 1,
   wingSweep: 1,
+  wingCurvature: 0,
   wingAsymmetry: 0,
   membraneOpacity: 1,
   membraneLayerExtra: 0,
@@ -128,6 +171,7 @@ export const DEFAULT_SOUND_SPIRIT_PHENOTYPE: SoundSpiritPhenotypeConfig = Object
   heartGlow: 1,
   energyOpacity: 1,
   energyPathExtra: 0,
+  energyRouting: 0,
   particleRichness: 1,
   iridescence: 1,
   glowIntensity: 1,
@@ -151,6 +195,13 @@ export function createSoundSpiritInteractionRecorder(debounceMs = 480): SoundSpi
   let history = createEmptyHistory();
   const pending = new Map<ContinuousFeature, PendingObservation>();
 
+  const recordOrderedEvent = (token: string) => {
+    const repetitions = history.eventCounts.get(token) ?? 0;
+    history.eventCounts.set(token, repetitions + 1);
+    if (history.orderedEvents.length < 128) history.orderedEvents.push(token);
+    return 1 / Math.pow(repetitions + 1, 1.35);
+  };
+
   const commit = (feature: ContinuousFeature) => {
     const observation = pending.get(feature);
     if (!observation) return;
@@ -161,14 +212,20 @@ export function createSoundSpiritInteractionRecorder(debounceMs = 480): SoundSpi
     if (Math.max(range, delta) < meaningfulDelta[feature]) return;
 
     const summary = history.features[feature];
+    const startRegion = regionOf(observation.start);
+    const endRegion = regionOf(observation.current);
+    const lowRegion = regionOf(observation.minimum);
+    const highRegion = regionOf(observation.maximum);
+    for (let region = lowRegion; region <= highRegion; region += 1) summary.regions.add(region);
+    const noveltyWeight = recordOrderedEvent(`${feature}:${startRegion}>${endRegion}:${lowRegion}-${highRegion}`);
     const sessionWeight = 0.35 + Math.min(0.65, range * 1.8 + delta * 0.7);
     summary.minimum = Math.min(summary.minimum, observation.minimum);
     summary.maximum = Math.max(summary.maximum, observation.maximum);
-    summary.weightedTotal += (observation.start * 0.2 + observation.current * 0.8) * sessionWeight;
-    summary.weight += sessionWeight;
-    summary.sessions += 1;
-    history.meaningfulSessions += 1;
-    history.meaningfulSeconds += Math.min(2.5, Math.max(0.18, (observation.lastAt - observation.startedAt) / 1000));
+    summary.weightedTotal += ((observation.minimum + observation.maximum) * 0.5) * sessionWeight * noveltyWeight;
+    summary.weight += sessionWeight * noveltyWeight;
+    summary.sessions += noveltyWeight;
+    history.meaningfulSessions += noveltyWeight;
+    history.meaningfulSeconds += Math.min(2.5, Math.max(0.18, (observation.lastAt - observation.startedAt) / 1000)) * noveltyWeight;
     if (feature === 'amplitude' || feature === 'frequency') history.waveExplored = true;
     else history.samplingExplored = true;
   };
@@ -201,9 +258,10 @@ export function createSoundSpiritInteractionRecorder(debounceMs = 480): SoundSpi
     observation.timer = setTimeout(() => commit(feature), debounceMs);
   };
 
-  const meaningfulChoice = (lab: 'wave' | 'sampling') => {
-    history.meaningfulSessions += 1;
-    history.meaningfulSeconds += 0.22;
+  const meaningfulChoice = (lab: 'wave' | 'sampling', token: string) => {
+    const noveltyWeight = recordOrderedEvent(token);
+    history.meaningfulSessions += noveltyWeight;
+    history.meaningfulSeconds += 0.22 * noveltyWeight;
     if (lab === 'wave') history.waveExplored = true;
     else history.samplingExplored = true;
   };
@@ -216,7 +274,7 @@ export function createSoundSpiritInteractionRecorder(debounceMs = 480): SoundSpi
       history.waveforms.add(previous);
       history.waveforms.add(value);
       history.waveformSwitches += 1;
-      meaningfulChoice('wave');
+      meaningfulChoice('wave', `waveform:${previous}>${value}`);
     },
     observeSampleRate: (previous, value) => observe('sampleRate', normalizeSampleRate(previous), normalizeSampleRate(value)),
     observeBitDepth: (previous, value) => observe('bitDepth', normalizeBitDepth(previous), normalizeBitDepth(value)),
@@ -224,10 +282,12 @@ export function createSoundSpiritInteractionRecorder(debounceMs = 480): SoundSpi
       if (previous === value) return;
       history.channels.add(previous);
       history.channels.add(value);
-      meaningfulChoice('sampling');
+      meaningfulChoice('sampling', `channels:${previous}>${value}`);
     },
     observeSamplingCombination: (sampleRate, bitDepth, channels) => {
-      history.samplingCombinations.add(`${sampleRate}:${bitDepth}:${channels}`);
+      const combination = `${sampleRate}:${bitDepth}:${channels}`;
+      if (!history.samplingCombinations.has(combination)) recordOrderedEvent(`sampling:${combination}`);
+      history.samplingCombinations.add(combination);
     },
     snapshot: () => {
       [...pending.keys()].forEach(commit);
@@ -244,21 +304,28 @@ export function createSoundSpiritInteractionRecorder(debounceMs = 480): SoundSpi
 export function resolveSoundSpiritGenome(history: SoundSpiritInteractionHistory): SoundSpiritGenome {
   const meaningful = history.meaningfulSessions;
   if (meaningful === 0) {
-    return { hasHistory: false, energy: 0.5, frequency: 0.5, diversity: 0.5, precision: 0.5, interactionDepth: 0, seed: 1 };
+    return DEFAULT_SOUND_SPIRIT_GENOME;
   }
 
   const amplitude = weightedMean(history.features.amplitude, 0.5);
-  const frequency = weightedMean(history.features.frequency, 0.5);
+  const frequencyMean = weightedMean(history.features.frequency, 0.5);
   const sampleRate = weightedMean(history.features.sampleRate, 0.5);
   const bitDepth = weightedMean(history.features.bitDepth, 0.5);
   const amplitudeRange = exploredRange(history.features.amplitude);
   const frequencyRange = exploredRange(history.features.frequency);
   const samplingRange = exploredRange(history.features.sampleRate);
   const bitDepthRange = exploredRange(history.features.bitDepth);
+  const amplitudeRegions = regionBreadth(history.features.amplitude);
+  const frequencyRegions = regionBreadth(history.features.frequency);
   const waveformBreadth = Math.min(1, history.waveforms.size / 3);
   const channelBreadth = Math.min(1, history.channels.size / 2);
   const combinationBreadth = 1 - Math.exp(-history.samplingCombinations.size / 4.2);
   const crossLab = history.waveExplored && history.samplingExplored ? 1 : 0;
+  const energy = clamp01(
+    amplitude * 0.35 + amplitudeRange * 0.4 + amplitudeRegions * 0.2
+    + (1 - Math.exp(-history.features.amplitude.sessions / 3)) * 0.05,
+  );
+  const frequency = clamp01(frequencyMean * 0.72 + frequencyRange * 0.16 + frequencyRegions * 0.12);
   const diversity = clamp01(
     waveformBreadth * 0.21 + amplitudeRange * 0.14 + frequencyRange * 0.17
     + samplingRange * 0.12 + bitDepthRange * 0.11 + channelBreadth * 0.08
@@ -276,11 +343,11 @@ export function resolveSoundSpiritGenome(history: SoundSpiritInteractionHistory)
   const sessionDepth = 1 - Math.exp(-meaningful / 8);
   const timeDepth = 1 - Math.exp(-history.meaningfulSeconds / 12);
   const interactionDepth = clamp01(sessionDepth * 0.48 + timeDepth * 0.22 + breadth * 0.22 + crossLab * 0.08);
-  const signature = stableHistorySignature(history, amplitude, frequency, diversity, precision, interactionDepth);
+  const signature = stableHistorySignature(history, energy, frequency, diversity, precision, interactionDepth);
 
   return {
     hasHistory: true,
-    energy: amplitude,
+    energy,
     frequency,
     diversity,
     precision,
@@ -300,6 +367,7 @@ export function generateSoundSpiritPhenotype(genome: SoundSpiritGenome): SoundSp
   const energyBias = energy - 0.5;
   const frequencyBias = frequency - 0.5;
   const individuality = (random() * 2 - 1) * diversity;
+  const routeIndividuality = (random() * 2 - 1) * diversity;
   const richness = clamp01(depth * 0.7 + diversity * 0.18 + precision * 0.12);
   const cool = mixHex(0xb36dff, 0x64efff, frequency);
   const secondary = mixHex(0xf06fd5, 0x778dff, clamp01(frequency * 0.72 + individuality * 0.08 + 0.12));
@@ -316,26 +384,28 @@ export function generateSoundSpiritPhenotype(genome: SoundSpiritGenome): SoundSp
     diversity,
     precision,
     interactionDepth: depth,
-    bodyFullness: clamp(0.91, 1.12, 1 + energyBias * 0.2 + seedDetail),
-    bodyLength: clamp(0.94, 1.07, 1 - frequencyBias * 0.06 + depth * 0.035),
-    bodyAsymmetry: individuality * 0.035,
-    wingSpan: clamp(0.88, 1.18, 1 + frequencyBias * 0.24 + diversity * 0.035),
-    wingHeight: clamp(0.9, 1.14, 1 - frequencyBias * 0.18 + (0.5 - energy) * 0.035),
-    wingSweep: clamp(0.9, 1.14, 1 + frequencyBias * 0.1 + depth * 0.055),
-    wingAsymmetry: individuality * 0.055,
-    membraneOpacity: clamp(0.88, 1.18, 0.94 + precision * 0.12 + richness * 0.1),
+    bodyFullness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyFullness, 1 + energyBias * 0.2 + seedDetail),
+    bodyLength: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyLength, 1 - frequencyBias * 0.06 + depth * 0.035),
+    bodyAsymmetry: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyAsymmetry, individuality * 0.035),
+    wingSpan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSpan, 1 + frequencyBias * 0.24 + diversity * 0.025),
+    wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 - frequencyBias * 0.18 + (0.5 - energy) * 0.035),
+    wingSweep: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSweep, 1 + frequencyBias * 0.1 + depth * 0.045 + routeIndividuality * 0.025),
+    wingCurvature: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingCurvature, frequencyBias * 0.16 + routeIndividuality * 0.055),
+    wingAsymmetry: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingAsymmetry, individuality * 0.055),
+    membraneOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.membraneOpacity, 0.94 + precision * 0.12 + richness * 0.1),
     membraneLayerExtra: richness > 0.72 ? 1 : 0,
-    veinExtra: Math.min(2, Math.floor(precision * 1.45 + richness * 1.35)),
-    veinOpacity: clamp(0.88, 1.35, 0.92 + precision * 0.24 + richness * 0.16),
-    rimOpacity: clamp(0.9, 1.34, 0.94 + precision * 0.18 + depth * 0.18),
-    heartScale: clamp(0.86, 1.2, 1 + energyBias * 0.31 + precision * energy * 0.05),
-    heartVariation: diversity * (0.035 + depth * 0.035),
-    heartGlow: clamp(0.82, 1.38, 0.9 + energy * 0.35 + precision * energy * 0.13),
-    energyOpacity: clamp(0.72, 1.52, 0.78 + energy * 0.5 + diversity * energy * 0.2),
+    veinExtra: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.veinExtra, Math.floor(precision * 1.45 + richness * 1.35)),
+    veinOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.veinOpacity, 0.92 + precision * 0.24 + richness * 0.16),
+    rimOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.rimOpacity, 0.94 + precision * 0.18 + depth * 0.18),
+    heartScale: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartScale, 1 + energyBias * 0.31 + precision * energy * 0.05),
+    heartVariation: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartVariation, individuality * (0.04 + depth * 0.03)),
+    heartGlow: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartGlow, 0.9 + energy * 0.35 + precision * energy * 0.13),
+    energyOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.energyOpacity, 0.78 + energy * 0.5 + diversity * energy * 0.2),
     energyPathExtra: Math.min(2, Math.floor(diversity * 1.2 + richness * 1.35)),
-    particleRichness: clamp(1, 1.42, 1 + depth * 0.28 + diversity * 0.14),
-    iridescence: clamp(0.9, 1.38, 0.94 + diversity * 0.2 + precision * 0.14 + depth * 0.1),
-    glowIntensity: clamp(0.84, 1.36, 0.9 + energy * 0.26 + depth * 0.15 + precision * 0.05),
+    energyRouting: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.energyRouting, routeIndividuality * (0.055 + depth * 0.035)),
+    particleRichness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.particleRichness, 1 + depth * 0.28 + diversity * 0.14),
+    iridescence: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.iridescence, 0.94 + diversity * 0.2 + precision * 0.14 + depth * 0.1),
+    glowIntensity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.glowIntensity, 0.9 + energy * 0.26 + depth * 0.15 + precision * 0.05),
     primaryColor: cool,
     secondaryColor: secondary,
     accentColor: accent,
@@ -382,7 +452,7 @@ function normalizeBitDepth(value: number) {
 }
 
 function createEmptyFeature(): FeatureSummary {
-  return { minimum: 1, maximum: 0, weightedTotal: 0, weight: 0, sessions: 0 };
+  return { minimum: 1, maximum: 0, weightedTotal: 0, weight: 0, sessions: 0, regions: new Set() };
 }
 
 function createEmptyHistory(): SoundSpiritInteractionHistory {
@@ -401,16 +471,18 @@ function createEmptyHistory(): SoundSpiritInteractionHistory {
     meaningfulSeconds: 0,
     waveExplored: false,
     samplingExplored: false,
+    eventCounts: new Map(),
+    orderedEvents: [],
   };
 }
 
 function cloneHistory(history: SoundSpiritInteractionHistory): SoundSpiritInteractionHistory {
   return {
     features: {
-      amplitude: { ...history.features.amplitude },
-      frequency: { ...history.features.frequency },
-      sampleRate: { ...history.features.sampleRate },
-      bitDepth: { ...history.features.bitDepth },
+      amplitude: cloneFeature(history.features.amplitude),
+      frequency: cloneFeature(history.features.frequency),
+      sampleRate: cloneFeature(history.features.sampleRate),
+      bitDepth: cloneFeature(history.features.bitDepth),
     },
     waveforms: new Set(history.waveforms),
     channels: new Set(history.channels),
@@ -420,7 +492,13 @@ function cloneHistory(history: SoundSpiritInteractionHistory): SoundSpiritIntera
     meaningfulSeconds: history.meaningfulSeconds,
     waveExplored: history.waveExplored,
     samplingExplored: history.samplingExplored,
+    eventCounts: new Map(history.eventCounts),
+    orderedEvents: [...history.orderedEvents],
   };
+}
+
+function cloneFeature(feature: FeatureSummary): FeatureSummary {
+  return { ...feature, regions: new Set(feature.regions) };
 }
 
 function weightedMean(summary: FeatureSummary, fallback: number) {
@@ -429,6 +507,14 @@ function weightedMean(summary: FeatureSummary, fallback: number) {
 
 function exploredRange(summary: FeatureSummary) {
   return summary.sessions > 0 ? clamp01(summary.maximum - summary.minimum) : 0;
+}
+
+function regionBreadth(summary: FeatureSummary) {
+  return summary.regions.size / 4;
+}
+
+function regionOf(value: number) {
+  return Math.min(3, Math.floor(clamp01(value) * 4));
 }
 
 function stableHistorySignature(
@@ -445,6 +531,7 @@ function stableHistorySignature(
     ...[...history.waveforms].sort(),
     ...[...history.channels].sort(),
     ...[...history.samplingCombinations].sort(),
+    ...history.orderedEvents,
   ].join('|');
 }
 
