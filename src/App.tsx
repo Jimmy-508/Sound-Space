@@ -81,6 +81,7 @@ export default function App() {
   const homePointersRef = useRef(new Map<number, { x: number; y: number; time: number; startX: number; startY: number; startTime: number; velocityX: number; velocityY: number }>());
   const homeLastTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const homeClickTimerRef = useRef(0);
+  const homeSingleSuppressedUntilRef = useRef(0);
   const homePointerFrameRef = useRef(0);
   const pendingHomePointerRef = useRef<PointerPoint | null>(null);
   const activeViewRef = useRef(activeView);
@@ -398,6 +399,8 @@ export default function App() {
     if (moved > worldInteractionThresholds.touchHoldMovementPx || now - tracked.startTime > worldInteractionThresholds.tapDurationMs) return;
     const previous = homeLastTapRef.current;
     if (previous && now - previous.time <= worldInteractionThresholds.doubleTapMs && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= worldInteractionThresholds.doubleTapDistancePx) {
+      window.clearTimeout(homeClickTimerRef.current);
+      homeSingleSuppressedUntilRef.current = now + 120;
       worldInteractionRef.current?.pulse('touch', worldPoint(event.clientX, event.clientY), now);
       homeLastTapRef.current = null;
     } else {
@@ -406,12 +409,12 @@ export default function App() {
   };
 
   const activateHomeImpulse = (event: MouseEvent<HTMLElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
-    const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / Math.max(1, rect.height)));
+    const { x, y } = worldPoint(event.clientX, event.clientY);
     window.clearTimeout(homeClickTimerRef.current);
+    if (performance.now() <= homeSingleSuppressedUntilRef.current) return;
     if (event.detail > 1) return;
     homeClickTimerRef.current = window.setTimeout(() => {
+      if (activeViewRef.current !== 'home') return;
       visualImpulseRef.current?.trigger(x, y);
       void interactionSound.play().then((playback) => playback && setHomePlayback(playback));
     }, worldInteractionThresholds.doubleTapMs);
@@ -427,6 +430,7 @@ export default function App() {
       />
       <video ref={gestureVideoRef} className="gesture-camera-sensor" muted playsInline aria-hidden="true" />
       <StarfieldBackground />
+      <VisualImpulseLayer ref={visualImpulseRef} />
       <GestureEffectsOverlay controller={worldInteractionRef.current} scene={activeView} blueTearsEnabled={blueTearsEnabled} />
       <GestureOverlay store={gestureStoreRef.current} interaction={gestureInteractionRef.current} world={worldInteractionRef.current} />
       <nav ref={navigationRef} className="top-nav" aria-label="主要導覽">
@@ -493,7 +497,6 @@ export default function App() {
             homeMusicData={musicController.timeDomainData}
             homeMusicPlaying={musicController.playing}
           />
-          <VisualImpulseLayer ref={visualImpulseRef} />
           <div className="home-content">
             <HomeMusicTitles playing={musicController.playing} visualStateRef={musicController.visualStateRef} spiritPhenotype={spiritPhenotype} />
           </div>

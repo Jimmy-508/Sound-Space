@@ -183,6 +183,13 @@ scheduledFrames.shift()?.(16);
 assert.equal(disturbances.length, 1, 'A pointer contributes at most one disturbance per frame.');
 assert.equal(disturbances[0].previousPoint.x, 0, 'Coalescing preserves the start of the path segment.');
 assert.equal(disturbances[0].point.x, 0.4, 'Coalescing consumes the latest point.');
+coalescedWorld.disturb({
+  type: 'disturbance', source: 'gesture', geometry: 'hand', producerId: 8,
+  landmarks, previousLandmarks, previousPoint: previousLandmarks[9], point: landmarks[9],
+  velocityX: 1, velocityY: 0, speed: 1, turnIntensity: 0.2, timestamp: 50,
+});
+assert.equal(disturbances.length, 2, 'MediaPipe gesture disturbance remains immediate after its existing 42ms throttle.');
+assert.equal(scheduledFrames.length, 0, 'Gesture does not enter the pointer RAF queue.');
 coalescedWorld.setDisturbanceEnabled(false);
 coalescedWorld.disturb({
   type: 'disturbance', source: 'mouse', geometry: 'pointer', point: landmarks[1], previousPoint: landmarks[0],
@@ -192,9 +199,11 @@ assert.equal(coalescedWorld.getPerformanceSnapshot().pendingEvents, 0, 'Blue Tea
 
 const budget = new AdaptiveEmissionBudget();
 const healthyFactor = budget.update(16);
+assert.equal(budget.read('gesture'), 1, 'Healthy gesture emission stays at the full Phase 1.9.3 density.');
 for (let index = 0; index < 20; index += 1) budget.update(42);
 const constrainedFactor = budget.read();
 assert.ok(constrainedFactor < healthyFactor && constrainedFactor >= 0.45, 'Slow frames gradually reduce only the birth budget.');
+assert.ok(budget.read('gesture') < 1 && budget.read('gesture') >= 0.55, 'Gesture reduction begins only after sustained pressure.');
 for (let index = 0; index < 80; index += 1) budget.update(16);
 assert.ok(budget.read() > constrainedFactor && budget.read() <= 1, 'Healthy frames gradually recover the birth budget.');
 
@@ -234,6 +243,7 @@ const renderModelSource = readFileSync('src/gesture/gestureRenderModel.ts', 'utf
 const starRendererSource = readFileSync('src/interaction/twinklingStarRenderer.ts', 'utf8');
 const musicSource = readFileSync('src/labs/MusicLab.tsx', 'utf8');
 const settingsSource = readFileSync('src/components/SettingsPanel.tsx', 'utf8');
+const visualImpulseSource = readFileSync('src/visualization/VisualImpulseLayer.tsx', 'utf8');
 assert.ok(!rangeSource.includes('已選取'));
 assert.ok(!rangeSource.includes('gesture-control-marker'));
 assert.ok(!stylesSource.includes('gesture-control-marker'));
@@ -271,6 +281,12 @@ assert.ok(musicSource.includes("state: 'pending'"));
 assert.ok(musicSource.includes("state = 'attraction'"));
 assert.ok(musicSource.includes('worldInteractionThresholds.holdMs'));
 assert.ok(settingsSource.includes('藍眼淚效果'));
+assert.ok(stylesSource.includes('.home {') && stylesSource.match(/\.home\s*\{[^}]*touch-action:\s*none/s));
+assert.ok(stylesSource.match(/\.music-stage\[data-gesture-zone="spirit"\]\s*\{[^}]*touch-action:\s*none/s));
+assert.ok(!stylesSource.match(/(?:html|body)[^{]*\{[^}]*touch-action:\s*none/s), 'Touch scroll must not be disabled globally.');
+assert.ok(stylesSource.match(/\.visual-impulse-layer\s*\{[^}]*position:\s*fixed[^}]*pointer-events:\s*none/s), 'Single ripple belongs to the fixed world overlay.');
+assert.ok(appSource.indexOf('<VisualImpulseLayer') < appSource.indexOf('<nav'), 'The ripple overlay is mounted at world level, outside Home clipping.');
+assert.ok(visualImpulseSource.includes('hasActiveImpulse') && visualImpulseSource.includes('else running = false'), 'The world ripple overlay sleeps while idle.');
 assert.ok(appSource.includes("worldInteractionRef.current?.pulse('touch'"), 'Home touch double-tap remains immediate.');
 assert.ok(appSource.includes("worldInteractionRef.current?.pulse('mouse'"), 'Home mouse double-click remains immediate.');
 

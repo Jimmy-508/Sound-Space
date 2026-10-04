@@ -67,6 +67,11 @@ export class WorldInteractionController {
   disturb(event: Extract<WorldInteractionEvent, { type: 'disturbance' }>) {
     if (!this.disturbanceEnabled || event.speed <= 0) return;
     this.inputEvents += 1;
+    if (event.source === 'gesture') {
+      this.consumedEvents += 1;
+      this.emit(event);
+      return;
+    }
     const key = `${event.source}:${event.producerId ?? 'primary'}`;
     const previous = this.pendingDisturbances.get(key);
     this.pendingDisturbances.set(key, previous

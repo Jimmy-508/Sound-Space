@@ -66,6 +66,9 @@ export function GestureEffectsOverlay({ controller, scene, blueTearsEnabled }: P
     const waterRipples: WaterRipple[] = [];
     const emissionBudget = new AdaptiveEmissionBudget();
     let effectsEnabledLastFrame = blueTearsEnabledRef.current;
+    let gestureEmissionWindowStartedAt = performance.now();
+    let gestureEmissionsInWindow = 0;
+    let gestureEmissionsPerSecond = 0;
     let musicStageRect: DOMRect | null = null;
     let musicStageRectMeasuredAt = -Infinity;
 
@@ -119,8 +122,9 @@ export function GestureEffectsOverlay({ controller, scene, blueTearsEnabled }: P
       const point = gesturePointToViewport(event.point, width, height);
       if (event.type === 'disturbance') {
         if (!blueTearsEnabledRef.current) return;
+        if (event.source === 'gesture') gestureEmissionsInWindow += 1;
         const seeds = event.geometry === 'hand' ? createBlueTearSeeds(event) : createPointerTearSeeds(event);
-        const emissionCount = emissionBudget.count(seeds.length);
+        const emissionCount = emissionBudget.count(seeds.length, event.source === 'gesture' ? 'gesture' : 'pointer');
         for (let seedIndex = 0; seedIndex < emissionCount; seedIndex += 1) {
           const seed = seeds[Math.floor(seedIndex * seeds.length / Math.max(1, emissionCount))];
           blueTears.push({
@@ -314,6 +318,11 @@ export function GestureEffectsOverlay({ controller, scene, blueTearsEnabled }: P
         waterRipples.length = 0;
       }
       effectsEnabledLastFrame = blueTearsEnabledRef.current;
+      if (now - gestureEmissionWindowStartedAt >= 1000) {
+        gestureEmissionsPerSecond = gestureEmissionsInWindow * 1000 / Math.max(1, now - gestureEmissionWindowStartedAt);
+        gestureEmissionsInWindow = 0;
+        gestureEmissionWindowStartedAt = now;
+      }
       drawContext.clearRect(0, 0, width, height);
       drawContext.save();
       drawContext.globalCompositeOperation = 'lighter';
@@ -334,6 +343,8 @@ export function GestureEffectsOverlay({ controller, scene, blueTearsEnabled }: P
           waterRipples: waterRipples.length,
           explosionBursts: explosionBursts.length,
           adaptiveEmissionFactor: emissionBudget.read(),
+          gestureEmissionFactor: emissionBudget.read('gesture'),
+          gestureEmissionsPerSecond,
           ...controller.getPerformanceSnapshot(),
         };
       }

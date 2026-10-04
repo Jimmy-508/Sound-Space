@@ -25,6 +25,7 @@ export const VisualImpulseLayer = forwardRef<VisualImpulseHandle>(function Visua
     seed: 0,
   })));
   const cursorRef = useRef(0);
+  const startLoopRef = useRef<() => void>(() => undefined);
 
   useImperativeHandle(ref, () => ({
     trigger(x, y) {
@@ -35,6 +36,7 @@ export const VisualImpulseLayer = forwardRef<VisualImpulseHandle>(function Visua
       impulse.startedAt = performance.now();
       impulse.seed = Math.random() * Math.PI * 2;
       cursorRef.current = (cursorRef.current + 1) % impulsePoolSize;
+      startLoopRef.current();
     },
   }), []);
 
@@ -44,6 +46,7 @@ export const VisualImpulseLayer = forwardRef<VisualImpulseHandle>(function Visua
     const context = canvas.getContext('2d');
     if (!context) return;
     let frame = 0;
+    let running = false;
     let width = 1;
     let height = 1;
 
@@ -64,6 +67,7 @@ export const VisualImpulseLayer = forwardRef<VisualImpulseHandle>(function Visua
     const render = (now: number) => {
       context.clearRect(0, 0, width, height);
       context.globalCompositeOperation = 'lighter';
+      let hasActiveImpulse = false;
       for (const impulse of impulsesRef.current) {
         if (!impulse.active) continue;
         const age = (now - impulse.startedAt) / 980;
@@ -71,6 +75,7 @@ export const VisualImpulseLayer = forwardRef<VisualImpulseHandle>(function Visua
           impulse.active = false;
           continue;
         }
+        hasActiveImpulse = true;
         const ease = 1 - Math.pow(1 - age, 3);
         const fade = Math.pow(1 - age, 1.7);
         const centerX = impulse.x * width;
@@ -101,12 +106,18 @@ export const VisualImpulseLayer = forwardRef<VisualImpulseHandle>(function Visua
         }
       }
       context.globalCompositeOperation = 'source-over';
+      if (hasActiveImpulse) frame = requestAnimationFrame(render);
+      else running = false;
+    };
+    startLoopRef.current = () => {
+      if (running) return;
+      running = true;
       frame = requestAnimationFrame(render);
     };
-    frame = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(frame);
+      startLoopRef.current = () => undefined;
       observer.disconnect();
     };
   }, []);
