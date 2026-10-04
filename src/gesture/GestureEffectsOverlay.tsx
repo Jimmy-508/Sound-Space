@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { gesturePointToViewport } from './coordinateTransform';
-import { clampEffectCount, createBlueTearSeeds, createWavefrontTearSeeds, gestureEffectLimits } from './gestureEffectsModel';
-import type { GestureInteractionController, GestureInteractionEvent } from './interactionController';
+import { clampEffectCount, createBlueTearSeeds, createPointerTearSeeds, createWavefrontTearSeeds, gestureEffectLimits } from './gestureEffectsModel';
+import type { WorldInteractionController, WorldInteractionEvent } from '../interaction/worldInteraction';
 
 interface Particle {
   x: number;
@@ -39,17 +39,14 @@ interface WaterRipple {
 }
 
 interface Props {
-  controller: GestureInteractionController;
-  enabled: boolean;
+  controller: WorldInteractionController;
   scene: 'home' | 'wave' | 'sampling' | 'music' | 'settings';
 }
 
-export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
+export function GestureEffectsOverlay({ controller, scene }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef(scene);
-  const enabledRef = useRef(enabled);
   sceneRef.current = scene;
-  enabledRef.current = enabled;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -59,7 +56,6 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
     let height = 1;
     let frame = 0;
     let lastDraw = performance.now();
-    let clearedWhileDisabled = false;
     const blueTears: Particle[] = [];
     const explosionBursts: ExplosionBurst[] = [];
     const waterRipples: WaterRipple[] = [];
@@ -89,8 +85,7 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
       return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
     };
 
-    const isAllowed = (event: GestureInteractionEvent) => {
-      if (!enabledRef.current) return false;
+    const isAllowed = (event: WorldInteractionEvent) => {
       if (sceneRef.current === 'home') return true;
       if (sceneRef.current !== 'music') return false;
       const point = gesturePointToViewport(event.point, width, height);
@@ -100,8 +95,8 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
     const unsubscribe = controller.subscribe((event) => {
       if (!isAllowed(event)) return;
       const point = gesturePointToViewport(event.point, width, height);
-      if (event.type === 'sweep') {
-        const seeds = createBlueTearSeeds(event);
+      if (event.type === 'disturbance') {
+        const seeds = event.geometry === 'hand' ? createBlueTearSeeds(event) : createPointerTearSeeds(event);
         for (const seed of seeds) {
           blueTears.push({
             x: seed.x * width,
@@ -117,16 +112,16 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
             curve: seed.curve,
           });
         }
-        const rippleCount = 1 + Math.round(Math.min(2, event.speed * 0.9));
-        const palm = event.landmarks[9] ?? event.point;
+        const rippleCount = 1 + Math.round(Math.min(3, event.speed * 1.05));
+        const palm = event.geometry === 'hand' ? event.landmarks[9] ?? event.point : event.point;
         for (let index = 0; index < rippleCount; index += 1) {
-          const source = index === 0 ? palm : event.landmarks[index % 2 ? 5 : 17] ?? palm;
+          const source = event.geometry === 'hand' && index > 0 ? event.landmarks[index % 2 ? 5 : 17] ?? palm : palm;
           waterRipples.push({
             x: source.x * width,
             y: source.y * height,
             born: event.timestamp + index * 28,
             life: 380 + Math.random() * 260,
-            radius: 18 + event.speed * 16 + Math.random() * 20,
+            radius: 26 + event.speed * 22 + Math.random() * 26,
             rotation: Math.atan2(event.velocityY, event.velocityX) + (Math.random() - 0.5) * 0.8,
             arc: Math.PI * (0.7 + Math.random() * 0.75),
             wobble: 2 + Math.random() * 4,
@@ -285,12 +280,6 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
       frame = requestAnimationFrame(draw);
       const delta = Math.min(0.032, Math.max(0, (now - lastDraw) / 1000));
       lastDraw = now;
-      if (!enabledRef.current) {
-        if (!clearedWhileDisabled) clearEffects();
-        clearedWhileDisabled = true;
-        return;
-      }
-      clearedWhileDisabled = false;
       context.clearRect(0, 0, width, height);
       context.save();
       context.globalCompositeOperation = 'lighter';
@@ -316,10 +305,6 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
       window.visualViewport?.removeEventListener('resize', resize);
     };
   }, [controller]);
-
-  useEffect(() => {
-    if (!enabled) controller.setDwell(false, 0);
-  }, [controller, enabled]);
 
   return <canvas ref={canvasRef} className="gesture-effects-overlay" aria-hidden="true" />;
 }

@@ -835,6 +835,51 @@ input[type="number"] {
   background: rgba(12, 35, 58, 0.62);
 }
 
+.file-picker.gesture-file-ready {
+  border-style: solid;
+  border-color: rgba(255, 226, 143, 0.86);
+  box-shadow: 0 0 18px rgba(255, 187, 60, 0.18), inset 0 0 16px rgba(255, 235, 173, 0.06);
+  animation: gesture-file-ready 1.1s ease-in-out infinite alternate;
+}
+
+.file-picker > svg,
+.file-picker > span:not(.file-picker-ready-hint) {
+  transition: transform 180ms ease;
+}
+
+.file-picker.gesture-file-ready > svg,
+.file-picker.gesture-file-ready > span:not(.file-picker-ready-hint) {
+  transform: translateY(-7px);
+}
+
+.file-picker-ready-hint {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.16rem;
+  left: 0.45rem;
+  z-index: 1;
+  overflow: hidden;
+  min-height: 1rem;
+  color: rgba(255, 237, 183, 0.94);
+  font-size: 0.68rem;
+  line-height: 1rem;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@keyframes gesture-file-ready {
+  from { background-position: 0 0; filter: brightness(0.96); }
+  to { background-position: 100% 0; filter: brightness(1.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-picker.gesture-file-ready {
+    animation: none;
+  }
+}
+
 .file-picker input {
   position: absolute;
   inset: 0;

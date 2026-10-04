@@ -1,5 +1,5 @@
 import { Calculator, Home, Music, Settings, Waves } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { interactionSound, type InteractionPlayback } from './audio/interactionSound';
 import { SettingsPanel } from './components/SettingsPanel';
 import { GestureEffectsOverlay } from './gesture/GestureEffectsOverlay';
@@ -11,6 +11,7 @@ import { GestureInteractionController } from './gesture/interactionController';
 import { clampNavigationScroll, getNavigationEdgeMotion } from './gesture/navigationGesture';
 import { GestureFrameStore } from './gesture/types';
 import { createPointerCommand } from './interaction/commandLayer';
+import { WorldInteractionController, worldInteractionThresholds } from './interaction/worldInteraction';
 import { MusicLab } from './labs/MusicLab';
 import { SamplingLab } from './labs/SamplingLab';
 import { WaveLab } from './labs/WaveLab';
@@ -71,7 +72,12 @@ export default function App() {
   if (!gestureStoreRef.current) gestureStoreRef.current = new GestureFrameStore();
   const gestureInteractionRef = useRef<GestureInteractionController | null>(null);
   if (!gestureInteractionRef.current) gestureInteractionRef.current = new GestureInteractionController(gestureStoreRef.current);
+  const worldInteractionRef = useRef<WorldInteractionController | null>(null);
+  if (!worldInteractionRef.current) worldInteractionRef.current = new WorldInteractionController();
   const dwellControllerRef = useRef(new DwellSelectionController());
+  const homePointersRef = useRef(new Map<number, { x: number; y: number; time: number; startX: number; startY: number; startTime: number; velocityX: number; velocityY: number }>());
+  const homeLastTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const homeClickTimerRef = useRef(0);
   const activeViewRef = useRef(activeView);
   activeViewRef.current = activeView;
 
@@ -109,6 +115,7 @@ export default function App() {
 
   useEffect(() => () => {
     if (musicUrlRef.current) URL.revokeObjectURL(musicUrlRef.current);
+    window.clearTimeout(homeClickTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -134,8 +141,8 @@ export default function App() {
 
   useEffect(() => {
     const controller = gestureInteractionRef.current!;
+    const world = worldInteractionRef.current!;
     const unsubscribe = controller.subscribe((event) => {
-      if (event.type !== 'explosion') return;
       const view = activeViewRef.current;
       if (view !== 'home' && view !== 'music') return;
       if (view === 'music') {
@@ -145,12 +152,22 @@ export default function App() {
         const rect = stage.getBoundingClientRect();
         if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) return;
       }
-      void interactionSound.play('explosion').then((playback) => {
-        if (playback && view === 'home') setHomePlayback(playback);
-      });
+      if (event.type === 'explosion') {
+        world.pulse('gesture', event.point, event.timestamp);
+      } else {
+        world.disturb({ ...event, type: 'disturbance', source: 'gesture', geometry: 'hand', previousPoint: event.previousLandmarks[9] ?? event.point });
+      }
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => worldInteractionRef.current!.subscribe((event) => {
+    if (event.type !== 'pulse') return;
+    const view = activeViewRef.current;
+    void interactionSound.play('explosion').then((playback) => {
+      if (playback && view === 'home') setHomePlayback(playback);
+    });
+  }), []);
 
   useEffect(() => {
     gestureInteractionRef.current?.setEnabled(gestureEnabled);
@@ -160,6 +177,7 @@ export default function App() {
       gestureStoreRef.current?.clear();
       dwellControllerRef.current.reset();
       window.dispatchEvent(new Event('soundspace:gesture-reset'));
+      worldInteractionRef.current?.clear('gesture');
       return;
     }
 
@@ -266,9 +284,20 @@ export default function App() {
       interaction.setDwell(result.active, result.progress);
       if (!result.activated || !target) return;
       interaction.flashDwellSuccess(now);
+      if (!target.classList.contains('file-picker')) window.dispatchEvent(new Event('soundspace:file-picker-reset'));
       const controlId = target.dataset.gestureControlId;
       if (controlId) {
-        window.dispatchEvent(new CustomEvent('soundspace:gesture-control-selected', { detail: { id: controlId } }));
+        if (target.dataset.gestureSelected !== 'true') {
+          window.dispatchEvent(new CustomEvent('soundspace:gesture-control-selected', { detail: { id: controlId } }));
+          void interactionSound.play('select');
+        }
+        return;
+      }
+      if (target.classList.contains('file-picker')) {
+        if (target.dataset.gestureReady !== 'true') {
+          window.dispatchEvent(new Event('soundspace:file-picker-ready'));
+          void interactionSound.play('select');
+        }
         return;
       }
       if (target.classList.contains('home')) {
@@ -306,15 +335,75 @@ export default function App() {
     if (view === 'wave' || view === 'sampling') musicController.pause();
     dwellControllerRef.current.reset();
     gestureInteractionRef.current?.setDwell(false, 0);
+    worldInteractionRef.current?.clear();
     setActiveView(view);
+  };
+
+  const worldPoint = (clientX: number, clientY: number) => ({
+    x: Math.min(1, Math.max(0, clientX / Math.max(1, window.innerWidth))),
+    y: Math.min(1, Math.max(0, clientY / Math.max(1, window.innerHeight))),
+    z: 0,
+  });
+
+  const disturbHome = (event: ReactPointerEvent<HTMLElement>) => {
+    const now = performance.now();
+    const current = worldPoint(event.clientX, event.clientY);
+    const previous = homePointersRef.current.get(event.pointerId);
+    if (event.pointerType === 'touch' && !previous) return;
+    if (previous) {
+      const elapsed = Math.max(8, now - previous.time) / 1000;
+      const velocityX = (current.x - previous.x) / elapsed;
+      const velocityY = (current.y - previous.y) / elapsed;
+      const speed = Math.hypot(velocityX, velocityY);
+      const turnIntensity = Math.min(1, Math.hypot(velocityX - previous.velocityX, velocityY - previous.velocityY) / 1.4);
+      worldInteractionRef.current?.disturb({
+        type: 'disturbance',
+        source: event.pointerType === 'touch' ? 'touch' : 'mouse',
+        geometry: 'pointer',
+        point: current,
+        previousPoint: { x: previous.x, y: previous.y, z: 0 },
+        velocityX,
+        velocityY,
+        speed,
+        turnIntensity,
+        timestamp: now,
+      });
+      previous.velocityX = velocityX;
+      previous.velocityY = velocityY;
+      previous.x = current.x;
+      previous.y = current.y;
+      previous.time = now;
+    } else {
+      homePointersRef.current.set(event.pointerId, { x: current.x, y: current.y, time: now, startX: event.clientX, startY: event.clientY, startTime: now, velocityX: 0, velocityY: 0 });
+    }
+  };
+
+  const endHomeTouch = (event: ReactPointerEvent<HTMLElement>) => {
+    const tracked = homePointersRef.current.get(event.pointerId);
+    homePointersRef.current.delete(event.pointerId);
+    if (event.pointerType !== 'touch' || !tracked) return;
+    const now = performance.now();
+    const moved = Math.hypot(event.clientX - tracked.startX, event.clientY - tracked.startY);
+    if (moved > worldInteractionThresholds.holdMovementPx || now - tracked.startTime > worldInteractionThresholds.tapDurationMs) return;
+    const previous = homeLastTapRef.current;
+    if (previous && now - previous.time <= worldInteractionThresholds.doubleTapMs && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= worldInteractionThresholds.doubleTapDistancePx) {
+      worldInteractionRef.current?.pulse('touch', worldPoint(event.clientX, event.clientY), now);
+      homeLastTapRef.current = null;
+    } else {
+      homeLastTapRef.current = { x: event.clientX, y: event.clientY, time: now };
+    }
   };
 
   const activateHomeImpulse = (event: MouseEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
     const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / Math.max(1, rect.height)));
-    visualImpulseRef.current?.trigger(x, y);
-    void interactionSound.play().then((playback) => playback && setHomePlayback(playback));
+    window.clearTimeout(homeClickTimerRef.current);
+    if (event.detail > 1) return;
+    homeClickTimerRef.current = window.setTimeout(() => {
+      visualImpulseRef.current?.trigger(x, y);
+      void interactionSound.play().then((playback) => playback && setHomePlayback(playback));
+    }, worldInteractionThresholds.doubleTapMs);
   };
 
   return (
@@ -327,8 +416,8 @@ export default function App() {
       />
       <video ref={gestureVideoRef} className="gesture-camera-sensor" muted playsInline aria-hidden="true" />
       <StarfieldBackground />
-      <GestureEffectsOverlay controller={gestureInteractionRef.current} enabled={gestureEnabled} scene={activeView} />
-      <GestureOverlay store={gestureStoreRef.current} interaction={gestureInteractionRef.current} />
+      <GestureEffectsOverlay controller={worldInteractionRef.current} scene={activeView} />
+      <GestureOverlay store={gestureStoreRef.current} interaction={gestureInteractionRef.current} world={worldInteractionRef.current} />
       <nav ref={navigationRef} className="top-nav" aria-label="主要導覽">
         <div className="top-nav-track">
           <button type="button" className={activeView === 'home' ? 'active' : ''} onClick={() => selectView('home')}>
@@ -358,6 +447,21 @@ export default function App() {
             if (command.type === 'POINTER_MOVE') {
               setPointer({ x: command.x, y: command.y });
             }
+            disturbHome(event);
+          }}
+          onPointerDown={(event) => {
+            const point = worldPoint(event.clientX, event.clientY);
+            const now = performance.now();
+            homePointersRef.current.set(event.pointerId, { x: point.x, y: point.y, time: now, startX: event.clientX, startY: event.clientY, startTime: now, velocityX: 0, velocityY: 0 });
+          }}
+          onPointerUp={endHomeTouch}
+          onPointerCancel={(event) => homePointersRef.current.delete(event.pointerId)}
+          onPointerLeave={(event) => {
+            if (event.pointerType !== 'touch') homePointersRef.current.delete(event.pointerId);
+          }}
+          onDoubleClick={(event) => {
+            window.clearTimeout(homeClickTimerRef.current);
+            worldInteractionRef.current?.pulse('mouse', worldPoint(event.clientX, event.clientY), performance.now());
           }}
         >
           <WaveCanvas
@@ -388,6 +492,7 @@ export default function App() {
           controller={musicController}
           spiritPhenotype={spiritPhenotype}
           gestureController={gestureInteractionRef.current}
+          worldInteraction={worldInteractionRef.current}
         />
       )}
       {activeView === 'settings' && (

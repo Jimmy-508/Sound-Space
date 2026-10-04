@@ -9,8 +9,8 @@ export const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 export const gestureEffectLimits = {
-  blueTears: 420,
-  waterRipples: 40,
+  blueTears: 520,
+  waterRipples: 52,
   wavefrontSpecksPerBurst: 84,
   explosionBursts: 3,
 };
@@ -37,6 +37,15 @@ export interface BlueTearSeed {
   curve: number;
 }
 
+export interface PointerDisturbance {
+  point: GesturePoint;
+  previousPoint: GesturePoint;
+  velocityX: number;
+  velocityY: number;
+  speed: number;
+  turnIntensity: number;
+}
+
 export interface WavefrontTearSeed {
   x: number;
   y: number;
@@ -54,7 +63,7 @@ export function createBlueTearSeeds(disturbance: SweepDisturbance, random = Math
   if (disturbance.speed < 0.32 || disturbance.landmarks.length < 21 || disturbance.previousLandmarks.length < 21) return [];
   const speedIntensity = clamp01((disturbance.speed - 0.32) / 1.45);
   const turbulence = clamp01(disturbance.turnIntensity);
-  const count = Math.min(46, 9 + Math.round(speedIntensity * 25 + turbulence * 12));
+  const count = Math.min(58, 12 + Math.round(speedIntensity * 33 + turbulence * 13));
   const seeds: BlueTearSeed[] = [];
 
   for (let index = 0; index < count; index += 1) {
@@ -77,7 +86,7 @@ export function createBlueTearSeeds(disturbance: SweepDisturbance, random = Math
     const perpendicularX = motionLength > 0.01 ? -disturbance.velocityY / motionLength : -boneY / boneLength;
     const perpendicularY = motionLength > 0.01 ? disturbance.velocityX / motionLength : boneX / boneLength;
     const palmSource = fromIndex === 0 || toIndex === 0 || fromIndex === 5 || fromIndex === 9 || fromIndex === 13 || toIndex === 17;
-    const spread = (palmSource ? 0.032 : 0.018) + speedIntensity * (palmSource ? 0.045 : 0.027);
+    const spread = (palmSource ? 0.048 : 0.027) + speedIntensity * (palmSource ? 0.062 : 0.038);
     const lateral = (random() - 0.5) * spread * 2;
     const softJitter = (random() - 0.5) * 0.006;
     const hot = index % 13 === 0 || turbulence > 0.62 && index % 7 === 0;
@@ -95,6 +104,35 @@ export function createBlueTearSeeds(disturbance: SweepDisturbance, random = Math
     });
   }
   return seeds;
+}
+
+export function createPointerTearSeeds(disturbance: PointerDisturbance, random = Math.random): BlueTearSeed[] {
+  if (disturbance.speed < 0.05) return [];
+  const speedIntensity = clamp01(disturbance.speed / 1.35);
+  const turbulence = clamp01(disturbance.turnIntensity);
+  const count = Math.min(32, 7 + Math.round(speedIntensity * 18 + turbulence * 7));
+  const motionX = disturbance.point.x - disturbance.previousPoint.x;
+  const motionY = disturbance.point.y - disturbance.previousPoint.y;
+  const motionLength = Math.max(0.001, Math.hypot(motionX, motionY));
+  const perpendicularX = -motionY / motionLength;
+  const perpendicularY = motionX / motionLength;
+  return Array.from({ length: count }, (_, index) => {
+    const wakePosition = -0.38 + random() * 1.34;
+    const lateral = (random() - 0.5) * (0.035 + speedIntensity * 0.05);
+    const hot = index % 11 === 0;
+    return {
+      x: disturbance.previousPoint.x + motionX * wakePosition + perpendicularX * lateral,
+      y: disturbance.previousPoint.y + motionY * wakePosition + perpendicularY * lateral,
+      velocityX: disturbance.velocityX * (0.006 + random() * 0.014) + perpendicularX * (random() - 0.5) * 0.014,
+      velocityY: disturbance.velocityY * (0.006 + random() * 0.014) + perpendicularY * (random() - 0.5) * 0.014,
+      size: hot ? 1.1 + random() * 0.8 : 0.38 + random() * 0.72,
+      life: 330 + random() * 480,
+      hot,
+      sourceIndex: -1,
+      streak: 1.4 + speedIntensity * 3.2 + random() * 1.2,
+      curve: (random() - 0.5) * (1.8 + turbulence * 2.4),
+    };
+  });
 }
 
 export function createWavefrontTearSeeds(

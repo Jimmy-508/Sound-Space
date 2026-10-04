@@ -8,6 +8,8 @@ import { mapPageScrollDelta } from '../gesture/navigationGesture';
 import type { MusicSessionState } from '../music/musicSession';
 import { audioAccept, type MusicAudioController } from '../music/useMusicAudioController';
 import type { PointerPoint } from '../types';
+import type { WorldInputSource, WorldInteractionController } from '../interaction/worldInteraction';
+import { worldInteractionThresholds } from '../interaction/worldInteraction';
 import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 import type { Repulsor, SpiritGestureForces } from '../visualization/repulsor';
@@ -22,9 +24,10 @@ interface MusicLabProps {
   controller: MusicAudioController;
   spiritPhenotype: SoundSpiritPhenotypeConfig;
   gestureController: GestureInteractionController;
+  worldInteraction: WorldInteractionController;
 }
 
-export function MusicLab({ session, onSessionChange, controller, spiritPhenotype, gestureController }: MusicLabProps) {
+export function MusicLab({ session, onSessionChange, controller, spiritPhenotype, gestureController, worldInteraction }: MusicLabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('wave');
   const [repulsor, setRepulsor] = useState<Repulsor | null>(null);
   const [creatureScale, setCreatureScale] = useState(masterCreatureScale);
@@ -39,12 +42,14 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
   const gesturePinchedRef = useRef(false);
   const lastRepulsorPointRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const lastTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const scaleAnimationRef = useRef(0);
+  const worldPathRef = useRef(new Map<number, { x: number; y: number; time: number; velocityX: number; velocityY: number }>());
+  const holdCandidatesRef = useRef(new Map<number, { source: WorldInputSource; x: number; y: number; startX: number; startY: number; startedAt: number; moved: boolean; active: boolean }>());
   const stageRef = useRef<HTMLDivElement | null>(null);
   const gestureForcesRef = useRef<SpiritGestureForces>({});
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
+  const [filePickerReady, setFilePickerReady] = useState(false);
 
   useEffect(() => {
     setRepulsor(null);
@@ -52,9 +57,11 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     touchPointersRef.current.clear();
     pinchRef.current = null;
     gesturePinchedRef.current = false;
+    worldPathRef.current.clear();
+    holdCandidatesRef.current.clear();
+    worldInteraction.clear('mouse');
+    worldInteraction.clear('touch');
   }, [viewMode]);
-
-  useEffect(() => () => cancelAnimationFrame(scaleAnimationRef.current), []);
 
   useEffect(() => {
     let frame = 0;
@@ -65,12 +72,13 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     let attractionX = 0.5;
     let attractionY = 0.5;
     let lastFrameTime = performance.now();
-    const unsubscribe = gestureController.subscribe((event) => {
+    const unsubscribe = worldInteraction.subscribe((event) => {
       const stage = stageRef.current;
       if (!stage || viewModeRef.current !== 'spectrum') return;
       const local = gesturePointToElement(event.point, stage);
       if (!local.inside) return;
-      if (event.type === 'sweep') {
+      if (event.type === 'disturbance') {
+        if (event.source !== 'gesture') return;
         gestureForcesRef.current.displacement = {
           x: local.x,
           y: local.y,
@@ -120,15 +128,29 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
         }
       }
       if (viewModeRef.current !== 'spectrum') {
+        worldInteraction.clear('gesture');
         gestureForcesRef.current = {};
         return;
       }
       const pointerLocal = gesture.pointer ? gesturePointToElement(gesture.pointer.point, stage) : undefined;
-      const attractionTarget = pointerLocal?.inside ? 1 : 0;
-      if (pointerLocal?.inside) {
+      const currentOwner = worldInteraction.readAttraction();
+      if (!currentOwner || currentOwner.source === 'gesture') {
+        if (pointerLocal?.inside) worldInteraction.setAttraction('gesture', gesture.pointer!.point, true, now);
+        else worldInteraction.clear('gesture');
+      }
+      for (const candidate of holdCandidatesRef.current.values()) {
+        if (candidate.moved || candidate.active || now - candidate.startedAt < worldInteractionThresholds.holdMs) continue;
+        candidate.active = true;
+        setRepulsor(null);
+        worldInteraction.setAttraction(candidate.source, { x: candidate.x, y: candidate.y, z: 0 }, true, now);
+      }
+      const attraction = worldInteraction.readAttraction();
+      const attractionLocal = attraction ? gesturePointToElement(attraction.point, stage) : undefined;
+      const attractionTarget = attractionLocal?.inside ? 1 : 0;
+      if (attractionLocal?.inside) {
         const targetBlend = 1 - Math.exp(-deltaTime * 12);
-        attractionX += (pointerLocal.x - attractionX) * targetBlend;
-        attractionY += (pointerLocal.y - attractionY) * targetBlend;
+        attractionX += (attractionLocal.x - attractionX) * targetBlend;
+        attractionY += (attractionLocal.y - attractionY) * targetBlend;
       }
       const strengthBlend = 1 - Math.exp(-deltaTime * (attractionTarget ? 10 : 2.8));
       attractionStrength += (attractionTarget - attractionStrength) * strengthBlend;
@@ -148,8 +170,28 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
       unsubscribe();
       cancelAnimationFrame(frame);
       gestureForcesRef.current = {};
+      worldInteraction.clear();
     };
-  }, [gestureController]);
+  }, [gestureController, worldInteraction]);
+
+  useEffect(() => {
+    const ready = () => setFilePickerReady(true);
+    const reset = () => setFilePickerReady(false);
+    window.addEventListener('soundspace:file-picker-ready', ready);
+    window.addEventListener('soundspace:gesture-reset', reset);
+    window.addEventListener('soundspace:file-picker-reset', reset);
+    return () => {
+      window.removeEventListener('soundspace:file-picker-ready', ready);
+      window.removeEventListener('soundspace:gesture-reset', reset);
+      window.removeEventListener('soundspace:file-picker-reset', reset);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!filePickerReady) return;
+    const timeout = window.setTimeout(() => setFilePickerReady(false), 7000);
+    return () => window.clearTimeout(timeout);
+  }, [filePickerReady]);
 
   useEffect(() => {
     if (!session.duration || session.zoom <= 1) {
@@ -210,23 +252,81 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     lastRepulsorPointRef.current = { x, y, time: now };
   };
 
-  const resetCreatureScale = () => {
-    cancelAnimationFrame(scaleAnimationRef.current);
-    setRepulsor(null);
-    lastRepulsorPointRef.current = null;
-    const from = creatureScale;
-    const startedAt = performance.now();
-    const animate = (now: number) => {
-      const progress = Math.min(1, (now - startedAt) / 280);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setCreatureScale(from + (masterCreatureScale - from) * eased);
-      if (progress < 1) scaleAnimationRef.current = requestAnimationFrame(animate);
-    };
-    scaleAnimationRef.current = requestAnimationFrame(animate);
+  const viewportPoint = (clientX: number, clientY: number) => ({
+    x: Math.min(1, Math.max(0, clientX / Math.max(1, window.innerWidth))),
+    y: Math.min(1, Math.max(0, clientY / Math.max(1, window.innerHeight))),
+    z: 0,
+  });
+
+  const disturbWorld = (event: PointerEvent<HTMLDivElement>) => {
+    const now = performance.now();
+    const point = viewportPoint(event.clientX, event.clientY);
+    const previous = worldPathRef.current.get(event.pointerId);
+    if (previous) {
+      const elapsed = Math.max(8, now - previous.time) / 1000;
+      const velocityX = (point.x - previous.x) / elapsed;
+      const velocityY = (point.y - previous.y) / elapsed;
+      const speed = Math.hypot(velocityX, velocityY);
+      const turnIntensity = Math.min(1, Math.hypot(velocityX - previous.velocityX, velocityY - previous.velocityY) / 1.4);
+      worldInteraction.disturb({
+        type: 'disturbance',
+        source: event.pointerType === 'touch' ? 'touch' : 'mouse',
+        geometry: 'pointer',
+        point,
+        previousPoint: { x: previous.x, y: previous.y, z: 0 },
+        velocityX,
+        velocityY,
+        speed,
+        turnIntensity,
+        timestamp: now,
+      });
+      previous.velocityX = velocityX;
+      previous.velocityY = velocityY;
+      previous.x = point.x;
+      previous.y = point.y;
+      previous.time = now;
+    } else {
+      worldPathRef.current.set(event.pointerId, { x: point.x, y: point.y, time: now, velocityX: 0, velocityY: 0 });
+    }
+  };
+
+  const startHoldCandidate = (event: PointerEvent<HTMLDivElement>) => {
+    const point = viewportPoint(event.clientX, event.clientY);
+    holdCandidatesRef.current.set(event.pointerId, {
+      source: event.pointerType === 'touch' ? 'touch' : 'mouse',
+      x: point.x,
+      y: point.y,
+      startX: event.clientX,
+      startY: event.clientY,
+      startedAt: performance.now(),
+      moved: false,
+      active: false,
+    });
+  };
+
+  const updateHoldCandidate = (event: PointerEvent<HTMLDivElement>) => {
+    const candidate = holdCandidatesRef.current.get(event.pointerId);
+    if (!candidate) return;
+    const point = viewportPoint(event.clientX, event.clientY);
+    candidate.x = point.x;
+    candidate.y = point.y;
+    if (Math.hypot(event.clientX - candidate.startX, event.clientY - candidate.startY) > worldInteractionThresholds.holdMovementPx) {
+      candidate.moved = true;
+      if (candidate.active) worldInteraction.clear(candidate.source);
+    }
+  };
+
+  const releaseHoldCandidate = (event: PointerEvent<HTMLDivElement>) => {
+    const candidate = holdCandidatesRef.current.get(event.pointerId);
+    if (candidate?.active) worldInteraction.clear(candidate.source);
+    holdCandidatesRef.current.delete(event.pointerId);
+    worldPathRef.current.delete(event.pointerId);
   };
 
   const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
+      startHoldCandidate(event);
+      disturbWorld(event);
       if (event.pointerType === 'touch') {
         event.currentTarget.setPointerCapture(event.pointerId);
         touchPointersRef.current.set(event.pointerId, {
@@ -284,6 +384,8 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
 
   const pointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
+      disturbWorld(event);
+      updateHoldCandidate(event);
       const tracked = touchPointersRef.current.get(event.pointerId);
       if (event.pointerType !== 'touch' && !tracked) {
         updateSpectrumStimulus(event, event.buttons > 0);
@@ -328,7 +430,8 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           const previous = lastTapRef.current;
           if (previous && now - previous.time < 340 && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 34) {
             lastTapRef.current = null;
-            resetCreatureScale();
+            worldInteraction.pulse('touch', viewportPoint(event.clientX, event.clientY), now);
+            worldInteraction.clear('touch');
           } else {
             lastTapRef.current = { x: event.clientX, y: event.clientY, time: now };
           }
@@ -340,6 +443,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
       } else {
         updateSpectrumStimulus(event, false);
       }
+      releaseHoldCandidate(event);
       return;
     }
     const tracked = touchPointersRef.current.get(event.pointerId);
@@ -355,6 +459,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
 
   const pointerCancel = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
+      releaseHoldCandidate(event);
       touchPointersRef.current.delete(event.pointerId);
       setRepulsor(null);
       lastRepulsorPointRef.current = null;
@@ -368,6 +473,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
 
   const pointerLeave = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode !== 'spectrum' || event.pointerType === 'touch') return;
+    releaseHoldCandidate(event);
     setRepulsor(null);
     lastRepulsorPointRef.current = null;
   };
@@ -401,7 +507,11 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
         onDoubleClick={(event) => {
           if (viewMode !== 'spectrum') return;
           event.preventDefault();
-          resetCreatureScale();
+          for (const [pointerId, candidate] of holdCandidatesRef.current) {
+            if (candidate.source === 'mouse') holdCandidatesRef.current.delete(pointerId);
+          }
+          worldInteraction.clear('mouse');
+          worldInteraction.pulse('mouse', viewportPoint(event.clientX, event.clientY), performance.now());
         }}
         onWheel={zoomFromWheel}
       >
@@ -428,15 +538,18 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
       </div>
 
       <aside className="control-panel">
-        <label className="file-picker">
+        <label className={`file-picker ${filePickerReady ? 'gesture-file-ready' : ''}`} data-gesture-ready={filePickerReady ? 'true' : undefined}>
           <Download size={20} />
           <span>匯入音訊</span>
+          <span className="file-picker-ready-hint" aria-live="polite">{filePickerReady ? '請輕觸以選擇音樂' : ''}</span>
           <input
             type="file"
             accept={audioAccept}
+            onPointerDown={() => setFilePickerReady(false)}
             onChange={(event) => {
               const file = event.currentTarget.files?.[0];
               if (!file) return;
+              setFilePickerReady(false);
               void controller.loadFile(file);
               event.currentTarget.value = '';
             }}

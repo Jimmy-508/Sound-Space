@@ -23,7 +23,7 @@ export function getHandPalmCenter(points: readonly GesturePoint[]) {
   }), { x: 0, y: 0, z: 0 });
 }
 
-export function createCompactHandRenderPoints(points: readonly GesturePoint[]) {
+export function createCompactHandRenderPoints(points: readonly GesturePoint[], viewportScale = 1) {
   if (points.length !== 21) return points.map((point) => ({ ...point }));
   const palm = getHandPalmCenter(points);
   const rendered = points.map((point) => ({
@@ -44,6 +44,27 @@ export function createCompactHandRenderPoints(points: readonly GesturePoint[]) {
         y: renderedRoot.y + (points[index].y - root.y) * compression,
       };
     }
+  });
+
+  if (viewportScale !== 1) {
+    rendered.forEach((point, index) => {
+      rendered[index] = {
+        ...point,
+        x: palm.x + (point.x - palm.x) * viewportScale,
+        y: palm.y + (point.y - palm.y) * viewportScale,
+      };
+    });
+  }
+
+  // Keep the compact finger natural while distributing its final reach to the true cursor point.
+  const trueIndexTip = points[8];
+  ([6, 7, 8] as const).forEach((index, step) => {
+    const weight = [0.16, 0.52, 1][step];
+    rendered[index] = {
+      ...rendered[index],
+      x: rendered[index].x + (trueIndexTip.x - rendered[index].x) * weight,
+      y: rendered[index].y + (trueIndexTip.y - rendered[index].y) * weight,
+    };
   });
   return rendered;
 }

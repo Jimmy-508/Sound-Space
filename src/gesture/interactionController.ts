@@ -8,6 +8,9 @@ const FIST_DEAD_ZONE = 0.026;
 const AXIS_DOMINANCE = 1.28;
 const EXPLOSION_WINDOW_MS = 520;
 const EXPLOSION_COOLDOWN_MS = 950;
+const OPEN_ARM_STABLE_MS = 220;
+const OPEN_ARM_WINDOW_MS = 1800;
+const FIST_CHARGE_STABLE_MS = 120;
 const SWEEP_COOLDOWN_AFTER_EXPLOSION_MS = 720;
 const SWEEP_SPEED_THRESHOLD = 0.32;
 
@@ -55,6 +58,15 @@ interface OpenMotion {
   lastEmission: number;
 }
 
+type ExplosionStage = 'openCandidate' | 'openArmed' | 'fistCandidate' | 'fistCharged' | 'blockedOpen' | 'cooldown';
+
+interface ExplosionSequence {
+  stage: ExplosionStage;
+  since: number;
+  deadline: number;
+  leftOpen: boolean;
+}
+
 const copyLandmarks = (landmarks: readonly GesturePoint[]) => landmarks.map((point) => ({ ...point }));
 
 const emptyState = (): GestureInteractionState => ({
@@ -99,7 +111,7 @@ export class GestureInteractionController {
   private pointerCandidate?: { handId: number; since: number };
   private fistSession?: FistSession;
   private openMotion = new Map<number, OpenMotion>();
-  private armedFists = new Map<number, number>();
+  private explosionSequences = new Map<number, ExplosionSequence>();
   private lastExplosionAt = -Infinity;
   private listeners = new Set<(event: GestureInteractionEvent) => void>();
   private twoHandPose: 'none' | 'palmsForward' | 'palmsFacing' = 'none';
@@ -162,6 +174,7 @@ export class GestureInteractionController {
     if (twoHand.gesture !== 'none') {
       this.pointerCandidate = undefined;
       this.fistSession = undefined;
+      this.explosionSequences.clear();
     } else {
       pointer = this.updatePointer(hands, now);
       fist = pointer ? undefined : this.updateFist(hands, now);
@@ -183,7 +196,7 @@ export class GestureInteractionController {
     this.pointerCandidate = undefined;
     this.fistSession = undefined;
     this.openMotion.clear();
-    this.armedFists.clear();
+    this.explosionSequences.clear();
     this.clearTwoHand();
     this.state = emptyState();
   }
@@ -218,7 +231,6 @@ export class GestureInteractionController {
       return undefined;
     }
     const center = palmCenter(hand);
-    this.armedFists.set(hand.id, now);
     if (!this.fistSession || this.fistSession.handId !== hand.id) {
       this.fistSession = { handId: hand.id, anchor: center, last: center, axis: 'none' };
       return { handId: hand.id, point: center, deltaX: 0, deltaY: 0, axis: 'none' as const };
@@ -238,20 +250,13 @@ export class GestureInteractionController {
 
   private updateOpenActions(hands: TrackedHand[], now: number) {
     const visibleIds = new Set(hands.map((hand) => hand.id));
+    this.updateExplosionSequences(hands, now);
     for (const hand of hands) {
       if (hand.gesture !== 'openPalm') {
         if (hand.gesture !== 'fist') this.openMotion.delete(hand.id);
         continue;
       }
       const center = palmCenter(hand);
-      const armedAt = this.armedFists.get(hand.id);
-      if (armedAt !== undefined && now - armedAt <= EXPLOSION_WINDOW_MS && now - this.lastExplosionAt >= EXPLOSION_COOLDOWN_MS) {
-        this.lastExplosionAt = now;
-        this.armedFists.delete(hand.id);
-        this.openMotion.set(hand.id, { point: center, landmarks: copyLandmarks(hand.landmarks), velocityX: 0, velocityY: 0, timestamp: now, lastEmission: now });
-        this.emit({ type: 'explosion', handId: hand.id, point: center, timestamp: now });
-        continue;
-      }
       const previous = this.openMotion.get(hand.id);
       if (!previous) {
         this.openMotion.set(hand.id, { point: center, landmarks: copyLandmarks(hand.landmarks), velocityX: 0, velocityY: 0, timestamp: now, lastEmission: -Infinity });
@@ -285,7 +290,79 @@ export class GestureInteractionController {
       previous.timestamp = now;
     }
     for (const id of this.openMotion.keys()) if (!visibleIds.has(id)) this.openMotion.delete(id);
-    for (const [id, armedAt] of this.armedFists) if (!visibleIds.has(id) && now - armedAt > EXPLOSION_WINDOW_MS) this.armedFists.delete(id);
+    for (const id of this.explosionSequences.keys()) if (!visibleIds.has(id)) this.explosionSequences.delete(id);
+  }
+
+  private updateExplosionSequences(hands: TrackedHand[], now: number) {
+    for (const hand of hands) {
+      const gesture = hand.gesture;
+      const sequence = this.explosionSequences.get(hand.id);
+      if (!sequence) {
+        if (gesture === 'openPalm' && now - this.lastExplosionAt >= EXPLOSION_COOLDOWN_MS) {
+          this.explosionSequences.set(hand.id, { stage: 'openCandidate', since: now, deadline: now + OPEN_ARM_STABLE_MS, leftOpen: false });
+        }
+        continue;
+      }
+
+      if (sequence.stage === 'cooldown' || sequence.stage === 'blockedOpen') {
+        if (gesture !== 'openPalm') sequence.leftOpen = true;
+        if (sequence.leftOpen && now >= sequence.deadline) this.explosionSequences.delete(hand.id);
+        continue;
+      }
+
+      if (sequence.stage === 'openCandidate') {
+        if (gesture !== 'openPalm') {
+          this.explosionSequences.delete(hand.id);
+        } else if (now >= sequence.deadline) {
+          sequence.stage = 'openArmed';
+          sequence.since = now;
+          sequence.deadline = now + OPEN_ARM_WINDOW_MS;
+        }
+        continue;
+      }
+
+      if (sequence.stage === 'openArmed') {
+        if (now > sequence.deadline || (gesture !== 'openPalm' && gesture !== 'fist')) {
+          this.explosionSequences.delete(hand.id);
+        } else if (gesture === 'fist') {
+          sequence.stage = 'fistCandidate';
+          sequence.since = now;
+          sequence.deadline = now + FIST_CHARGE_STABLE_MS;
+        }
+        continue;
+      }
+
+      if (sequence.stage === 'fistCandidate') {
+        if (gesture !== 'fist') {
+          this.explosionSequences.delete(hand.id);
+        } else if (now >= sequence.deadline) {
+          sequence.stage = 'fistCharged';
+          sequence.since = now;
+          sequence.deadline = now + EXPLOSION_WINDOW_MS;
+        }
+        continue;
+      }
+
+      if (now > sequence.deadline) {
+        sequence.stage = 'blockedOpen';
+        sequence.deadline = now;
+        sequence.leftOpen = gesture !== 'openPalm';
+        continue;
+      }
+      if (gesture !== 'openPalm') {
+        if (gesture !== 'fist') this.explosionSequences.delete(hand.id);
+        continue;
+      }
+      if (now - this.lastExplosionAt < EXPLOSION_COOLDOWN_MS) continue;
+      const center = palmCenter(hand);
+      this.lastExplosionAt = now;
+      this.openMotion.set(hand.id, { point: center, landmarks: copyLandmarks(hand.landmarks), velocityX: 0, velocityY: 0, timestamp: now, lastEmission: now });
+      this.emit({ type: 'explosion', handId: hand.id, point: center, timestamp: now });
+      sequence.stage = 'cooldown';
+      sequence.since = now;
+      sequence.deadline = now + EXPLOSION_COOLDOWN_MS;
+      sequence.leftOpen = false;
+    }
   }
 
   private updateTwoHand(hands: TrackedHand[], now: number) {
@@ -360,4 +437,7 @@ export const gestureThresholds = {
   fistDeadZone: FIST_DEAD_ZONE,
   explosionWindowMs: EXPLOSION_WINDOW_MS,
   explosionCooldownMs: EXPLOSION_COOLDOWN_MS,
+  openArmStableMs: OPEN_ARM_STABLE_MS,
+  openArmWindowMs: OPEN_ARM_WINDOW_MS,
+  fistChargeStableMs: FIST_CHARGE_STABLE_MS,
 };
