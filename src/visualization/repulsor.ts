@@ -29,6 +29,11 @@ export interface SpiritGestureForces {
   displacement?: Repulsor;
 }
 
+export function computeWavefrontInfluence(surfaceDistance: number, waveRadius: number, thickness: number) {
+  const safeThickness = Math.max(0.001, thickness);
+  return Math.max(0, 1 - Math.abs(surfaceDistance - waveRadius) / safeThickness);
+}
+
 export function computeAttractionSteering(
   deltaX: number,
   deltaY: number,

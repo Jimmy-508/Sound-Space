@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { InteractionSoundPlayer } from '../src/audio/interactionSound';
-import { createBlueTearSeeds, clampEffectCount, gestureEffectLimits } from '../src/gesture/gestureEffectsModel';
+import { createBlueTearSeeds, createWavefrontTearSeeds, clampEffectCount, gestureEffectLimits } from '../src/gesture/gestureEffectsModel';
 import { mapWaveAmplitude } from '../src/gesture/gestureMappings';
+import { createCompactHandRenderPoints } from '../src/gesture/gestureRenderModel';
 import { GestureInteractionController } from '../src/gesture/interactionController';
 import { clampNavigationScroll, getNavigationEdgeMotion, mapPageScrollDelta } from '../src/gesture/navigationGesture';
 import { GestureFrameStore, type GesturePoint, type TrackedHand } from '../src/gesture/types';
-import { computeAttractionSteering } from '../src/visualization/repulsor';
+import { computeAttractionSteering, computeWavefrontInfluence } from '../src/visualization/repulsor';
 
 const landmarks = Array.from({ length: 21 }, (_, index) => ({
   x: 0.32 + index % 5 * 0.035,
@@ -35,11 +36,28 @@ assert.ok(slowSeeds.length > 0, 'A moving open hand should disturb Blue Tears.')
 assert.ok(new Set(slowSeeds.map((seed) => seed.sourceIndex)).size > 6, 'Emission must sample multiple hand landmarks.');
 assert.ok(fastSeeds.length > slowSeeds.length, 'A faster sweep should create a denser bounded wake.');
 assert.ok(fastSeeds.length <= 46);
-const bounded = Array.from({ length: 400 }, (_, index) => index);
+let randomStep = 0;
+const spreadSeeds = createBlueTearSeeds({
+  landmarks,
+  previousLandmarks,
+  velocityX: 1.42,
+  velocityY: -0.35,
+  speed: 1.46,
+  turnIntensity: 0.72,
+}, () => [0.12, 0.88, 0.04, 0.96, 0.24, 0.76][randomStep++ % 6]);
+assert.ok(Math.max(...spreadSeeds.map((seed) => Math.abs(seed.y - landmarks[seed.sourceIndex].y))) > 0.035, 'Wake field must extend beyond the compact skeleton.');
+assert.ok(spreadSeeds.every((seed) => seed.size < 2), 'Blue Tears stay tiny even when the disturbance field is broad.');
+const bounded = Array.from({ length: 520 }, (_, index) => index);
 clampEffectCount(bounded, gestureEffectLimits.blueTears);
 assert.equal(bounded.length, gestureEffectLimits.blueTears);
-assert.equal(gestureEffectLimits.explosionParticles, 112);
+assert.equal(gestureEffectLimits.blueTears, 420);
+assert.equal(gestureEffectLimits.waterRipples, 40);
+assert.equal(gestureEffectLimits.wavefrontSpecksPerBurst, 84);
 assert.equal(gestureEffectLimits.explosionBursts, 3);
+const wavefrontSeeds = createWavefrontTearSeeds(100, 80, 64, 12, () => 0.5);
+assert.equal(wavefrontSeeds.length, 12);
+assert.ok(wavefrontSeeds.every((seed) => Math.hypot(seed.x - 100, seed.y - 80) >= 60), 'Explosion motes must originate at the wavefront, not the center.');
+assert.ok(wavefrontSeeds.every((seed) => seed.size < 2));
 
 const navRect = { left: 20, right: 380, top: 10, bottom: 70, width: 360 };
 const leftOuter = getNavigationEdgeMotion(navRect, 21, 40);
@@ -61,6 +79,9 @@ const attraction = computeAttractionSteering(0.5, 0.1, 1.65, 1, 0.4);
 assert.ok(Math.hypot(attraction.accelerationX, attraction.accelerationY) > 0.12, 'Attraction must be visibly stronger than autonomous drift.');
 const nearAttraction = computeAttractionSteering(0.03, 0, 1.65, 1, 0.4);
 assert.ok(Math.abs(nearAttraction.accelerationX) < Math.abs(attraction.accelerationX), 'Arrival should slow near the fingertip.');
+assert.equal(computeWavefrontInfluence(0.4, 0.1, 0.06), 0, 'The Spirit must not react before the pressure wave arrives.');
+assert.equal(computeWavefrontInfluence(0.4, 0.4, 0.06), 1);
+assert.equal(computeWavefrontInfluence(0.4, 0.7, 0.06), 0, 'The pressure impulse ends after the wavefront passes.');
 
 const pointingHand: TrackedHand = {
   id: 1,
@@ -75,14 +96,23 @@ const pointerController = new GestureInteractionController(new GestureFrameStore
 pointerController.update({ hands: [pointingHand], twoHandsPresent: false, timestamp: 1 }, 0, true);
 const pointerState = pointerController.update({ hands: [pointingHand], twoHandsPresent: false, timestamp: 2 }, 301, true);
 assert.deepEqual(pointerState.pointer?.point, pointingHand.landmarks[8], 'Attraction and dwell must share landmark #8.');
+const landmarkSnapshot = structuredClone(pointingHand.landmarks);
+const compactPoints = createCompactHandRenderPoints(pointingHand.landmarks);
+assert.deepEqual(pointingHand.landmarks, landmarkSnapshot, 'Visual compaction must never mutate recognition landmarks.');
+const span = (points: readonly GesturePoint[]) => Math.max(...points.map((point) => point.x)) - Math.min(...points.map((point) => point.x));
+assert.ok(span(compactPoints) < span(pointingHand.landmarks) * 0.9, 'Rendered hand should be visibly compact.');
+assert.deepEqual(pointerState.pointer?.point, { x: 0.73, y: 0.26, z: 0 }, 'The star cursor stays on the true index fingertip.');
 
 const rangeSource = readFileSync('src/components/RangeControl.tsx', 'utf8');
 const stylesSource = readFileSync('src/styles.css', 'utf8');
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const effectsSource = readFileSync('src/gesture/GestureEffectsOverlay.tsx', 'utf8');
+const overlaySource = readFileSync('src/gesture/GestureOverlay.tsx', 'utf8');
+const waveCanvasSource = readFileSync('src/visualization/WaveCanvas.tsx', 'utf8');
 const samplingSource = readFileSync('src/labs/SamplingLab.tsx', 'utf8');
 assert.ok(!rangeSource.includes('已選取'));
-assert.ok(rangeSource.includes('gesture-control-marker'));
+assert.ok(!rangeSource.includes('gesture-control-marker'));
+assert.ok(!stylesSource.includes('gesture-control-marker'));
 assert.ok(rangeSource.includes('手勢已鎖定'));
 const selectedRule = stylesSource.match(/\.control\.gesture-control-selected\s*\{([^}]+)\}/)?.[1] ?? '';
 assert.ok(!selectedRule.includes('padding'), 'Captured state must not change control height.');
@@ -90,6 +120,16 @@ assert.ok(appSource.includes("dwellControllerRef.current.update(undefined, now, 
 assert.ok(appSource.includes('data-gesture-scroll'));
 assert.ok(effectsSource.includes('if (!enabledRef.current)'));
 assert.ok(effectsSource.includes('clearEffects()'), 'Gesture OFF must clear active effect pools.');
+assert.ok(effectsSource.includes('drawPressureRing'));
+assert.ok(effectsSource.includes('for (let ring = 0; ring < 4'));
+assert.ok(effectsSource.includes('createWavefrontTearSeeds'));
+assert.ok(!effectsSource.includes("rgba(255, 184, 49"), 'Explosion must no longer use golden projectile rays.');
+assert.ok(overlaySource.includes('createCompactHandRenderPoints'));
+assert.ok(overlaySource.includes('successPulse'));
+assert.ok(overlaySource.includes('dustCount'));
+assert.ok(stylesSource.includes('pointer-events: none'));
+assert.ok(stylesSource.includes('gesture-captured-flow'));
+assert.ok(waveCanvasSource.includes("repulsor.type === 'ripple' ? 0"), 'Ripple awareness must remain zero until the ring arrives.');
 assert.ok(samplingSource.includes("'soundspace:gesture-reset'"), 'Gesture OFF must clear Slider capture.');
 
 let starts = 0;
@@ -138,4 +178,4 @@ globalThis.fetch = originalFetch;
 globalThis.window = originalWindow;
 globalThis.document = originalDocument;
 
-console.log('Gesture polish verification passed: hand-shaped wake, stable capture, reversed page scroll, attraction, bounded explosion, cached SFX, and navigation edge motion.');
+console.log('Gesture visual refinement passed: compact render-only hands, star cursor, broad water wake, flowing capture, timed wavefront response, cached SFX, and navigation behavior.');

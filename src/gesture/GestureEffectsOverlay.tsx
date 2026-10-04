@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { gesturePointToViewport } from './coordinateTransform';
-import { clampEffectCount, createBlueTearSeeds, gestureEffectLimits } from './gestureEffectsModel';
+import { clampEffectCount, createBlueTearSeeds, createWavefrontTearSeeds, gestureEffectLimits } from './gestureEffectsModel';
 import type { GestureInteractionController, GestureInteractionEvent } from './interactionController';
 
 interface Particle {
@@ -14,6 +14,7 @@ interface Particle {
   hue: number;
   streak: number;
   hot: boolean;
+  curve: number;
 }
 
 interface ExplosionBurst {
@@ -22,6 +23,19 @@ interface ExplosionBurst {
   born: number;
   life: number;
   rotation: number;
+  nextEmission: number;
+  emitted: number;
+}
+
+interface WaterRipple {
+  x: number;
+  y: number;
+  born: number;
+  life: number;
+  radius: number;
+  rotation: number;
+  arc: number;
+  wobble: number;
 }
 
 interface Props {
@@ -47,13 +61,13 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
     let lastDraw = performance.now();
     let clearedWhileDisabled = false;
     const blueTears: Particle[] = [];
-    const explosionParticles: Particle[] = [];
     const explosionBursts: ExplosionBurst[] = [];
+    const waterRipples: WaterRipple[] = [];
 
     const clearEffects = () => {
       blueTears.length = 0;
-      explosionParticles.length = 0;
       explosionBursts.length = 0;
+      waterRipples.length = 0;
       context.clearRect(0, 0, width, height);
     };
 
@@ -100,35 +114,42 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
             hue: 188 + Math.random() * 18,
             streak: seed.streak,
             hot: seed.hot,
+            curve: seed.curve,
+          });
+        }
+        const rippleCount = 1 + Math.round(Math.min(2, event.speed * 0.9));
+        const palm = event.landmarks[9] ?? event.point;
+        for (let index = 0; index < rippleCount; index += 1) {
+          const source = index === 0 ? palm : event.landmarks[index % 2 ? 5 : 17] ?? palm;
+          waterRipples.push({
+            x: source.x * width,
+            y: source.y * height,
+            born: event.timestamp + index * 28,
+            life: 380 + Math.random() * 260,
+            radius: 18 + event.speed * 16 + Math.random() * 20,
+            rotation: Math.atan2(event.velocityY, event.velocityX) + (Math.random() - 0.5) * 0.8,
+            arc: Math.PI * (0.7 + Math.random() * 0.75),
+            wobble: 2 + Math.random() * 4,
           });
         }
         clampEffectCount(blueTears, gestureEffectLimits.blueTears);
+        clampEffectCount(waterRipples, gestureEffectLimits.waterRipples);
         return;
       }
 
-      explosionBursts.push({ x: point.x, y: point.y, born: event.timestamp, life: 900, rotation: Math.random() * Math.PI });
+      explosionBursts.push({
+        x: point.x,
+        y: point.y,
+        born: event.timestamp,
+        life: 1120,
+        rotation: Math.random() * Math.PI,
+        nextEmission: event.timestamp + 46,
+        emitted: 0,
+      });
       clampEffectCount(explosionBursts, gestureEffectLimits.explosionBursts);
-      for (let index = 0; index < gestureEffectLimits.explosionParticles; index += 1) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 150 + Math.random() * 430;
-        const hot = index % 9 === 0;
-        explosionParticles.push({
-          x: point.x,
-          y: point.y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          size: hot ? 1.6 + Math.random() * 1.6 : 0.7 + Math.random() * 1.3,
-          born: event.timestamp,
-          life: 260 + Math.random() * 560,
-          hue: 36 + Math.random() * 14,
-          streak: 5 + Math.random() * 13,
-          hot,
-        });
-      }
-      clampEffectCount(explosionParticles, gestureEffectLimits.explosionParticles);
     });
 
-    const drawParticles = (items: Particle[], now: number, delta: number, blue: boolean) => {
+    const drawParticles = (items: Particle[], now: number, delta: number) => {
       for (let index = items.length - 1; index >= 0; index -= 1) {
         const particle = items[index];
         const age = now - particle.born;
@@ -137,12 +158,16 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
           continue;
         }
         const progress = age / particle.life;
+        const velocityAngle = particle.curve * delta;
+        const previousVx = particle.vx;
+        particle.vx = previousVx * Math.cos(velocityAngle) - particle.vy * Math.sin(velocityAngle);
+        particle.vy = previousVx * Math.sin(velocityAngle) + particle.vy * Math.cos(velocityAngle);
         particle.x += particle.vx * delta;
         particle.y += particle.vy * delta;
-        particle.vx *= blue ? 0.982 : 0.975;
-        particle.vy = particle.vy * (blue ? 0.982 : 0.975) - (blue ? 1.2 : 0) * delta;
-        const ignition = Math.min(1, age / (blue ? 42 : 24));
-        const shimmer = blue ? 0.76 + Math.sin(age * 0.045 + index) * 0.24 : 1;
+        particle.vx *= 0.982;
+        particle.vy = particle.vy * 0.982 - 1.2 * delta;
+        const ignition = Math.min(1, age / 42);
+        const shimmer = 0.76 + Math.sin(age * 0.045 + index) * 0.24;
         const alpha = ignition * (1 - progress) * shimmer;
         const speed = Math.max(0.001, Math.hypot(particle.vx, particle.vy));
         const tailX = particle.x - particle.vx / speed * particle.streak;
@@ -150,20 +175,66 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
         context.beginPath();
         context.moveTo(tailX, tailY);
         context.lineTo(particle.x, particle.y);
-        context.strokeStyle = blue
-          ? `hsla(${particle.hue}, 100%, ${particle.hot ? 91 : 70}%, ${alpha * (particle.hot ? 0.9 : 0.48)})`
-          : `hsla(${particle.hue}, 100%, ${particle.hot ? 94 : 72}%, ${alpha * 0.88})`;
+        context.strokeStyle = `hsla(${particle.hue}, 100%, ${particle.hot ? 91 : 70}%, ${alpha * (particle.hot ? 0.9 : 0.48)})`;
         context.lineWidth = particle.size;
-        context.shadowColor = blue ? 'rgba(65, 211, 255, 0.9)' : 'rgba(255, 192, 64, 0.96)';
-        context.shadowBlur = blue ? particle.size * 3.5 : particle.size * 5;
+        context.shadowColor = 'rgba(65, 211, 255, 0.9)';
+        context.shadowBlur = particle.size * 3.5;
         context.stroke();
         if (particle.hot) {
           context.beginPath();
           context.arc(particle.x, particle.y, particle.size * 0.62, 0, Math.PI * 2);
-          context.fillStyle = blue ? `rgba(225, 253, 255, ${alpha})` : `rgba(255, 252, 225, ${alpha})`;
+          context.fillStyle = `rgba(225, 253, 255, ${alpha})`;
           context.fill();
         }
       }
+    };
+
+    const drawRipplePath = (ripple: WaterRipple, now: number) => {
+      const progress = (now - ripple.born) / ripple.life;
+      if (progress < 0) return true;
+      if (progress >= 1) return false;
+      const radius = ripple.radius * (0.35 + progress * 1.45);
+      context.beginPath();
+      const steps = 28;
+      for (let step = 0; step <= steps; step += 1) {
+        const angle = ripple.rotation - ripple.arc / 2 + ripple.arc * step / steps;
+        const localRadius = radius + Math.sin(step * 0.9 + ripple.rotation) * ripple.wobble * (1 - progress);
+        const x = ripple.x + Math.cos(angle) * localRadius;
+        const y = ripple.y + Math.sin(angle) * localRadius * 0.64;
+        if (step === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.strokeStyle = `rgba(79, 221, 255, ${(1 - progress) * 0.3})`;
+      context.lineWidth = 0.7 + (1 - progress) * 0.7;
+      context.shadowColor = 'rgba(62, 198, 255, 0.5)';
+      context.shadowBlur = 7;
+      context.stroke();
+      return true;
+    };
+
+    const drawPressureRing = (burst: ExplosionBurst, progress: number, ring: number, maximumRadius: number) => {
+      const ringProgress = Math.min(1, Math.max(0, progress * 1.18 - ring * 0.105));
+      if (ringProgress <= 0 || ringProgress >= 1) return;
+      const radius = 12 + ringProgress * maximumRadius * (1 - ring * 0.055);
+      const start = burst.rotation + ring * 0.73;
+      const arc = ring === 0 ? Math.PI * 2 : Math.PI * (1.2 + ring * 0.14);
+      const steps = ring === 0 ? 72 : 48;
+      context.beginPath();
+      for (let step = 0; step <= steps; step += 1) {
+        const angle = start + arc * step / steps;
+        const wobble = Math.sin(angle * (3 + ring) + burst.rotation) * (2.4 + ring * 0.8) * (1 - ringProgress * 0.55);
+        const x = burst.x + Math.cos(angle) * (radius + wobble);
+        const y = burst.y + Math.sin(angle) * (radius + wobble) * (0.96 + Math.sin(burst.rotation) * 0.035);
+        if (step === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.strokeStyle = ring === 0
+        ? `rgba(191, 250, 255, ${(1 - ringProgress) * 0.78})`
+        : `rgba(${ring % 2 ? 74 : 113}, ${ring % 2 ? 216 : 237}, 255, ${(1 - ringProgress) * 0.43})`;
+      context.lineWidth = ring === 0 ? 1.8 : 0.9 + ring * 0.18;
+      context.shadowColor = 'rgba(61, 212, 255, 0.82)';
+      context.shadowBlur = ring === 0 ? 15 : 9;
+      context.stroke();
     };
 
     const drawExplosion = (burst: ExplosionBurst, now: number) => {
@@ -171,55 +242,42 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
       const progress = age / burst.life;
       if (progress >= 1) return false;
       const shortFlash = Math.max(0, 1 - age / 125);
-      const afterglow = Math.max(0, 1 - progress);
-      const maximumRadius = Math.min(width, height) * 0.34;
+      const maximumRadius = Math.min(width, height) * 0.4;
       if (shortFlash > 0) {
         const radius = 16 + (1 - shortFlash) * 78;
         const gradient = context.createRadialGradient(burst.x, burst.y, 0, burst.x, burst.y, radius);
         gradient.addColorStop(0, `rgba(255,255,246,${shortFlash})`);
-        gradient.addColorStop(0.16, `rgba(255,224,137,${shortFlash * 0.92})`);
-        gradient.addColorStop(1, 'rgba(255,151,45,0)');
+        gradient.addColorStop(0.12, `rgba(255,246,214,${shortFlash * 0.94})`);
+        gradient.addColorStop(0.38, `rgba(151,239,255,${shortFlash * 0.56})`);
+        gradient.addColorStop(1, 'rgba(61,199,255,0)');
         context.fillStyle = gradient;
         context.fillRect(burst.x - radius, burst.y - radius, radius * 2, radius * 2);
       }
-      context.save();
-      context.translate(burst.x, burst.y);
-      context.rotate(burst.rotation + progress * 0.2);
-      const rayAlpha = Math.max(0, 1 - age / 360);
-      for (let ray = 0; ray < 18; ray += 1) {
-        const angle = ray / 18 * Math.PI * 2 + Math.sin(ray * 9.1) * 0.08;
-        const inner = 12 + progress * 24;
-        const outer = inner + (38 + (ray % 4) * 13) * (0.45 + progress);
-        context.beginPath();
-        context.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
-        context.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
-        context.strokeStyle = `rgba(255, ${ray % 3 ? 190 : 242}, ${ray % 3 ? 76 : 194}, ${rayAlpha * 0.78})`;
-        context.lineWidth = ray % 5 === 0 ? 2.4 : 1;
-        context.shadowColor = 'rgba(255, 184, 49, 0.95)';
-        context.shadowBlur = 14;
-        context.stroke();
+      for (let ring = 0; ring < 4; ring += 1) drawPressureRing(burst, progress, ring, maximumRadius);
+
+      if (now >= burst.nextEmission && burst.emitted < gestureEffectLimits.wavefrontSpecksPerBurst) {
+        const leadingRadius = 12 + Math.min(1, progress * 1.18) * maximumRadius;
+        const remaining = gestureEffectLimits.wavefrontSpecksPerBurst - burst.emitted;
+        const seeds = createWavefrontTearSeeds(burst.x, burst.y, leadingRadius, Math.min(6, remaining));
+        for (const seed of seeds) {
+          blueTears.push({
+            x: seed.x,
+            y: seed.y,
+            vx: seed.velocityX,
+            vy: seed.velocityY,
+            size: seed.size,
+            born: now,
+            life: seed.life,
+            hue: 187 + Math.random() * 18,
+            streak: seed.streak,
+            hot: burst.emitted % 17 === 0,
+            curve: seed.curve,
+          });
+        }
+        burst.emitted += seeds.length;
+        burst.nextEmission = now + 46;
+        clampEffectCount(blueTears, gestureEffectLimits.blueTears);
       }
-      context.restore();
-      for (let ring = 0; ring < 2; ring += 1) {
-        const ringProgress = Math.min(1, Math.max(0, progress * 1.28 - ring * 0.13));
-        if (ringProgress <= 0 || ringProgress >= 1) continue;
-        const radius = 18 + ringProgress * maximumRadius;
-        context.beginPath();
-        context.arc(burst.x, burst.y, radius, 0, Math.PI * 2);
-        context.strokeStyle = `rgba(255, ${ring ? 188 : 231}, ${ring ? 72 : 155}, ${(1 - ringProgress) * (ring ? 0.35 : 0.72)})`;
-        context.lineWidth = ring ? 1.2 : 2.4;
-        context.shadowColor = 'rgba(255, 190, 70, 0.9)';
-        context.shadowBlur = 22;
-        context.stroke();
-      }
-      const rippleRadius = 28 + progress * maximumRadius * 0.72;
-      context.beginPath();
-      context.arc(burst.x, burst.y, rippleRadius, -0.18 * Math.PI, 1.42 * Math.PI);
-      context.strokeStyle = `rgba(255, 246, 215, ${afterglow * 0.2})`;
-      context.lineWidth = 7 * afterglow;
-      context.shadowColor = 'rgba(255, 204, 96, 0.58)';
-      context.shadowBlur = 28;
-      context.stroke();
       return true;
     };
 
@@ -236,8 +294,10 @@ export function GestureEffectsOverlay({ controller, enabled, scene }: Props) {
       context.clearRect(0, 0, width, height);
       context.save();
       context.globalCompositeOperation = 'lighter';
-      drawParticles(blueTears, now, delta, true);
-      drawParticles(explosionParticles, now, delta, false);
+      drawParticles(blueTears, now, delta);
+      for (let index = waterRipples.length - 1; index >= 0; index -= 1) {
+        if (!drawRipplePath(waterRipples[index], now)) waterRipples.splice(index, 1);
+      }
       for (let index = explosionBursts.length - 1; index >= 0; index -= 1) {
         if (!drawExplosion(explosionBursts[index], now)) explosionBursts.splice(index, 1);
       }

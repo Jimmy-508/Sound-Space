@@ -102,7 +102,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           speed: 4.2,
         };
         explosionStartedAt = event.timestamp;
-        displacementUntil = event.timestamp + 900;
+        displacementUntil = event.timestamp + 1120;
       }
     });
     const update = (now: number) => {
@@ -138,8 +138,8 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
       const displacement = gestureForcesRef.current.displacement;
       if (displacement && now >= displacementUntil) gestureForcesRef.current.displacement = undefined;
       if (displacement?.type === 'ripple' && explosionStartedAt) {
-        const progress = Math.min(1, (now - explosionStartedAt) / 900);
-        displacement.currentRadius = 0.035 + progress * 0.72;
+        const progress = Math.min(1, (now - explosionStartedAt) / 1120);
+        displacement.currentRadius = 0.035 + progress * 0.765;
         displacement.strength = 6.4 * (1 - progress * 0.62);
       }
     };

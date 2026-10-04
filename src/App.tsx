@@ -265,6 +265,7 @@ export default function App() {
       const result = dwellControllerRef.current.update(target, now, true);
       interaction.setDwell(result.active, result.progress);
       if (!result.activated || !target) return;
+      interaction.flashDwellSuccess(now);
       const controlId = target.dataset.gestureControlId;
       if (controlId) {
         window.dispatchEvent(new CustomEvent('soundspace:gesture-control-selected', { detail: { id: controlId } }));

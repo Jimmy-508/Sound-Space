@@ -20,6 +20,7 @@ export interface GestureInteractionState {
   twoHand: { gesture: TwoHandGesture; rate: number; center: GesturePoint };
   dwellProgress: number;
   dwellActive: boolean;
+  dwellSuccessAt: number;
   timestamp: number;
 }
 
@@ -60,6 +61,7 @@ const emptyState = (): GestureInteractionState => ({
   twoHand: { gesture: 'none', rate: 0, center: { x: 0.5, y: 0.5, z: 0 } },
   dwellProgress: 0,
   dwellActive: false,
+  dwellSuccessAt: -Infinity,
   timestamp: 0,
 });
 
@@ -139,6 +141,10 @@ export class GestureInteractionController {
   setDwell(active: boolean, progress: number) {
     this.state.dwellActive = active;
     this.state.dwellProgress = Math.min(1, Math.max(0, progress));
+  }
+
+  flashDwellSuccess(now: number) {
+    this.state.dwellSuccessAt = now;
   }
 
   update(frame: GestureFrame, now: number, enabled = this.enabled) {

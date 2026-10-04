@@ -33,7 +33,6 @@ export function RangeControl({ label, value, min, max, step, display, ariaValueT
         aria-valuetext={ariaValueText ?? display}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
       />
-      {gestureSelected && <i className="gesture-control-marker" aria-hidden="true" />}
     </label>
   );
 }

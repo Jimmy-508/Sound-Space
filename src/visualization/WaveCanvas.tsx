@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import * as THREE from 'three';
 import type { PointerPoint, Waveform } from '../types';
-import { computeAttractionSteering, type Repulsor, type SpiritGestureForces } from './repulsor';
+import { computeAttractionSteering, computeWavefrontInfluence, type Repulsor, type SpiritGestureForces } from './repulsor';
 import {
   DEFAULT_SOUND_SPIRIT_PHENOTYPE,
   type SoundSpiritPhenotypeConfig,
@@ -780,9 +780,11 @@ export function WaveCanvas({
         const awayY = rawDistance < 0.006 ? Math.sin(fallbackAngle) : deltaY / distance;
         const collisionRadius = visualRadius * (0.9 + creatureGenome.bodyAsymmetry);
         const radius = repulsor.type === 'ripple' ? repulsor.currentRadius ?? repulsor.radius : repulsor.radius + collisionRadius;
-        const rippleDistance = repulsor.type === 'ripple' ? Math.abs(Math.max(0, distance - collisionRadius) - radius) : distance;
-        const influence = Math.max(0, 1 - rippleDistance / Math.max(0.06, repulsor.type === 'ripple' ? repulsor.radius : radius));
-        const awareness = Math.max(0, 1 - distance / Math.max(0.12, collisionRadius + 0.42));
+        const surfaceDistance = Math.max(0, distance - collisionRadius);
+        const influence = repulsor.type === 'ripple'
+          ? computeWavefrontInfluence(surfaceDistance, radius, Math.max(0.06, repulsor.radius))
+          : Math.max(0, 1 - distance / Math.max(0.06, radius));
+        const awareness = repulsor.type === 'ripple' ? 0 : Math.max(0, 1 - distance / Math.max(0.12, collisionRadius + 0.42));
         if (influence <= 0 && awareness <= 0) continue;
         const isNewRepulsorUpdate = repulsor.updatedAt !== undefined && repulsor.updatedAt !== lastRepulsorUpdate;
         const swipeSpeed = Math.hypot(repulsor.velocityX ?? 0, repulsor.velocityY ?? 0);

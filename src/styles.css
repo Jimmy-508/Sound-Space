@@ -507,43 +507,46 @@ h1 {
 
 .control.gesture-control-selected {
   position: relative;
-  outline: 3px double rgba(255, 224, 133, 0.88);
-  outline-offset: 3px;
-  background: rgba(255, 194, 73, 0.06);
-  box-shadow: 0 0 22px rgba(255, 177, 52, 0.16), inset 0 0 18px rgba(255, 230, 149, 0.05);
+  isolation: isolate;
+  background: rgba(255, 202, 93, 0.035);
+  box-shadow: inset 0 0 18px rgba(255, 232, 160, 0.05);
 }
 
-.gesture-control-marker {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 15px;
-  height: 15px;
-  border: 2px solid rgba(255, 249, 220, 0.96);
-  border-radius: 50%;
-  background: rgba(20, 25, 29, 0.94);
-  box-shadow: 0 0 0 3px rgba(255, 183, 57, 0.2), 0 0 13px rgba(255, 184, 57, 0.72);
-}
-
-.gesture-control-marker::before,
-.gesture-control-marker::after {
+.control.gesture-control-selected::before,
+.control.gesture-control-selected::after {
   content: "";
   position: absolute;
-  background: rgba(255, 231, 157, 0.96);
+  inset: -4px;
+  z-index: -1;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  pointer-events: none;
 }
 
-.gesture-control-marker::before {
-  top: 5px;
-  left: -4px;
-  width: 19px;
-  height: 1px;
+.control.gesture-control-selected::before {
+  background:
+    linear-gradient(rgba(3, 18, 34, 0.88), rgba(3, 18, 34, 0.88)) padding-box,
+    linear-gradient(105deg, rgba(255, 191, 69, 0.28), rgba(255, 252, 225, 0.96), rgba(255, 177, 55, 0.34), rgba(255, 232, 153, 0.86)) border-box;
+  background-size: 100% 100%, 240% 100%;
+  box-shadow: 0 0 14px rgba(255, 185, 58, 0.16), inset 0 0 10px rgba(255, 238, 184, 0.06);
+  animation: gesture-captured-flow 2.4s linear infinite;
 }
 
-.gesture-control-marker::after {
-  top: -4px;
-  left: 5px;
-  width: 1px;
-  height: 19px;
+.control.gesture-control-selected::after {
+  inset: -7px;
+  border-color: rgba(255, 213, 112, 0.09);
+  filter: blur(3px);
+  animation: gesture-captured-breathe 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes gesture-captured-flow {
+  from { background-position: 0 0, 0% 50%; }
+  to { background-position: 0 0, 240% 50%; }
+}
+
+@keyframes gesture-captured-breathe {
+  from { opacity: 0.35; }
+  to { opacity: 0.92; }
 }
 
 .gesture-dwell-hover {
