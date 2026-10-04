@@ -24,7 +24,18 @@ export interface GestureInteractionState {
 }
 
 export type GestureInteractionEvent =
-  | { type: 'sweep'; handId: number; point: GesturePoint; velocityX: number; velocityY: number; speed: number; timestamp: number }
+  | {
+    type: 'sweep';
+    handId: number;
+    point: GesturePoint;
+    landmarks: readonly GesturePoint[];
+    previousLandmarks: readonly GesturePoint[];
+    velocityX: number;
+    velocityY: number;
+    speed: number;
+    turnIntensity: number;
+    timestamp: number;
+  }
   | { type: 'explosion'; handId: number; point: GesturePoint; timestamp: number };
 
 interface FistSession {
@@ -36,9 +47,14 @@ interface FistSession {
 
 interface OpenMotion {
   point: GesturePoint;
+  landmarks: GesturePoint[];
+  velocityX: number;
+  velocityY: number;
   timestamp: number;
   lastEmission: number;
 }
+
+const copyLandmarks = (landmarks: readonly GesturePoint[]) => landmarks.map((point) => ({ ...point }));
 
 const emptyState = (): GestureInteractionState => ({
   twoHand: { gesture: 'none', rate: 0, center: { x: 0.5, y: 0.5, z: 0 } },
@@ -226,25 +242,40 @@ export class GestureInteractionController {
       if (armedAt !== undefined && now - armedAt <= EXPLOSION_WINDOW_MS && now - this.lastExplosionAt >= EXPLOSION_COOLDOWN_MS) {
         this.lastExplosionAt = now;
         this.armedFists.delete(hand.id);
-        this.openMotion.set(hand.id, { point: center, timestamp: now, lastEmission: now });
+        this.openMotion.set(hand.id, { point: center, landmarks: copyLandmarks(hand.landmarks), velocityX: 0, velocityY: 0, timestamp: now, lastEmission: now });
         this.emit({ type: 'explosion', handId: hand.id, point: center, timestamp: now });
         continue;
       }
       const previous = this.openMotion.get(hand.id);
       if (!previous) {
-        this.openMotion.set(hand.id, { point: center, timestamp: now, lastEmission: -Infinity });
+        this.openMotion.set(hand.id, { point: center, landmarks: copyLandmarks(hand.landmarks), velocityX: 0, velocityY: 0, timestamp: now, lastEmission: -Infinity });
         continue;
       }
       const elapsed = Math.max(0.008, (now - previous.timestamp) / 1000);
       const velocityX = (center.x - previous.point.x) / elapsed;
       const velocityY = (center.y - previous.point.y) / elapsed;
       const speed = Math.hypot(velocityX, velocityY);
+      const turnIntensity = Math.min(1, Math.hypot(velocityX - previous.velocityX, velocityY - previous.velocityY) / 1.4);
       const canEmit = now - this.lastExplosionAt >= SWEEP_COOLDOWN_AFTER_EXPLOSION_MS && now - previous.lastEmission >= 42;
       if (speed >= SWEEP_SPEED_THRESHOLD && canEmit) {
         previous.lastEmission = now;
-        this.emit({ type: 'sweep', handId: hand.id, point: center, velocityX, velocityY, speed, timestamp: now });
+        this.emit({
+          type: 'sweep',
+          handId: hand.id,
+          point: center,
+          landmarks: copyLandmarks(hand.landmarks),
+          previousLandmarks: previous.landmarks,
+          velocityX,
+          velocityY,
+          speed,
+          turnIntensity,
+          timestamp: now,
+        });
       }
       previous.point = center;
+      previous.landmarks = copyLandmarks(hand.landmarks);
+      previous.velocityX = velocityX;
+      previous.velocityY = velocityY;
       previous.timestamp = now;
     }
     for (const id of this.openMotion.keys()) if (!visibleIds.has(id)) this.openMotion.delete(id);

@@ -8,6 +8,7 @@ import { CameraStartError, HandTrackingSession } from './gesture/HandTrackingSes
 import { gesturePointToViewport } from './gesture/coordinateTransform';
 import { DwellSelectionController } from './gesture/dwellController';
 import { GestureInteractionController } from './gesture/interactionController';
+import { clampNavigationScroll, getNavigationEdgeMotion } from './gesture/navigationGesture';
 import { GestureFrameStore } from './gesture/types';
 import { createPointerCommand } from './interaction/commandLayer';
 import { MusicLab } from './labs/MusicLab';
@@ -64,6 +65,7 @@ export default function App() {
   const musicUrlRef = useRef<string | null>(null);
   const visualImpulseRef = useRef<VisualImpulseHandle | null>(null);
   const gestureVideoRef = useRef<HTMLVideoElement | null>(null);
+  const navigationRef = useRef<HTMLElement | null>(null);
   const gestureSessionRef = useRef<HandTrackingSession | null>(null);
   const gestureStoreRef = useRef<GestureFrameStore | null>(null);
   if (!gestureStoreRef.current) gestureStoreRef.current = new GestureFrameStore();
@@ -111,6 +113,13 @@ export default function App() {
 
   useEffect(() => {
     void interactionSound.preload();
+    const warm = () => void interactionSound.warm();
+    window.addEventListener('pointerdown', warm, { once: true, passive: true });
+    window.addEventListener('keydown', warm, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', warm);
+      window.removeEventListener('keydown', warm);
+    };
   }, []);
 
   useEffect(() => {
@@ -203,7 +212,11 @@ export default function App() {
 
   useEffect(() => {
     let frame = 0;
+    let previousFrame = performance.now();
     let hovered: HTMLElement | null = null;
+    const clearNavigationMotion = () => {
+      navigationRef.current?.removeAttribute('data-gesture-scroll');
+    };
     const clearHover = () => {
       hovered?.classList.remove('gesture-dwell-hover');
       hovered = null;
@@ -215,10 +228,32 @@ export default function App() {
       const pointer = interaction.read().pointer;
       if (!gestureEnabled || !pointer) {
         clearHover();
+        clearNavigationMotion();
         dwellControllerRef.current.update(undefined, now, false);
         return;
       }
       const point = gesturePointToViewport(pointer.point, window.innerWidth, window.innerHeight);
+      const navigation = navigationRef.current;
+      if (navigation && navigation.scrollWidth > navigation.clientWidth + 1) {
+        const rect = navigation.getBoundingClientRect();
+        const motion = getNavigationEdgeMotion(rect, point.x, point.y);
+        if (motion.direction !== 0) {
+          const elapsed = Math.min(0.05, Math.max(0, (now - previousFrame) / 1000));
+          navigation.scrollLeft = clampNavigationScroll(
+            navigation.scrollLeft,
+            motion.velocity * elapsed,
+            navigation.scrollWidth,
+            navigation.clientWidth,
+          );
+          navigation.dataset.gestureScroll = motion.direction < 0 ? 'left' : 'right';
+          clearHover();
+          dwellControllerRef.current.update(undefined, now, false);
+          previousFrame = now;
+          return;
+        }
+      }
+      clearNavigationMotion();
+      previousFrame = now;
       const hit = document.elementFromPoint(point.x, point.y);
       const blocked = hit?.closest('.music-stage[data-gesture-zone="spirit"]');
       const target = blocked ? null : hit?.closest<HTMLElement>('[data-gesture-clickable="true"], button:not(:disabled), .file-picker');
@@ -245,17 +280,20 @@ export default function App() {
     return () => {
       cancelAnimationFrame(frame);
       clearHover();
+      clearNavigationMotion();
       dwellControllerRef.current.reset();
     };
   }, [gestureEnabled]);
 
   const setGestureInteraction = (enabled: boolean) => {
+    if (enabled) void interactionSound.warm();
     setGestureError('');
     setGestureStatus(enabled ? 'starting' : 'idle');
     setGestureEnabled(enabled);
   };
 
   const playControlSound = (event: MouseEvent<HTMLElement>) => {
+    void interactionSound.warm();
     const target = event.target as HTMLElement;
     if (target.closest('input[type="range"], .control, .progress-wrap')) return;
     const control = target.closest('button, .file-picker');
@@ -290,7 +328,7 @@ export default function App() {
       <StarfieldBackground />
       <GestureEffectsOverlay controller={gestureInteractionRef.current} enabled={gestureEnabled} scene={activeView} />
       <GestureOverlay store={gestureStoreRef.current} interaction={gestureInteractionRef.current} />
-      <nav className="top-nav" aria-label="主要導覽">
+      <nav ref={navigationRef} className="top-nav" aria-label="主要導覽">
         <div className="top-nav-track">
           <button type="button" className={activeView === 'home' ? 'active' : ''} onClick={() => selectView('home')}>
             <Home size={18} />首頁

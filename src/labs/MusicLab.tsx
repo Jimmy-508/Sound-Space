@@ -4,6 +4,7 @@ import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { gesturePointToElement } from '../gesture/coordinateTransform';
 import type { GestureInteractionController } from '../gesture/interactionController';
+import { mapPageScrollDelta } from '../gesture/navigationGesture';
 import type { MusicSessionState } from '../music/musicSession';
 import { audioAccept, type MusicAudioController } from '../music/useMusicAudioController';
 import type { PointerPoint } from '../types';
@@ -60,6 +61,10 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     let lastTimestamp = -1;
     let displacementUntil = 0;
     let explosionStartedAt = 0;
+    let attractionStrength = 0;
+    let attractionX = 0.5;
+    let attractionY = 0.5;
+    let lastFrameTime = performance.now();
     const unsubscribe = gestureController.subscribe((event) => {
       const stage = stageRef.current;
       if (!stage || viewModeRef.current !== 'spectrum') return;
@@ -86,9 +91,9 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
         gestureForcesRef.current.displacement = {
           x: local.x,
           y: local.y,
-          radius: 0.22,
-          currentRadius: 0.04,
-          strength: 4.8,
+          radius: 0.2,
+          currentRadius: 0.035,
+          strength: 6.4,
           type: 'ripple',
           updatedAt: event.timestamp,
           contact: true,
@@ -97,11 +102,13 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           speed: 4.2,
         };
         explosionStartedAt = event.timestamp;
-        displacementUntil = event.timestamp + 720;
+        displacementUntil = event.timestamp + 900;
       }
     });
     const update = (now: number) => {
       frame = requestAnimationFrame(update);
+      const deltaTime = Math.min(0.05, Math.max(0, (now - lastFrameTime) / 1000));
+      lastFrameTime = now;
       const stage = stageRef.current;
       const gesture = gestureController.read();
       if (!stage) return;
@@ -109,27 +116,31 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
         lastTimestamp = gesture.timestamp;
         if (gesture.fist?.axis === 'y') {
           const local = gesturePointToElement(gesture.fist.point, stage);
-          if (!local.inside) window.scrollBy({ top: gesture.fist.deltaY * 920, behavior: 'auto' });
+          if (!local.inside) window.scrollBy({ top: mapPageScrollDelta(gesture.fist.deltaY), behavior: 'auto' });
         }
       }
       if (viewModeRef.current !== 'spectrum') {
         gestureForcesRef.current = {};
         return;
       }
-      if (gesture.pointer) {
-        const local = gesturePointToElement(gesture.pointer.point, stage);
-        gestureForcesRef.current.attraction = local.inside
-          ? { x: local.x, y: local.y, strength: 0.72, active: true }
-          : undefined;
-      } else {
-        gestureForcesRef.current.attraction = undefined;
+      const pointerLocal = gesture.pointer ? gesturePointToElement(gesture.pointer.point, stage) : undefined;
+      const attractionTarget = pointerLocal?.inside ? 1 : 0;
+      if (pointerLocal?.inside) {
+        const targetBlend = 1 - Math.exp(-deltaTime * 12);
+        attractionX += (pointerLocal.x - attractionX) * targetBlend;
+        attractionY += (pointerLocal.y - attractionY) * targetBlend;
       }
+      const strengthBlend = 1 - Math.exp(-deltaTime * (attractionTarget ? 10 : 2.8));
+      attractionStrength += (attractionTarget - attractionStrength) * strengthBlend;
+      gestureForcesRef.current.attraction = attractionStrength > 0.015
+        ? { x: attractionX, y: attractionY, strength: attractionStrength * 1.65, active: true }
+        : undefined;
       const displacement = gestureForcesRef.current.displacement;
       if (displacement && now >= displacementUntil) gestureForcesRef.current.displacement = undefined;
       if (displacement?.type === 'ripple' && explosionStartedAt) {
-        const progress = Math.min(1, (now - explosionStartedAt) / 720);
-        displacement.currentRadius = 0.04 + progress * 0.62;
-        displacement.strength = 4.8 * (1 - progress * 0.58);
+        const progress = Math.min(1, (now - explosionStartedAt) / 900);
+        displacement.currentRadius = 0.035 + progress * 0.72;
+        displacement.strength = 6.4 * (1 - progress * 0.62);
       }
     };
     frame = requestAnimationFrame(update);

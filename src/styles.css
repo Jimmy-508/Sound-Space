@@ -141,6 +141,41 @@ button:disabled {
   display: none;
 }
 
+.top-nav[data-gesture-scroll="left"] {
+  box-shadow: inset 22px 0 18px -18px rgba(255, 209, 93, 0.9);
+}
+
+.top-nav[data-gesture-scroll="right"] {
+  box-shadow: inset -22px 0 18px -18px rgba(255, 209, 93, 0.9);
+}
+
+.top-nav[data-gesture-scroll="left"]::before,
+.top-nav[data-gesture-scroll="right"]::after {
+  position: sticky;
+  z-index: 3;
+  top: 12px;
+  display: block;
+  width: 0;
+  height: 0;
+  color: rgba(255, 239, 187, 0.9);
+  font-size: 1.25rem;
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(255, 184, 57, 0.9);
+  pointer-events: none;
+}
+
+.top-nav[data-gesture-scroll="left"]::before {
+  content: "‹";
+  left: 5px;
+  float: left;
+}
+
+.top-nav[data-gesture-scroll="right"]::after {
+  content: "›";
+  right: 16px;
+  float: right;
+}
+
 .top-nav button {
   flex: 0 0 auto;
   min-height: 46px;
@@ -472,28 +507,55 @@ h1 {
 
 .control.gesture-control-selected {
   position: relative;
-  padding: 0.65rem;
-  outline: 2px solid rgba(255, 224, 133, 0.82);
+  outline: 3px double rgba(255, 224, 133, 0.88);
   outline-offset: 3px;
   background: rgba(255, 194, 73, 0.06);
   box-shadow: 0 0 22px rgba(255, 177, 52, 0.16), inset 0 0 18px rgba(255, 230, 149, 0.05);
 }
 
 .gesture-control-marker {
-  display: inline-flex;
-  margin-top: 0.35rem;
-  padding: 0.16rem 0.42rem;
-  border: 1px solid rgba(255, 229, 155, 0.64);
-  border-radius: 999px;
-  color: #fff0bd;
-  font-size: 0.72rem;
-  font-style: normal;
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255, 249, 220, 0.96);
+  border-radius: 50%;
+  background: rgba(20, 25, 29, 0.94);
+  box-shadow: 0 0 0 3px rgba(255, 183, 57, 0.2), 0 0 13px rgba(255, 184, 57, 0.72);
+}
+
+.gesture-control-marker::before,
+.gesture-control-marker::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 231, 157, 0.96);
+}
+
+.gesture-control-marker::before {
+  top: 5px;
+  left: -4px;
+  width: 19px;
+  height: 1px;
+}
+
+.gesture-control-marker::after {
+  top: -4px;
+  left: 5px;
+  width: 1px;
+  height: 19px;
 }
 
 .gesture-dwell-hover {
   outline: 2px solid rgba(255, 226, 137, 0.76);
   outline-offset: 3px;
   box-shadow: 0 0 22px rgba(255, 181, 51, 0.2);
+  animation: gesture-dwell-charge 720ms ease-in-out infinite alternate;
+}
+
+@keyframes gesture-dwell-charge {
+  from { outline-offset: 4px; }
+  to { outline-offset: 1px; }
 }
 
 .home.gesture-dwell-hover {

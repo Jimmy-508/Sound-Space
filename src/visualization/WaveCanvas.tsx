@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import * as THREE from 'three';
 import type { PointerPoint, Waveform } from '../types';
-import type { Repulsor, SpiritGestureForces } from './repulsor';
+import { computeAttractionSteering, type Repulsor, type SpiritGestureForces } from './repulsor';
 import {
   DEFAULT_SOUND_SPIRIT_PHENOTYPE,
   type SoundSpiritPhenotypeConfig,
@@ -850,11 +850,16 @@ export function WaveCanvas({
         const targetY = (1 - attraction.y) * 1.34 - 0.67;
         const towardX = targetX - creatureX;
         const towardY = targetY - creatureY;
-        const towardDistance = Math.max(0.001, Math.hypot(towardX, towardY));
-        const approach = smoothstep(0.05, 0.72, towardDistance) * attraction.strength;
-        accelerationX += towardX / towardDistance * approach * 0.052;
-        accelerationY += towardY / towardDistance * approach * 0.052;
-        curiousTarget = Math.max(curiousTarget, Math.min(0.72, attraction.strength * 0.54));
+        const attractionSteering = computeAttractionSteering(
+          towardX,
+          towardY,
+          attraction.strength,
+          time,
+          creatureGenome.wanderPhase,
+        );
+        accelerationX += attractionSteering.accelerationX;
+        accelerationY += attractionSteering.accelerationY;
+        curiousTarget = Math.max(curiousTarget, attractionSteering.curiosity);
         interactionX = targetX;
         interactionY = targetY;
       }

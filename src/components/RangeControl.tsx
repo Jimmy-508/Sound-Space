@@ -17,6 +17,7 @@ export function RangeControl({ label, value, min, max, step, display, ariaValueT
       className={`control ${gestureSelected ? 'gesture-control-selected' : ''}`}
       data-gesture-control-id={gestureControlId}
       data-gesture-clickable={gestureControlId ? 'true' : undefined}
+      data-gesture-selected={gestureSelected ? 'true' : undefined}
     >
       <span>
         {label}
@@ -28,11 +29,11 @@ export function RangeControl({ label, value, min, max, step, display, ariaValueT
         max={max}
         step={step}
         value={value}
-        aria-label={`${label} ${display}`}
+        aria-label={`${label} ${display}${gestureSelected ? '，手勢已鎖定' : ''}`}
         aria-valuetext={ariaValueText ?? display}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
       />
-      {gestureSelected && <em className="gesture-control-marker">已選取</em>}
+      {gestureSelected && <i className="gesture-control-marker" aria-hidden="true" />}
     </label>
   );
 }

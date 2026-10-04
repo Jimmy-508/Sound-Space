@@ -3,6 +3,7 @@ import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
 import type { GestureInteractionController } from '../gesture/interactionController';
 import { DiscreteGestureAccumulator, resolveSamplingGesture } from '../gesture/gestureMappings';
+import { mapPageScrollDelta } from '../gesture/navigationGesture';
 import type { PointerPoint, SamplingTab } from '../types';
 import { formatBytes } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
@@ -109,7 +110,7 @@ export function SamplingLab({ interactionRecorder, gestureController }: Sampling
       const current = gestureStateRef.current;
       const action = resolveSamplingGesture(current.tab, fist.axis, activeGestureControl);
       if (action === 'scroll') {
-        window.scrollBy({ top: fist.deltaY * 920, behavior: 'auto' });
+        window.scrollBy({ top: mapPageScrollDelta(fist.deltaY), behavior: 'auto' });
         return;
       }
       if (action === 'none') return;

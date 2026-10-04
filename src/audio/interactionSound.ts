@@ -15,7 +15,7 @@ const soundAssets: Record<InteractionSfx, string | null> = {
   blueTears: null,
 };
 
-class InteractionSoundPlayer {
+export class InteractionSoundPlayer {
   private context: AudioContext | null = null;
   private gain: GainNode | null = null;
   private buffers = new Map<InteractionSfx, AudioBuffer>();
@@ -24,25 +24,65 @@ class InteractionSoundPlayer {
   private lastStartedAt = -Infinity;
   private token = 0;
   private enabled = true;
+  private failed = false;
+  private warned = false;
 
   setEnabled(enabled: boolean) {
     this.enabled = enabled;
   }
 
   preload() {
+    if (this.failed) return Promise.resolve();
     if (this.preloadPromise) return this.preloadPromise;
-    this.preloadPromise = this.load();
+    this.preloadPromise = this.load().catch((error) => {
+      this.failed = true;
+      if (!this.warned) {
+        this.warned = true;
+        console.warn('Interaction sound unavailable.', error);
+      }
+    });
     return this.preloadPromise;
   }
 
-  async play(kind: InteractionSfx = 'select'): Promise<InteractionPlayback | null> {
-    if (!this.enabled || !soundAssets[kind]) return null;
-    if (performance.now() - this.lastStartedAt < minimumPlayIntervalMs) return null;
+  async warm() {
     await this.preload();
+    if (!this.context || this.context.state !== 'suspended') return;
+    try {
+      await this.context.resume();
+    } catch {
+      // A later user activation can retry without affecting visual interactions.
+    }
+  }
+
+  hasCachedBuffer(kind: InteractionSfx) {
+    return this.buffers.has(kind);
+  }
+
+  play(kind: InteractionSfx = 'select'): Promise<InteractionPlayback | null> {
+    if (!this.enabled || !soundAssets[kind]) return Promise.resolve(null);
+    if (performance.now() - this.lastStartedAt < minimumPlayIntervalMs) return Promise.resolve(null);
+    const immediate = this.startCached(kind);
+    if (immediate) return Promise.resolve(immediate);
+    return this.playWhenReady(kind);
+  }
+
+  private async playWhenReady(kind: InteractionSfx) {
+    await this.preload();
+    if (!this.context) return null;
+    if (this.context.state === 'suspended') {
+      try {
+        await this.context.resume();
+      } catch {
+        return null;
+      }
+    }
+    return this.startCached(kind);
+  }
+
+  private startCached(kind: InteractionSfx): InteractionPlayback | null {
     const buffer = this.buffers.get(kind);
     const envelope = this.envelopes.get(kind);
-    if (!this.context || !this.gain || !buffer || !envelope) return null;
-    if (this.context.state === 'suspended') await this.context.resume();
+    if (!this.context || this.context.state !== 'running' || !this.gain || !buffer || !envelope) return null;
 
     const source = this.context.createBufferSource();
     source.buffer = buffer;
@@ -80,8 +120,7 @@ class InteractionSoundPlayer {
         this.envelopes.set(entry[0], buildEnvelope(entry[1], envelopePointCount));
       });
     } catch (error) {
-      this.preloadPromise = null;
-      console.warn('Interaction sound unavailable.', error);
+      throw error;
     }
   }
 }

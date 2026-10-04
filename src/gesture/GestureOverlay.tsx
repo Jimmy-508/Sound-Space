@@ -1,15 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { gesturePointToViewport } from './coordinateTransform';
+import { HAND_CONNECTIONS } from './gestureEffectsModel';
 import type { GestureInteractionController } from './interactionController';
 import type { GestureFrameStore } from './types';
-
-const CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
-  [0, 1], [1, 2], [2, 3], [3, 4],
-  [0, 5], [5, 6], [6, 7], [7, 8],
-  [5, 9], [9, 10], [10, 11], [11, 12],
-  [9, 13], [13, 14], [14, 15], [15, 16],
-  [13, 17], [0, 17], [17, 18], [18, 19], [19, 20],
-];
 
 interface TrailPoint {
   x: number;
@@ -62,7 +55,7 @@ export function GestureOverlay({ store, interaction }: GestureOverlayProps) {
         context.lineCap = 'round';
         context.lineJoin = 'round';
 
-        for (const [from, to] of CONNECTIONS) {
+        for (const [from, to] of HAND_CONNECTIONS) {
           const start = points[from];
           const end = points[to];
           const gradient = context.createLinearGradient(start.x, start.y, end.x, end.y);
@@ -126,29 +119,72 @@ export function GestureOverlay({ store, interaction }: GestureOverlayProps) {
       const pointer = interaction.read().pointer;
       if (pointer) {
         const point = gesturePointToViewport(pointer.point, width, height);
+        const spiritStage = document.querySelector<HTMLElement>('.music-stage[data-gesture-zone="spirit"]');
+        const spiritRect = spiritStage?.getBoundingClientRect();
+        const attractionPointer = Boolean(spiritRect
+          && point.x >= spiritRect.left && point.x <= spiritRect.right
+          && point.y >= spiritRect.top && point.y <= spiritRect.bottom);
         const progress = interaction.read().dwellActive ? interaction.read().dwellProgress : 0;
         context.save();
         context.globalCompositeOperation = 'lighter';
         context.translate(point.x, point.y);
-        context.rotate(timestamp * 0.0013);
-        context.beginPath();
-        context.arc(0, 0, 12, 0, Math.PI * 2);
-        context.strokeStyle = 'rgba(255, 229, 139, 0.86)';
-        context.lineWidth = 1.4;
-        context.shadowColor = 'rgba(255, 178, 48, 0.95)';
-        context.shadowBlur = 18;
-        context.stroke();
-        context.beginPath();
-        context.arc(0, 0, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
-        context.strokeStyle = 'rgba(255, 250, 220, 0.96)';
-        context.lineWidth = 3;
-        context.stroke();
-        for (let spark = 0; spark < 4; spark += 1) {
-          const angle = spark * Math.PI / 2;
+        if (attractionPointer) {
+          const breath = 1 + Math.sin(timestamp * 0.006) * 0.1;
+          context.rotate(timestamp * 0.0007);
+          for (let ray = 0; ray < 12; ray += 1) {
+            const angle = ray / 12 * Math.PI * 2;
+            const inner = ray % 2 === 0 ? 5 : 8;
+            const outer = (ray % 3 === 0 ? 25 : 17) * breath;
+            context.beginPath();
+            context.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+            context.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+            context.strokeStyle = `rgba(255, ${ray % 2 ? 198 : 239}, ${ray % 2 ? 84 : 174}, ${ray % 3 === 0 ? 0.9 : 0.56})`;
+            context.lineWidth = ray % 3 === 0 ? 1.8 : 0.8;
+            context.shadowColor = 'rgba(255, 182, 48, 0.98)';
+            context.shadowBlur = 13;
+            context.stroke();
+          }
+          context.rotate(-timestamp * 0.0018);
           context.beginPath();
-          context.arc(Math.cos(angle) * 22, Math.sin(angle) * 22, 1.3, 0, Math.PI * 2);
-          context.fillStyle = 'rgba(255, 213, 91, 0.86)';
+          context.arc(0, 0, 13 * breath, 0, Math.PI * 2);
+          context.strokeStyle = 'rgba(255, 222, 119, 0.42)';
+          context.lineWidth = 1;
+          context.stroke();
+          for (let spark = 0; spark < 4; spark += 1) {
+            const angle = spark * Math.PI * 0.5 + timestamp * 0.0012;
+            const orbit = 19 + (spark % 2) * 5;
+            context.beginPath();
+            context.arc(Math.cos(angle) * orbit, Math.sin(angle) * orbit, spark === 1 ? 1.8 : 1, 0, Math.PI * 2);
+            context.fillStyle = `rgba(255, 231, 146, ${0.55 + Math.sin(timestamp * 0.01 + spark) * 0.3})`;
+            context.fill();
+          }
+          context.beginPath();
+          context.arc(0, 0, 4.2, 0, Math.PI * 2);
+          context.fillStyle = 'rgba(255, 255, 242, 0.98)';
+          context.shadowColor = 'rgba(255, 203, 83, 1)';
+          context.shadowBlur = 22;
           context.fill();
+        } else {
+          context.rotate(timestamp * 0.0013);
+          context.beginPath();
+          context.arc(0, 0, 12, 0, Math.PI * 2);
+          context.strokeStyle = 'rgba(255, 229, 139, 0.86)';
+          context.lineWidth = 1.4;
+          context.shadowColor = 'rgba(255, 178, 48, 0.95)';
+          context.shadowBlur = 18;
+          context.stroke();
+          context.beginPath();
+          context.arc(0, 0, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+          context.strokeStyle = 'rgba(255, 250, 220, 0.96)';
+          context.lineWidth = 3;
+          context.stroke();
+          for (let spark = 0; spark < 4; spark += 1) {
+            const angle = spark * Math.PI / 2;
+            context.beginPath();
+            context.arc(Math.cos(angle) * 22, Math.sin(angle) * 22, 1.3, 0, Math.PI * 2);
+            context.fillStyle = 'rgba(255, 213, 91, 0.86)';
+            context.fill();
+          }
         }
         context.restore();
       }
