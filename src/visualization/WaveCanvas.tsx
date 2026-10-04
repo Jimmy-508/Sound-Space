@@ -26,6 +26,7 @@ interface WaveCanvasProps {
   musicPlaying?: boolean;
   creatureScale?: number;
   repulsors?: Repulsor[];
+  repulsorsRef?: RefObject<Repulsor[]>;
   gestureForcesRef?: RefObject<SpiritGestureForces>;
   homeSoundEnvelope?: Float32Array | null;
   homeSoundStartedAt?: number;
@@ -82,6 +83,7 @@ export function WaveCanvas({
   musicPlaying = false,
   creatureScale = 1,
   repulsors = [],
+  repulsorsRef,
   gestureForcesRef,
   homeSoundEnvelope = null,
   homeSoundStartedAt = 0,
@@ -112,6 +114,7 @@ export function WaveCanvas({
     musicPlaying,
     creatureScale,
     repulsors,
+    repulsorsRef,
     gestureForcesRef,
     homeSoundEnvelope,
     homeSoundStartedAt,
@@ -142,6 +145,7 @@ export function WaveCanvas({
     musicPlaying,
     creatureScale,
     repulsors,
+    repulsorsRef,
     gestureForcesRef,
     homeSoundEnvelope,
     homeSoundStartedAt,
@@ -763,7 +767,7 @@ export function WaveCanvas({
       let repulsorAwayX = 0;
       let repulsorAwayY = 0;
       let curiousTarget = 0;
-      const activeRepulsors = interactionDebugOff ? noRepulsors : current.repulsors ?? noRepulsors;
+      const activeRepulsors = interactionDebugOff ? noRepulsors : current.repulsorsRef?.current ?? current.repulsors ?? noRepulsors;
       const gestureForces = interactionDebugOff ? undefined : current.gestureForcesRef?.current;
       const gestureRepulsor = gestureForces?.displacement?.active ? gestureForces.displacement : undefined;
       const repulsorCount = activeRepulsors.length + (gestureRepulsor ? 1 : 0);

@@ -6,9 +6,12 @@ import { mapWaveAmplitude } from '../src/gesture/gestureMappings';
 import { createCompactHandRenderPoints } from '../src/gesture/gestureRenderModel';
 import { GestureInteractionController, gestureThresholds } from '../src/gesture/interactionController';
 import { clampNavigationScroll, getNavigationEdgeMotion, mapPageScrollDelta } from '../src/gesture/navigationGesture';
-import { GestureFrameStore, type GesturePoint, type TrackedHand } from '../src/gesture/types';
+import { GestureFrameStore, type TrackedHand } from '../src/gesture/types';
 import { computeAttractionSteering, computeWavefrontInfluence } from '../src/visualization/repulsor';
 import { WorldInteractionController } from '../src/interaction/worldInteraction';
+import { AdaptiveEmissionBudget } from '../src/interaction/adaptiveEmissionBudget';
+import { TapSequenceArbiter, movementTolerance, updatePointerIntent, type PointerIntent } from '../src/interaction/pointerArbitration';
+import { defaultAppSettings, loadAppSettings, saveAppSettings } from '../src/settings/appSettings';
 
 const landmarks = Array.from({ length: 21 }, (_, index) => ({
   x: 0.32 + index % 5 * 0.035,
@@ -110,16 +113,10 @@ const pointerState = pointerController.update({ hands: [pointingHand], twoHandsP
 assert.deepEqual(pointerState.pointer?.point, pointingHand.landmarks[8], 'Attraction and dwell must share landmark #8.');
 const landmarkSnapshot = structuredClone(pointingHand.landmarks);
 const compactPoints = createCompactHandRenderPoints(pointingHand.landmarks);
-assert.deepEqual(pointingHand.landmarks, landmarkSnapshot, 'Visual compaction must never mutate recognition landmarks.');
-const span = (points: readonly GesturePoint[]) => Math.max(...points.map((point) => point.x)) - Math.min(...points.map((point) => point.x));
-const withoutIndexTip = (points: readonly GesturePoint[]) => points.filter((_, index) => ![6, 7, 8].includes(index));
-assert.ok(span(withoutIndexTip(compactPoints)) < span(withoutIndexTip(pointingHand.landmarks)) * 0.9, 'Rendered hand should stay compact outside the compensated index tip.');
+assert.deepEqual(pointingHand.landmarks, landmarkSnapshot, 'Rendering must never mutate recognition landmarks.');
+assert.deepEqual(compactPoints, pointingHand.landmarks, 'Golden Hand must render all 21 landmarks at their real positions.');
 assert.deepEqual(pointerState.pointer?.point, { x: 0.73, y: 0.26, z: 0 }, 'The star cursor stays on the true index fingertip.');
-assert.deepEqual(compactPoints[8], pointingHand.landmarks[8], 'Compact index rendering must converge on true landmark #8.');
-const mobilePoints = createCompactHandRenderPoints(pointingHand.landmarks, 0.7);
-assert.deepEqual(mobilePoints[8], pointingHand.landmarks[8], 'Mobile visual scale must not move the interaction fingertip.');
-const palmDistance = (points: readonly GesturePoint[], index: number) => Math.hypot(points[index].x - points[9].x, points[index].y - points[9].y);
-assert.ok(palmDistance(mobilePoints, 20) < palmDistance(compactPoints, 20) * 0.75, 'Non-index mobile skeleton must use the 70% visual treatment.');
+assert.deepEqual(compactPoints[8], pointingHand.landmarks[8]);
 
 const gestureHand = (gesture: TrackedHand['gesture'], timestamp: number): TrackedHand => ({
   id: 7,
@@ -167,6 +164,65 @@ world.clear('mouse');
 assert.equal(world.readAttraction()?.source, 'gesture', 'Releasing mouse attraction should fall back to gesture.');
 assert.deepEqual(worldEvents, ['pulse:gesture', 'pulse:touch']);
 
+const scheduledFrames: FrameRequestCallback[] = [];
+const coalescedWorld = new WorldInteractionController((callback) => {
+  scheduledFrames.push(callback);
+  return scheduledFrames.length;
+});
+const disturbances: Array<Extract<import('../src/interaction/worldInteraction').WorldInteractionEvent, { type: 'disturbance' }>> = [];
+coalescedWorld.subscribe((event) => { if (event.type === 'disturbance') disturbances.push(event); });
+for (let index = 0; index < 40; index += 1) {
+  coalescedWorld.disturb({
+    type: 'disturbance', source: 'touch', geometry: 'pointer', producerId: 4,
+    previousPoint: { x: index / 100, y: 0.4, z: 0 }, point: { x: (index + 1) / 100, y: 0.4, z: 0 },
+    velocityX: 1, velocityY: 0, speed: 1, turnIntensity: 0, timestamp: index,
+  });
+}
+assert.equal(scheduledFrames.length, 1, 'A pointer event burst schedules only one RAF consumer.');
+scheduledFrames.shift()?.(16);
+assert.equal(disturbances.length, 1, 'A pointer contributes at most one disturbance per frame.');
+assert.equal(disturbances[0].previousPoint.x, 0, 'Coalescing preserves the start of the path segment.');
+assert.equal(disturbances[0].point.x, 0.4, 'Coalescing consumes the latest point.');
+coalescedWorld.setDisturbanceEnabled(false);
+coalescedWorld.disturb({
+  type: 'disturbance', source: 'mouse', geometry: 'pointer', point: landmarks[1], previousPoint: landmarks[0],
+  velocityX: 1, velocityY: 0, speed: 1, turnIntensity: 0, timestamp: 100,
+});
+assert.equal(coalescedWorld.getPerformanceSnapshot().pendingEvents, 0, 'Blue Tears OFF avoids pending work entirely.');
+
+const budget = new AdaptiveEmissionBudget();
+const healthyFactor = budget.update(16);
+for (let index = 0; index < 20; index += 1) budget.update(42);
+const constrainedFactor = budget.read();
+assert.ok(constrainedFactor < healthyFactor && constrainedFactor >= 0.45, 'Slow frames gradually reduce only the birth budget.');
+for (let index = 0; index < 80; index += 1) budget.update(16);
+assert.ok(budget.read() > constrainedFactor && budget.read() <= 1, 'Healthy frames gradually recover the birth budget.');
+
+assert.equal(movementTolerance('mouse'), 9);
+assert.equal(movementTolerance('touch'), 22);
+const touchIntent: PointerIntent = { source: 'touch', state: 'pending', startX: 0, startY: 0, x: 0, y: 0, worldX: 0, worldY: 0, startedAt: 0 };
+assert.equal(updatePointerIntent(touchIntent, 20, 0), 'pending', 'Touch jitter remains pending.');
+assert.equal(updatePointerIntent(touchIntent, 23, 0), 'drag', 'Touch movement beyond 22px becomes drag.');
+const attractionIntent: PointerIntent = { ...touchIntent, state: 'attraction', x: 0, y: 0 };
+assert.equal(updatePointerIntent(attractionIntent, 30, 0), 'attraction');
+assert.equal(updatePointerIntent(attractionIntent, 37, 0), 'drag', 'A larger move cancels touch attraction.');
+
+const taps = new TapSequenceArbiter();
+assert.equal(taps.tap('touch', 10, 10, 0), 'single');
+assert.equal(taps.tap('touch', 11, 10, 100), 'double-pending');
+assert.equal(taps.consumeDue('touch', 321), undefined, 'Double tap waits for the third-tap grace period.');
+assert.deepEqual(taps.consumeDue('touch', 441), { x: 11, y: 10 });
+assert.equal(taps.tap('mouse', 20, 20, 1000), 'single');
+assert.equal(taps.tap('mouse', 20, 20, 1100), 'double-pending');
+assert.equal(taps.tap('mouse', 20, 20, 1200), 'triple');
+assert.equal(taps.consumeDue('mouse', 2000), undefined, 'Triple click must suppress the pending pulse.');
+
+const memory = new Map<string, string>();
+const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); } };
+assert.deepEqual(loadAppSettings(storage), defaultAppSettings, 'Blue Tears defaults ON.');
+saveAppSettings({ sfxEnabled: false, blueTearsEnabled: false }, storage);
+assert.deepEqual(loadAppSettings(storage), { sfxEnabled: false, blueTearsEnabled: false }, 'Settings share one persistent record.');
+
 const rangeSource = readFileSync('src/components/RangeControl.tsx', 'utf8');
 const stylesSource = readFileSync('src/styles.css', 'utf8');
 const appSource = readFileSync('src/App.tsx', 'utf8');
@@ -177,6 +233,7 @@ const samplingSource = readFileSync('src/labs/SamplingLab.tsx', 'utf8');
 const renderModelSource = readFileSync('src/gesture/gestureRenderModel.ts', 'utf8');
 const starRendererSource = readFileSync('src/interaction/twinklingStarRenderer.ts', 'utf8');
 const musicSource = readFileSync('src/labs/MusicLab.tsx', 'utf8');
+const settingsSource = readFileSync('src/components/SettingsPanel.tsx', 'utf8');
 assert.ok(!rangeSource.includes('已選取'));
 assert.ok(!rangeSource.includes('gesture-control-marker'));
 assert.ok(!stylesSource.includes('gesture-control-marker'));
@@ -195,6 +252,9 @@ assert.ok(overlaySource.includes('createCompactHandRenderPoints'));
 assert.ok(overlaySource.includes('drawTwinklingStarCursor'));
 assert.ok(starRendererSource.includes('successPulse'));
 assert.ok(starRendererSource.includes('dustCount'));
+assert.ok(starRendererSource.includes('context.scale(scale, scale)'));
+assert.ok(effectsSource.includes('blueTears.length = 0') && effectsSource.includes('waterRipples.length = 0'), 'Blue Tears OFF clears both visual pools.');
+assert.ok(effectsSource.includes('if (blueTearsEnabledRef.current)'));
 assert.ok(!overlaySource.includes('palmCore'), 'Palm center calculation remains internal and must not render a decorative dot.');
 assert.ok(renderModelSource.includes('getHandPalmCenter'));
 assert.ok(stylesSource.includes('pointer-events: none'));
@@ -205,9 +265,14 @@ assert.ok(appSource.includes("target.dataset.gestureSelected !== 'true'"));
 assert.ok(appSource.includes("interactionSound.play('select')"), 'New capture transitions must play the cached select SFX.');
 assert.ok(appSource.includes("'soundspace:file-picker-ready'"));
 assert.ok(musicSource.includes('請輕觸以選擇音樂'));
-assert.ok(musicSource.includes("worldInteraction.pulse('mouse'"));
-assert.ok(musicSource.includes("worldInteraction.pulse('touch'"));
+assert.ok(musicSource.includes('TapSequenceArbiter'));
+assert.ok(musicSource.includes('resetCreatureScale'));
+assert.ok(musicSource.includes("state: 'pending'"));
+assert.ok(musicSource.includes("state = 'attraction'"));
 assert.ok(musicSource.includes('worldInteractionThresholds.holdMs'));
+assert.ok(settingsSource.includes('藍眼淚效果'));
+assert.ok(appSource.includes("worldInteractionRef.current?.pulse('touch'"), 'Home touch double-tap remains immediate.');
+assert.ok(appSource.includes("worldInteractionRef.current?.pulse('mouse'"), 'Home mouse double-click remains immediate.');
 
 let starts = 0;
 class FakeAudioContext {
@@ -258,4 +323,4 @@ globalThis.fetch = originalFetch;
 globalThis.window = originalWindow;
 globalThis.document = originalDocument;
 
-console.log('Unified world interaction verification passed: aligned compact hands, guarded gesture pulse, shared pointer water, cross-input cooldown, attraction ownership, file readiness, and cached SFX.');
+console.log('Performance and arbitration verification passed: coalesced input, adaptive effects, real landmarks, persisted settings, touch intent, click sequencing, and cached SFX.');

@@ -1,19 +1,23 @@
-import { Camera, Hand, Volume2, VolumeX } from 'lucide-react';
+import { Camera, Hand, Sparkles, Volume2, VolumeX } from 'lucide-react';
 
 interface SettingsPanelProps {
   gestureEnabled: boolean;
   gestureStatus: 'idle' | 'starting' | 'ready' | 'error';
   sfxEnabled: boolean;
+  blueTearsEnabled: boolean;
   onGestureChange: (enabled: boolean) => void;
   onSfxChange: (enabled: boolean) => void;
+  onBlueTearsChange: (enabled: boolean) => void;
 }
 
 export function SettingsPanel({
   gestureEnabled,
   gestureStatus,
   sfxEnabled,
+  blueTearsEnabled,
   onGestureChange,
   onSfxChange,
+  onBlueTearsChange,
 }: SettingsPanelProps) {
   return (
     <section className="settings-page" aria-labelledby="settings-heading">
@@ -50,6 +54,21 @@ export function SettingsPanel({
             onClick={() => onSfxChange(!sfxEnabled)}
           >
             {sfxEnabled ? '開啟' : '關閉'}
+          </button>
+        </div>
+        <div className="settings-row">
+          <span className="settings-row-icon" aria-hidden="true"><Sparkles size={22} /></span>
+          <span className="settings-copy">
+            <strong>藍眼淚效果</strong>
+            <small>控制移動軌跡粒子，不影響脈衝與聲音精靈互動</small>
+          </span>
+          <button
+            type="button"
+            className="settings-switch"
+            aria-pressed={blueTearsEnabled}
+            onClick={() => onBlueTearsChange(!blueTearsEnabled)}
+          >
+            {blueTearsEnabled ? '開啟' : '關閉'}
           </button>
         </div>
       </div>

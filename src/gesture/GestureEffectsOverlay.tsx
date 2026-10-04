@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { gesturePointToViewport } from './coordinateTransform';
 import { clampEffectCount, createBlueTearSeeds, createPointerTearSeeds, createWavefrontTearSeeds, gestureEffectLimits } from './gestureEffectsModel';
 import type { WorldInteractionController, WorldInteractionEvent } from '../interaction/worldInteraction';
+import { AdaptiveEmissionBudget } from '../interaction/adaptiveEmissionBudget';
 
 interface Particle {
   x: number;
@@ -41,12 +42,15 @@ interface WaterRipple {
 interface Props {
   controller: WorldInteractionController;
   scene: 'home' | 'wave' | 'sampling' | 'music' | 'settings';
+  blueTearsEnabled: boolean;
 }
 
-export function GestureEffectsOverlay({ controller, scene }: Props) {
+export function GestureEffectsOverlay({ controller, scene, blueTearsEnabled }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
+  const blueTearsEnabledRef = useRef(blueTearsEnabled);
+  blueTearsEnabledRef.current = blueTearsEnabled;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -55,10 +59,15 @@ export function GestureEffectsOverlay({ controller, scene }: Props) {
     let width = 1;
     let height = 1;
     let frame = 0;
+    let running = false;
     let lastDraw = performance.now();
     const blueTears: Particle[] = [];
     const explosionBursts: ExplosionBurst[] = [];
     const waterRipples: WaterRipple[] = [];
+    const emissionBudget = new AdaptiveEmissionBudget();
+    let effectsEnabledLastFrame = blueTearsEnabledRef.current;
+    let musicStageRect: DOMRect | null = null;
+    let musicStageRectMeasuredAt = -Infinity;
 
     const clearEffects = () => {
       blueTears.length = 0;
@@ -76,13 +85,19 @@ export function GestureEffectsOverlay({ controller, scene }: Props) {
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      musicStageRect = null;
     };
+    const invalidateMusicStageRect = () => { musicStageRect = null; };
 
     const insideMusicStage = (x: number, y: number) => {
-      const stage = document.querySelector<HTMLElement>('.music-stage[data-gesture-zone="spirit"]');
-      if (!stage) return false;
-      const rect = stage.getBoundingClientRect();
-      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      const now = performance.now();
+      if (!musicStageRect || now - musicStageRectMeasuredAt > 500) {
+        musicStageRect = document.querySelector<HTMLElement>('.music-stage[data-gesture-zone="spirit"]')?.getBoundingClientRect() ?? null;
+        musicStageRectMeasuredAt = now;
+      }
+      return Boolean(musicStageRect
+        && x >= musicStageRect.left && x <= musicStageRect.right
+        && y >= musicStageRect.top && y <= musicStageRect.bottom);
     };
 
     const isAllowed = (event: WorldInteractionEvent) => {
@@ -92,12 +107,22 @@ export function GestureEffectsOverlay({ controller, scene }: Props) {
       return insideMusicStage(point.x, point.y);
     };
 
+    function startLoop() {
+      if (running) return;
+      running = true;
+      lastDraw = performance.now();
+      frame = requestAnimationFrame(draw);
+    }
+
     const unsubscribe = controller.subscribe((event) => {
       if (!isAllowed(event)) return;
       const point = gesturePointToViewport(event.point, width, height);
       if (event.type === 'disturbance') {
+        if (!blueTearsEnabledRef.current) return;
         const seeds = event.geometry === 'hand' ? createBlueTearSeeds(event) : createPointerTearSeeds(event);
-        for (const seed of seeds) {
+        const emissionCount = emissionBudget.count(seeds.length);
+        for (let seedIndex = 0; seedIndex < emissionCount; seedIndex += 1) {
+          const seed = seeds[Math.floor(seedIndex * seeds.length / Math.max(1, emissionCount))];
           blueTears.push({
             x: seed.x * width,
             y: seed.y * height,
@@ -129,6 +154,7 @@ export function GestureEffectsOverlay({ controller, scene }: Props) {
         }
         clampEffectCount(blueTears, gestureEffectLimits.blueTears);
         clampEffectCount(waterRipples, gestureEffectLimits.waterRipples);
+        startLoop();
         return;
       }
 
@@ -142,6 +168,7 @@ export function GestureEffectsOverlay({ controller, scene }: Props) {
         emitted: 0,
       });
       clampEffectCount(explosionBursts, gestureEffectLimits.explosionBursts);
+      startLoop();
     });
 
     const drawParticles = (items: Particle[], now: number, delta: number) => {
@@ -250,7 +277,7 @@ export function GestureEffectsOverlay({ controller, scene }: Props) {
       }
       for (let ring = 0; ring < 4; ring += 1) drawPressureRing(burst, progress, ring, maximumRadius);
 
-      if (now >= burst.nextEmission && burst.emitted < gestureEffectLimits.wavefrontSpecksPerBurst) {
+      if (blueTearsEnabledRef.current && now >= burst.nextEmission && burst.emitted < gestureEffectLimits.wavefrontSpecksPerBurst) {
         const leadingRadius = 12 + Math.min(1, progress * 1.18) * maximumRadius;
         const remaining = gestureEffectLimits.wavefrontSpecksPerBurst - burst.emitted;
         const seeds = createWavefrontTearSeeds(burst.x, burst.y, leadingRadius, Math.min(6, remaining));
@@ -276,32 +303,57 @@ export function GestureEffectsOverlay({ controller, scene }: Props) {
       return true;
     };
 
-    const draw = (now: number) => {
-      frame = requestAnimationFrame(draw);
-      const delta = Math.min(0.032, Math.max(0, (now - lastDraw) / 1000));
+    function draw(now: number) {
+      const drawContext = context!;
+      const frameTime = Math.max(0, now - lastDraw);
+      const delta = Math.min(0.032, frameTime / 1000);
       lastDraw = now;
-      context.clearRect(0, 0, width, height);
-      context.save();
-      context.globalCompositeOperation = 'lighter';
-      drawParticles(blueTears, now, delta);
-      for (let index = waterRipples.length - 1; index >= 0; index -= 1) {
-        if (!drawRipplePath(waterRipples[index], now)) waterRipples.splice(index, 1);
+      emissionBudget.update(frameTime);
+      if (effectsEnabledLastFrame && !blueTearsEnabledRef.current) {
+        blueTears.length = 0;
+        waterRipples.length = 0;
+      }
+      effectsEnabledLastFrame = blueTearsEnabledRef.current;
+      drawContext.clearRect(0, 0, width, height);
+      drawContext.save();
+      drawContext.globalCompositeOperation = 'lighter';
+      if (blueTearsEnabledRef.current) {
+        drawParticles(blueTears, now, delta);
+        for (let index = waterRipples.length - 1; index >= 0; index -= 1) {
+          if (!drawRipplePath(waterRipples[index], now)) waterRipples.splice(index, 1);
+        }
       }
       for (let index = explosionBursts.length - 1; index >= 0; index -= 1) {
         if (!drawExplosion(explosionBursts[index], now)) explosionBursts.splice(index, 1);
       }
-      context.restore();
-    };
+      drawContext.restore();
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        (window as typeof window & { __soundSpaceInteractionStats?: unknown }).__soundSpaceInteractionStats = {
+          frameTimeMs: frameTime,
+          blueTears: blueTears.length,
+          waterRipples: waterRipples.length,
+          explosionBursts: explosionBursts.length,
+          adaptiveEmissionFactor: emissionBudget.read(),
+          ...controller.getPerformanceSnapshot(),
+        };
+      }
+      if (explosionBursts.length || (blueTearsEnabledRef.current && (blueTears.length || waterRipples.length))) {
+        frame = requestAnimationFrame(draw);
+      } else {
+        running = false;
+      }
+    }
 
     resize();
     window.addEventListener('resize', resize);
+    window.addEventListener('scroll', invalidateMusicStageRect, { passive: true });
     window.visualViewport?.addEventListener('resize', resize);
-    frame = requestAnimationFrame(draw);
     return () => {
       unsubscribe();
       cancelAnimationFrame(frame);
       clearEffects();
       window.removeEventListener('resize', resize);
+      window.removeEventListener('scroll', invalidateMusicStageRect);
       window.visualViewport?.removeEventListener('resize', resize);
     };
   }, [controller]);

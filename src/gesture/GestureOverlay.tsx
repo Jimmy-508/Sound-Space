@@ -52,8 +52,7 @@ export function GestureOverlay({ store, interaction, world }: GestureOverlayProp
       for (const hand of snapshot.hands) {
         const opacity = Math.min(1, Math.max(0, hand.confidence * hand.lostOpacity));
         if (opacity <= 0.01 || hand.landmarks.length !== 21) continue;
-        const mobileVisualScale = Math.min(width, height) <= 520 ? 0.7 : 1;
-        const renderLandmarks = createCompactHandRenderPoints(hand.landmarks, mobileVisualScale);
+        const renderLandmarks = createCompactHandRenderPoints(hand.landmarks);
         const points = renderLandmarks.map((point) => gesturePointToViewport(point, width, height));
 
         context.save();
@@ -145,7 +144,11 @@ export function GestureOverlay({ store, interaction, world }: GestureOverlayProp
       const worldAttraction = world.readAttraction();
       if (worldAttraction && worldAttraction.source !== 'gesture') {
         const point = gesturePointToViewport(worldAttraction.point, width, height);
-        drawTwinklingStarCursor(context, point.x, point.y, { timestamp, enhanced: true });
+        drawTwinklingStarCursor(context, point.x, point.y, {
+          timestamp,
+          enhanced: true,
+          scale: worldAttraction.source === 'touch' ? 3.5 : 1,
+        });
       }
       frame = requestAnimationFrame(draw);
     };

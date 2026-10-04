@@ -100,10 +100,12 @@ controller.reset();
 controller.subscribe((event) => events.push(event));
 controller.update(frame([makeHand(1, 'openPalm', 0.5)], 16), 0, true);
 assert.equal(events.length, 0);
-controller.update(frame([makeHand(1, 'fist', 0.5)], 17), 100, true);
-controller.update(frame([makeHand(1, 'openPalm', 0.5)], 18), 300, true);
+controller.update(frame([makeHand(1, 'openPalm', 0.5)], 17), 230, true);
+controller.update(frame([makeHand(1, 'fist', 0.5)], 18), 300, true);
+controller.update(frame([makeHand(1, 'fist', 0.5)], 19), 430, true);
+controller.update(frame([makeHand(1, 'openPalm', 0.5)], 20), 500, true);
 assert.equal(events.filter((event) => event.type === 'explosion').length, 1);
-controller.update(frame([makeHand(1, 'openPalm', 0.62)], 19), 380, true);
+controller.update(frame([makeHand(1, 'openPalm', 0.62)], 21), 580, true);
 assert.equal(events.filter((event) => event.type === 'explosion').length, 1);
 assert.equal(events.filter((event) => event.type === 'sweep').length, 0, 'Explosion cooldown suppresses immediate Blue Tears.');
 

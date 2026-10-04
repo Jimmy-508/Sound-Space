@@ -4,6 +4,7 @@ export interface TwinklingStarOptions {
   dwellProgress?: number;
   successPulse?: number;
   enhanced?: boolean;
+  scale?: number;
 }
 
 export function drawTwinklingStarCursor(
@@ -12,10 +13,11 @@ export function drawTwinklingStarCursor(
   y: number,
   options: TwinklingStarOptions,
 ) {
-  const { timestamp, dwellActive = false, dwellProgress = 0, successPulse = 0, enhanced = false } = options;
+  const { timestamp, dwellActive = false, dwellProgress = 0, successPulse = 0, enhanced = false, scale = 1 } = options;
   context.save();
   context.globalCompositeOperation = 'lighter';
   context.translate(x, y);
+  context.scale(scale, scale);
   const breath = 1 + Math.sin(timestamp * 0.0053) * 0.11;
   const stateBoost = enhanced ? 1.24 : dwellActive ? 1.1 : 1;
   const flashBoost = 1 + successPulse * 0.75;

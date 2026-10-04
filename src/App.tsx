@@ -18,6 +18,7 @@ import { WaveLab } from './labs/WaveLab';
 import { createVisualSeed, initialMusicSession, type MusicSessionState } from './music/musicSession';
 import { useMusicAudioController } from './music/useMusicAudioController';
 import type { LabId, PointerPoint } from './types';
+import { loadAppSettings, saveAppSettings } from './settings/appSettings';
 import { StarfieldBackground } from './visualization/StarfieldBackground';
 import { VisualImpulseLayer, type VisualImpulseHandle } from './visualization/VisualImpulseLayer';
 import { WaveCanvas } from './visualization/WaveCanvas';
@@ -61,7 +62,9 @@ export default function App() {
   const [gestureEnabled, setGestureEnabled] = useState(Boolean(localGesturePreview));
   const [gestureStatus, setGestureStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>(localGesturePreview ? 'ready' : 'idle');
   const [gestureError, setGestureError] = useState('');
-  const [sfxEnabled, setSfxEnabled] = useState(true);
+  const initialSettingsRef = useRef(loadAppSettings());
+  const [sfxEnabled, setSfxEnabled] = useState(initialSettingsRef.current.sfxEnabled);
+  const [blueTearsEnabled, setBlueTearsEnabled] = useState(initialSettingsRef.current.blueTearsEnabled);
   const spiritInteractionRef = useRef(createSoundSpiritInteractionRecorder());
   const musicUrlRef = useRef<string | null>(null);
   const visualImpulseRef = useRef<VisualImpulseHandle | null>(null);
@@ -78,6 +81,8 @@ export default function App() {
   const homePointersRef = useRef(new Map<number, { x: number; y: number; time: number; startX: number; startY: number; startTime: number; velocityX: number; velocityY: number }>());
   const homeLastTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const homeClickTimerRef = useRef(0);
+  const homePointerFrameRef = useRef(0);
+  const pendingHomePointerRef = useRef<PointerPoint | null>(null);
   const activeViewRef = useRef(activeView);
   activeViewRef.current = activeView;
 
@@ -116,6 +121,7 @@ export default function App() {
   useEffect(() => () => {
     if (musicUrlRef.current) URL.revokeObjectURL(musicUrlRef.current);
     window.clearTimeout(homeClickTimerRef.current);
+    cancelAnimationFrame(homePointerFrameRef.current);
   }, []);
 
   useEffect(() => {
@@ -132,6 +138,10 @@ export default function App() {
   useEffect(() => {
     interactionSound.setEnabled(sfxEnabled);
   }, [sfxEnabled]);
+
+  useEffect(() => {
+    saveAppSettings({ sfxEnabled, blueTearsEnabled });
+  }, [sfxEnabled, blueTearsEnabled]);
 
   useEffect(() => {
     const controller = gestureInteractionRef.current!;
@@ -155,7 +165,7 @@ export default function App() {
       if (event.type === 'explosion') {
         world.pulse('gesture', event.point, event.timestamp);
       } else {
-        world.disturb({ ...event, type: 'disturbance', source: 'gesture', geometry: 'hand', previousPoint: event.previousLandmarks[9] ?? event.point });
+        world.disturb({ ...event, type: 'disturbance', source: 'gesture', geometry: 'hand', previousPoint: event.previousLandmarks[9] ?? event.point, producerId: event.handId });
       }
     });
     return unsubscribe;
@@ -367,6 +377,7 @@ export default function App() {
         speed,
         turnIntensity,
         timestamp: now,
+        producerId: event.pointerId,
       });
       previous.velocityX = velocityX;
       previous.velocityY = velocityY;
@@ -384,7 +395,7 @@ export default function App() {
     if (event.pointerType !== 'touch' || !tracked) return;
     const now = performance.now();
     const moved = Math.hypot(event.clientX - tracked.startX, event.clientY - tracked.startY);
-    if (moved > worldInteractionThresholds.holdMovementPx || now - tracked.startTime > worldInteractionThresholds.tapDurationMs) return;
+    if (moved > worldInteractionThresholds.touchHoldMovementPx || now - tracked.startTime > worldInteractionThresholds.tapDurationMs) return;
     const previous = homeLastTapRef.current;
     if (previous && now - previous.time <= worldInteractionThresholds.doubleTapMs && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= worldInteractionThresholds.doubleTapDistancePx) {
       worldInteractionRef.current?.pulse('touch', worldPoint(event.clientX, event.clientY), now);
@@ -416,7 +427,7 @@ export default function App() {
       />
       <video ref={gestureVideoRef} className="gesture-camera-sensor" muted playsInline aria-hidden="true" />
       <StarfieldBackground />
-      <GestureEffectsOverlay controller={worldInteractionRef.current} scene={activeView} />
+      <GestureEffectsOverlay controller={worldInteractionRef.current} scene={activeView} blueTearsEnabled={blueTearsEnabled} />
       <GestureOverlay store={gestureStoreRef.current} interaction={gestureInteractionRef.current} world={worldInteractionRef.current} />
       <nav ref={navigationRef} className="top-nav" aria-label="主要導覽">
         <div className="top-nav-track">
@@ -445,7 +456,13 @@ export default function App() {
           onPointerMove={(event) => {
             const command = createPointerCommand(event, event.currentTarget);
             if (command.type === 'POINTER_MOVE') {
-              setPointer({ x: command.x, y: command.y });
+              pendingHomePointerRef.current = { x: command.x, y: command.y };
+              if (!homePointerFrameRef.current) {
+                homePointerFrameRef.current = requestAnimationFrame(() => {
+                  homePointerFrameRef.current = 0;
+                  if (pendingHomePointerRef.current) setPointer(pendingHomePointerRef.current);
+                });
+              }
             }
             disturbHome(event);
           }}
@@ -500,8 +517,10 @@ export default function App() {
           gestureEnabled={gestureEnabled}
           gestureStatus={gestureStatus}
           sfxEnabled={sfxEnabled}
+          blueTearsEnabled={blueTearsEnabled}
           onGestureChange={setGestureInteraction}
           onSfxChange={setSfxEnabled}
+          onBlueTearsChange={setBlueTearsEnabled}
         />
       )}
 
