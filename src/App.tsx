@@ -65,6 +65,7 @@ export default function App() {
   const initialSettingsRef = useRef(loadAppSettings());
   const [sfxEnabled, setSfxEnabled] = useState(initialSettingsRef.current.sfxEnabled);
   const [blueTearsEnabled, setBlueTearsEnabled] = useState(initialSettingsRef.current.blueTearsEnabled);
+  const [deviceFriendlyEnabled, setDeviceFriendlyEnabled] = useState(initialSettingsRef.current.deviceFriendlyEnabled);
   const spiritInteractionRef = useRef(createSoundSpiritInteractionRecorder());
   const musicUrlRef = useRef<string | null>(null);
   const visualImpulseRef = useRef<VisualImpulseHandle | null>(null);
@@ -142,8 +143,8 @@ export default function App() {
   }, [sfxEnabled]);
 
   useEffect(() => {
-    saveAppSettings({ sfxEnabled, blueTearsEnabled });
-  }, [sfxEnabled, blueTearsEnabled]);
+    saveAppSettings({ sfxEnabled, blueTearsEnabled, deviceFriendlyEnabled });
+  }, [sfxEnabled, blueTearsEnabled, deviceFriendlyEnabled]);
 
   useEffect(() => {
     const controller = gestureInteractionRef.current!;
@@ -504,7 +505,7 @@ export default function App() {
         </section>
       )}
 
-      {activeView === 'wave' && <WaveLab interactionRecorder={spiritInteractionRef.current} gestureController={gestureInteractionRef.current} />}
+      {activeView === 'wave' && <WaveLab interactionRecorder={spiritInteractionRef.current} gestureController={gestureInteractionRef.current} deviceFriendlyEnabled={deviceFriendlyEnabled} />}
       {activeView === 'sampling' && <SamplingLab interactionRecorder={spiritInteractionRef.current} gestureController={gestureInteractionRef.current} />}
       {activeView === 'music' && (
         <MusicLab
@@ -522,9 +523,11 @@ export default function App() {
           gestureStatus={gestureStatus}
           sfxEnabled={sfxEnabled}
           blueTearsEnabled={blueTearsEnabled}
+          deviceFriendlyEnabled={deviceFriendlyEnabled}
           onGestureChange={setGestureInteraction}
           onSfxChange={setSfxEnabled}
           onBlueTearsChange={setBlueTearsEnabled}
+          onDeviceFriendlyChange={setDeviceFriendlyEnabled}
         />
       )}
 

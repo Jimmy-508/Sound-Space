@@ -1,13 +1,15 @@
-import { Camera, Hand, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { Camera, Gauge, Hand, Sparkles, Volume2, VolumeX } from 'lucide-react';
 
 interface SettingsPanelProps {
   gestureEnabled: boolean;
   gestureStatus: 'idle' | 'starting' | 'ready' | 'error';
   sfxEnabled: boolean;
   blueTearsEnabled: boolean;
+  deviceFriendlyEnabled: boolean;
   onGestureChange: (enabled: boolean) => void;
   onSfxChange: (enabled: boolean) => void;
   onBlueTearsChange: (enabled: boolean) => void;
+  onDeviceFriendlyChange: (enabled: boolean) => void;
 }
 
 export function SettingsPanel({
@@ -15,9 +17,11 @@ export function SettingsPanel({
   gestureStatus,
   sfxEnabled,
   blueTearsEnabled,
+  deviceFriendlyEnabled,
   onGestureChange,
   onSfxChange,
   onBlueTearsChange,
+  onDeviceFriendlyChange,
 }: SettingsPanelProps) {
   return (
     <section className="settings-page" aria-labelledby="settings-heading">
@@ -69,6 +73,21 @@ export function SettingsPanel({
             onClick={() => onBlueTearsChange(!blueTearsEnabled)}
           >
             {blueTearsEnabled ? '開啟' : '關閉'}
+          </button>
+        </div>
+        <div className="settings-row">
+          <span className="settings-row-icon" aria-hidden="true"><Gauge size={22} /></span>
+          <span className="settings-copy">
+            <strong>裝置友善</strong>
+            <small>限制聲波實驗室的最高音調，適合教室與多裝置使用。</small>
+          </span>
+          <button
+            type="button"
+            className="settings-switch"
+            aria-pressed={deviceFriendlyEnabled}
+            onClick={() => onDeviceFriendlyChange(!deviceFriendlyEnabled)}
+          >
+            {deviceFriendlyEnabled ? '開啟' : '關閉'}
           </button>
         </div>
       </div>

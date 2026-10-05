@@ -6,9 +6,15 @@ export interface FileSizeWaveTrace {
 export interface FileSizeWaveModel {
   sampleCount: number;
   quantizationLevels: number;
+  channelCount: number;
+  sourceCycles: number;
+  phaseSpeed: number;
   traces: readonly FileSizeWaveTrace[];
   signature: string;
 }
+
+export const FILE_SIZE_WAVE_SOURCE_CYCLES = 3;
+export const FILE_SIZE_WAVE_PHASE_SPEED = 0.11;
 
 const sampleDensityByRate = new Map([
   [8000, 10],
@@ -33,42 +39,78 @@ export function createFileSizeWaveModel(sampleRate: number, bitDepth: number, ch
   const sampleCount = sampleDensityByRate.get(sampleRate) ?? densityFromRate(sampleRate);
   const quantizationLevels = pedagogicalLevelsByDepth.get(bitDepth) ?? levelsFromDepth(bitDepth);
   const traceCount = channels === 1 ? 1 : 2;
-  const traces = Array.from({ length: traceCount }, (_, channel) => createTrace(sampleCount, quantizationLevels, channel, traceCount));
+  const traces = Array.from({ length: traceCount }, (_, channel) => createTrace(sampleCount, quantizationLevels, channel, traceCount, 0));
   return Object.freeze({
     sampleCount,
     quantizationLevels,
+    channelCount: traceCount,
+    sourceCycles: FILE_SIZE_WAVE_SOURCE_CYCLES,
+    phaseSpeed: FILE_SIZE_WAVE_PHASE_SPEED,
     traces: Object.freeze(traces),
     signature: `${sampleRate}:${bitDepth}:${traceCount}`,
   });
 }
 
-function createTrace(sampleCount: number, levels: number, channel: number, channelCount: number): FileSizeWaveTrace {
-  const samples = new Float32Array(sampleCount * 2);
-  const stepPoints = new Float32Array(Math.max(3, (sampleCount - 1) * 2 + 1) * 2);
-  const laneCenter = channelCount === 1 ? 0 : channel === 0 ? 0.34 : -0.34;
-  const amplitude = channelCount === 1 ? 0.5 : 0.24;
+export function getFileSizeWavePhase(elapsedSeconds: number, model: FileSizeWaveModel) {
+  return fract(Math.max(0, elapsedSeconds) * model.phaseSpeed);
+}
+
+export function fillFileSizeWaveTrace(
+  model: FileSizeWaveModel,
+  channel: number,
+  phase: number,
+  stepTarget: Float32Array,
+  sampleTarget: Float32Array,
+  stride = 3,
+) {
+  const sampleCount = model.sampleCount;
+  const channelIndex = Math.min(model.channelCount - 1, Math.max(0, channel));
+  const laneCenter = model.channelCount === 1 ? 0 : channelIndex === 0 ? 0.34 : -0.34;
+  const amplitude = model.channelCount === 1 ? 0.5 : 0.24;
+  const wrappedPhase = fract(phase);
 
   for (let index = 0; index < sampleCount; index += 1) {
     const t = index / Math.max(1, sampleCount - 1);
-    const source = channel === 0
-      ? Math.sin(t * Math.PI * 6)
-      : Math.sin(t * Math.PI * 6 + 0.62) * 0.82 + Math.sin(t * Math.PI * 12 + 0.2) * 0.18;
-    const quantized = quantizeNormalized(source, levels);
-    samples[index * 2] = t * 1.8 - 0.9;
-    samples[index * 2 + 1] = laneCenter + quantized * amplitude;
+    const quantized = quantizeNormalized(sourceWave(t, wrappedPhase, channelIndex, model.sourceCycles), model.quantizationLevels);
+    const target = index * stride;
+    sampleTarget[target] = t * 1.8 - 0.9;
+    sampleTarget[target + 1] = laneCenter + quantized * amplitude;
+    if (stride > 2) sampleTarget[target + 2] = 0;
   }
 
   for (let index = 0; index < sampleCount - 1; index += 1) {
-    const target = index * 4;
-    stepPoints[target] = samples[index * 2];
-    stepPoints[target + 1] = samples[index * 2 + 1];
-    stepPoints[target + 2] = samples[(index + 1) * 2];
-    stepPoints[target + 3] = samples[index * 2 + 1];
+    const target = index * 2 * stride;
+    const sample = index * stride;
+    const nextSample = (index + 1) * stride;
+    stepTarget[target] = sampleTarget[sample];
+    stepTarget[target + 1] = sampleTarget[sample + 1];
+    stepTarget[target + stride] = sampleTarget[nextSample];
+    stepTarget[target + stride + 1] = sampleTarget[sample + 1];
+    if (stride > 2) {
+      stepTarget[target + 2] = 0;
+      stepTarget[target + stride + 2] = 0;
+    }
   }
-  const finalStep = (stepPoints.length / 2 - 1) * 2;
-  stepPoints[finalStep] = samples[(sampleCount - 1) * 2];
-  stepPoints[finalStep + 1] = samples[(sampleCount - 1) * 2 + 1];
+  const finalPoint = (sampleCount - 1) * 2 * stride;
+  const finalSample = (sampleCount - 1) * stride;
+  stepTarget[finalPoint] = sampleTarget[finalSample];
+  stepTarget[finalPoint + 1] = sampleTarget[finalSample + 1];
+  if (stride > 2) stepTarget[finalPoint + 2] = 0;
+}
+
+function createTrace(sampleCount: number, levels: number, channel: number, channelCount: number, phase: number): FileSizeWaveTrace {
+  const samples = new Float32Array(sampleCount * 2);
+  const stepPoints = new Float32Array(Math.max(3, (sampleCount - 1) * 2 + 1) * 2);
+  const model = { sampleCount, quantizationLevels: levels, channelCount, sourceCycles: FILE_SIZE_WAVE_SOURCE_CYCLES } as FileSizeWaveModel;
+  fillFileSizeWaveTrace(model, channel, phase, stepPoints, samples, 2);
   return Object.freeze({ stepPoints, samples });
+}
+
+function sourceWave(t: number, phase: number, channel: number, cycles: number) {
+  const angle = (t + phase) * Math.PI * 2 * cycles;
+  return channel === 0
+    ? Math.sin(angle)
+    : Math.sin(angle + 0.62) * 0.82 + Math.sin(angle * 2 + 0.2) * 0.18;
 }
 
 function quantizeNormalized(value: number, levels: number) {
@@ -83,4 +125,8 @@ function densityFromRate(sampleRate: number) {
 
 function levelsFromDepth(bitDepth: number) {
   return Math.round(6 + Math.max(0, Math.min(1, (bitDepth - 8) / 24)) * 42);
+}
+
+function fract(value: number) {
+  return value - Math.floor(value);
 }

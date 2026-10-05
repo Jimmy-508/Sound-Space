@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { InteractionSoundPlayer } from '../src/audio/interactionSound';
 import { createBlueTearSeeds, createPointerTearSeeds, createWavefrontTearSeeds, clampEffectCount, gestureEffectLimits } from '../src/gesture/gestureEffectsModel';
-import { mapWaveAmplitude } from '../src/gesture/gestureMappings';
+import { mapWaveAmplitude, mapWaveFrequency } from '../src/gesture/gestureMappings';
 import { createCompactHandRenderPoints } from '../src/gesture/gestureRenderModel';
 import { GestureInteractionController, gestureThresholds } from '../src/gesture/interactionController';
 import { clampNavigationScroll, getNavigationEdgeMotion, mapPageScrollDelta } from '../src/gesture/navigationGesture';
@@ -12,7 +12,8 @@ import { WorldInteractionController } from '../src/interaction/worldInteraction'
 import { AdaptiveEmissionBudget } from '../src/interaction/adaptiveEmissionBudget';
 import { TapSequenceArbiter, TouchSessionArbiter, cancelTouchIntentsForPinch, movementTolerance, updatePointerIntent, type PointerIntent } from '../src/interaction/pointerArbitration';
 import { defaultAppSettings, loadAppSettings, saveAppSettings } from '../src/settings/appSettings';
-import { calculatePcmFileSize, createFileSizeWaveModel } from '../src/labs/fileSizeWaveModel';
+import { calculatePcmFileSize, createFileSizeWaveModel, fillFileSizeWaveTrace, getFileSizeWavePhase } from '../src/labs/fileSizeWaveModel';
+import { clampWaveFrequency, DEVICE_FRIENDLY_WAVE_FREQUENCY_MAX, getEffectiveWaveFrequencyMax, waveSliderToFrequency } from '../src/settings/deviceFriendlyAudio';
 
 const landmarks = Array.from({ length: 21 }, (_, index) => ({
   x: 0.32 + index % 5 * 0.035,
@@ -249,6 +250,20 @@ assert.equal(stereoWave.traces.length, 2, 'Stereo must render two traces.');
 assert.notDeepEqual([...stereoWave.traces[0].samples], [...stereoWave.traces[1].samples], 'Stereo traces must be deterministic but visibly distinct.');
 assert.equal(createFileSizeWaveModel(44100, 16, 2).signature, stereoWave.signature, 'Wave representation must be deterministic and independent of duration.');
 assert.equal(calculatePcmFileSize(44100, 16, 2, 120), calculatePcmFileSize(44100, 16, 2, 60) * 2, 'Duration must continue to change file size only.');
+assert.equal(sparseWave.sourceCycles, denseWave.sourceCycles, 'Sample rate must not alter source-wave frequency.');
+assert.equal(sparseWave.phaseSpeed, denseWave.phaseSpeed, 'Sample rate must not alter animation speed.');
+assert.notEqual(getFileSizeWavePhase(0, sparseWave), getFileSizeWavePhase(1, sparseWave), 'File Size animation phase must advance over time.');
+const animatedStepsA = new Float32Array(128 * 3);
+const animatedSamplesA = new Float32Array(64 * 3);
+const animatedStepsB = new Float32Array(128 * 3);
+const animatedSamplesB = new Float32Array(64 * 3);
+fillFileSizeWaveTrace(stereoWave, 0, 0.17, animatedStepsA, animatedSamplesA);
+fillFileSizeWaveTrace(stereoWave, 0, 0.31, animatedStepsB, animatedSamplesB);
+assert.notDeepEqual([...animatedSamplesA], [...animatedSamplesB], 'Changing phase must move the deterministic waveform.');
+fillFileSizeWaveTrace(stereoWave, 0, 0.17, animatedStepsB, animatedSamplesB);
+assert.deepEqual([...animatedSamplesA], [...animatedSamplesB], 'The same model and phase must never randomize samples.');
+fillFileSizeWaveTrace(stereoWave, 1, 0.17, animatedStepsB, animatedSamplesB);
+assert.notDeepEqual([...animatedSamplesA], [...animatedSamplesB], 'Stereo channels must remain visibly distinct while sharing one phase.');
 
 const taps = new TapSequenceArbiter();
 assert.equal(taps.tap('touch', 10, 10, 0), 'single');
@@ -262,9 +277,19 @@ assert.equal(taps.consumeDue('mouse', 2000), undefined, 'Triple click must suppr
 
 const memory = new Map<string, string>();
 const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); } };
-assert.deepEqual(loadAppSettings(storage), defaultAppSettings, 'Blue Tears defaults ON.');
-saveAppSettings({ sfxEnabled: false, blueTearsEnabled: false }, storage);
-assert.deepEqual(loadAppSettings(storage), { sfxEnabled: false, blueTearsEnabled: false }, 'Settings share one persistent record.');
+assert.deepEqual(loadAppSettings(storage), defaultAppSettings, 'Blue Tears and Device Friendly default ON.');
+saveAppSettings({ sfxEnabled: false, blueTearsEnabled: false, deviceFriendlyEnabled: false }, storage);
+assert.deepEqual(loadAppSettings(storage), { sfxEnabled: false, blueTearsEnabled: false, deviceFriendlyEnabled: false }, 'Settings share one persistent record.');
+const settingsKey = [...memory.keys()][0]!;
+memory.set(settingsKey, JSON.stringify({ sfxEnabled: false, blueTearsEnabled: true }));
+assert.equal(loadAppSettings(storage).deviceFriendlyEnabled, true, 'Old stored settings must migrate Device Friendly to ON.');
+saveAppSettings({ sfxEnabled: true, blueTearsEnabled: true, deviceFriendlyEnabled: false }, storage);
+assert.equal(loadAppSettings(storage).deviceFriendlyEnabled, false, 'Device Friendly choice must survive reload.');
+assert.equal(getEffectiveWaveFrequencyMax(true), 1200, 'Device Friendly ON caps Wave Lab at 1200 Hz.');
+assert.equal(getEffectiveWaveFrequencyMax(false), 4000, 'Device Friendly OFF restores the full 4000 Hz range.');
+assert.equal(clampWaveFrequency(3000, DEVICE_FRIENDLY_WAVE_FREQUENCY_MAX), 1200, 'Runtime frequency must clamp immediately.');
+assert.equal(mapWaveFrequency(1190, 'close', 1, DEVICE_FRIENDLY_WAVE_FREQUENCY_MAX), 1200, 'Gesture frequency cannot bypass Device Friendly.');
+assert.equal(waveSliderToFrequency(1000, DEVICE_FRIENDLY_WAVE_FREQUENCY_MAX, 1000), 1200, 'UI frequency cannot bypass Device Friendly.');
 
 const rangeSource = readFileSync('src/components/RangeControl.tsx', 'utf8');
 const stylesSource = readFileSync('src/styles.css', 'utf8');
@@ -277,6 +302,7 @@ const renderModelSource = readFileSync('src/gesture/gestureRenderModel.ts', 'utf
 const starRendererSource = readFileSync('src/interaction/twinklingStarRenderer.ts', 'utf8');
 const musicSource = readFileSync('src/labs/MusicLab.tsx', 'utf8');
 const settingsSource = readFileSync('src/components/SettingsPanel.tsx', 'utf8');
+const waveLabSource = readFileSync('src/labs/WaveLab.tsx', 'utf8');
 const visualImpulseSource = readFileSync('src/visualization/VisualImpulseLayer.tsx', 'utf8');
 assert.ok(!rangeSource.includes('已選取'));
 assert.ok(!rangeSource.includes('gesture-control-marker'));
@@ -319,6 +345,10 @@ assert.ok(musicSource.includes('touchSessionRef.current.isPinchLocked()'), 'Tap 
 assert.ok(samplingSource.includes("mode={tab === 'sample' ? 'sample' : tab === 'quantize' ? 'quantize' : 'size'}"), 'File Size must use the integrated digital waveform mode.');
 assert.ok(samplingSource.includes('createFileSizeWaveModel(sizeSampleRate, bitDepth, channels)'), 'All UI and gesture paths must feed one File Size waveform model.');
 assert.ok(settingsSource.includes('藍眼淚效果'));
+assert.ok(settingsSource.includes('裝置友善'));
+assert.ok(waveLabSource.includes('audio.setFrequency(frequency)'), 'A runtime clamp must reach the active oscillator through Wave Lab state.');
+assert.ok(!samplingSource.includes('DEVICE_FRIENDLY_WAVE_FREQUENCY_MAX'), 'Device Friendly must not alter Sampling Lab rates.');
+assert.ok(!musicSource.includes('DEVICE_FRIENDLY_WAVE_FREQUENCY_MAX'), 'Device Friendly must not alter imported music.');
 assert.ok(stylesSource.includes('.home {') && stylesSource.match(/\.home\s*\{[^}]*touch-action:\s*none/s));
 assert.ok(stylesSource.match(/\.music-stage\[data-gesture-zone="spirit"\]\s*\{[^}]*touch-action:\s*none/s));
 assert.ok(!stylesSource.match(/(?:html|body)[^{]*\{[^}]*touch-action:\s*none/s), 'Touch scroll must not be disabled globally.');

@@ -117,6 +117,7 @@ assert.ok(mapWaveFrequency(440, 'spread', 0.01) < 440);
 assert.ok(mapWaveFrequency(440, 'close', 0.01) > 440);
 assert.equal(mapWaveFrequency(WAVE_FREQUENCY_MIN, 'spread', 1), WAVE_FREQUENCY_MIN);
 assert.equal(mapWaveFrequency(WAVE_FREQUENCY_MAX, 'close', 1), WAVE_FREQUENCY_MAX);
+assert.equal(mapWaveFrequency(1190, 'close', 1, 1200), 1200);
 
 assert.equal(resolveSamplingGesture('sample', 'x', null), 'sample-rate');
 assert.equal(resolveSamplingGesture('quantize', 'x', null), 'quantize-depth');

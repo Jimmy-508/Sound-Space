@@ -49,6 +49,7 @@ const goldenBaseline: SoundSpiritPhenotypeConfig = {
   heartCoreScale: 1, heartPulse: 1, heartGlow: 1,
   energyOpacity: 1, energyPathExtra: 0, energyRouting: 0, energyRoutePhase: 0, energyPathEmphasis: 1,
   particleRichness: 1, iridescence: 1, glowIntensity: 1,
+  bodyOuterColor: 0x7bd7e8, bodyInnerColor: 0xd8fbff,
   primaryColor: 0x6ee7ff, secondaryColor: 0xa48bff, accentColor: 0xffcf86, energyColor: 0xffb968,
   primaryHue: 199, secondaryHue: 249, accentHue: 292,
 };
@@ -69,10 +70,21 @@ assert(deepEqual(genomeA, genomeB), 'The same ordered history must produce the s
 assert(deepEqual(generateSoundSpiritPhenotype(genomeA), generateSoundSpiritPhenotype(genomeA)), 'The same genome must produce the same phenotype.');
 
 const alternateSeedPhenotype = generateSoundSpiritPhenotype({ ...genomeA, seed: genomeA.seed ^ 0x51f15e });
+const phenotypeA = generateSoundSpiritPhenotype(genomeA);
 assert(
-  alternateSeedPhenotype.primaryColor !== generateSoundSpiritPhenotype(genomeA).primaryColor
-    || alternateSeedPhenotype.secondaryColor !== generateSoundSpiritPhenotype(genomeA).secondaryColor,
+  alternateSeedPhenotype.primaryColor !== phenotypeA.primaryColor
+    || alternateSeedPhenotype.secondaryColor !== phenotypeA.secondaryColor,
   'A different seed must be able to produce a different continuous palette.',
+);
+assert(
+  alternateSeedPhenotype.bodyOuterColor !== phenotypeA.bodyOuterColor
+    || alternateSeedPhenotype.bodyInnerColor !== phenotypeA.bodyInnerColor,
+  'A different seed must be able to produce a different deterministic body tint.',
+);
+assert(
+  generateSoundSpiritPhenotype(genomeA).bodyOuterColor === phenotypeA.bodyOuterColor
+    && generateSoundSpiritPhenotype(genomeA).bodyInnerColor === phenotypeA.bodyInnerColor,
+  'The same Genome and Seed must reproduce the same body tint.',
 );
 
 const orderedA = createSoundSpiritInteractionRecorder();
@@ -130,6 +142,14 @@ assert(
 
 const representativePhenotypes = [highEnergyGenome, highFrequencyGenome, samplingGenome, diversityGenome, broadGenome]
   .map(generateSoundSpiritPhenotype);
+assert(
+  representativePhenotypes.some((phenotype) => rgbDistance(phenotype.bodyOuterColor, DEFAULT_SOUND_SPIRIT_PHENOTYPE.bodyOuterColor) > 0.12),
+  'Naturally generated individuals must be able to show a clearly different overall body tint.',
+);
+assert(
+  new Set(representativePhenotypes.map((phenotype) => `${phenotype.bodyOuterColor}:${phenotype.bodyInnerColor}`)).size >= 4,
+  'Different valid histories must produce varied deterministic body palettes.',
+);
 representativePhenotypes.forEach((phenotype) => {
   assert(phenotypeVisualDistance(phenotype, DEFAULT_SOUND_SPIRIT_PHENOTYPE) >= 0.24, 'Every meaningful representative history must meet minimum visual separation.');
 });
@@ -187,7 +207,8 @@ const appSource = readFileSync('src/App.tsx', 'utf8');
 const musicControllerSource = readFileSync('src/music/useMusicAudioController.ts', 'utf8');
 const identitySource = readFileSync('src/spirit/soundSpiritIdentity.ts', 'utf8');
 assert(rendererSource.includes('addWingSurface(mainGeometry, 0xb9f5ff'), 'The main shell membrane must remain icy white for every phenotype.');
-assert(rendererSource.includes('createMasterSpiritMaterial(0x7bd7e8'), 'The body shell must retain the Golden icy-cyan material.');
+assert(rendererSource.includes('createMasterSpiritMaterial(phenotype.bodyOuterColor'), 'The rendered body shell must receive its phenotype tint.');
+assert(DEFAULT_SOUND_SPIRIT_PHENOTYPE.bodyOuterColor === 0x7bd7e8 && DEFAULT_SOUND_SPIRIT_PHENOTYPE.bodyInnerColor === 0xd8fbff, 'Default body materials must retain the exact Golden colors.');
 assert(appSource.includes('resolveSoundSpiritBirth(spiritInteractionRef.current.snapshot())'), 'Every successful import must read the current accumulated DNA history.');
 assert(musicControllerSource.indexOf('await context.decodeAudioData') < musicControllerSource.indexOf('onSuccessfulLoad();'), 'Birth must occur only after successful audio decode.');
 assert(!identitySource.includes('Math.random'), 'Genome and phenotype resolution must remain fully seeded and deterministic.');
@@ -229,6 +250,10 @@ for (let seed = 1; seed <= 32; seed += 1) {
     for (const color of [phenotype.primaryColor, phenotype.secondaryColor, phenotype.accentColor, phenotype.energyColor]) {
       assert(Number.isInteger(color) && color >= 0 && color <= 0xffffff, 'Palette colors must be valid finite RGB values.');
       assert(colorBrightness(color) > 0.38, 'Individual energy colors must remain luminous rather than dark blobs.');
+    }
+    for (const color of [phenotype.bodyOuterColor, phenotype.bodyInnerColor]) {
+      assert(Number.isInteger(color) && color >= 0 && color <= 0xffffff, 'Body colors must be valid finite RGB values.');
+      assert(colorBrightness(color) > 0.58, 'Body tints must remain luminous and pearl-like.');
     }
     assert(rgbDistance(phenotype.primaryColor, 0xd8fbff) > 0.16, 'Individual energy color must remain readable against the icy shell.');
   }

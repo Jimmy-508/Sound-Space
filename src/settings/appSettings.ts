@@ -1,11 +1,13 @@
 export interface AppSettings {
   sfxEnabled: boolean;
   blueTearsEnabled: boolean;
+  deviceFriendlyEnabled: boolean;
 }
 
 export const defaultAppSettings: AppSettings = {
   sfxEnabled: true,
   blueTearsEnabled: true,
+  deviceFriendlyEnabled: true,
 };
 
 const storageKey = 'sound-space-settings';
@@ -17,6 +19,9 @@ export function loadAppSettings(storage: Pick<Storage, 'getItem'> | undefined = 
     return {
       sfxEnabled: typeof parsed.sfxEnabled === 'boolean' ? parsed.sfxEnabled : defaultAppSettings.sfxEnabled,
       blueTearsEnabled: typeof parsed.blueTearsEnabled === 'boolean' ? parsed.blueTearsEnabled : defaultAppSettings.blueTearsEnabled,
+      deviceFriendlyEnabled: typeof parsed.deviceFriendlyEnabled === 'boolean'
+        ? parsed.deviceFriendlyEnabled
+        : defaultAppSettings.deviceFriendlyEnabled,
     };
   } catch {
     return { ...defaultAppSettings };

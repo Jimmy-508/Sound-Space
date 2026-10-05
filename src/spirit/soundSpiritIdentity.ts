@@ -109,6 +109,8 @@ export interface SoundSpiritPhenotypeConfig {
   particleRichness: number;
   iridescence: number;
   glowIntensity: number;
+  bodyOuterColor: number;
+  bodyInnerColor: number;
   primaryColor: number;
   secondaryColor: number;
   accentColor: number;
@@ -233,6 +235,8 @@ export const DEFAULT_SOUND_SPIRIT_PHENOTYPE: SoundSpiritPhenotypeConfig = Object
   particleRichness: 1,
   iridescence: 1,
   glowIntensity: 1,
+  bodyOuterColor: 0x7bd7e8,
+  bodyInnerColor: 0xd8fbff,
   primaryColor: DEFAULT_COLORS.primary,
   secondaryColor: DEFAULT_COLORS.secondary,
   accentColor: DEFAULT_COLORS.accent,
@@ -495,6 +499,8 @@ export function generateSoundSpiritPhenotype(genome: SoundSpiritGenome): SoundSp
     particleRichness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.particleRichness, 1 + depthDirection * (0.06 + traitPlan.depth * 0.3) + diversity * 0.05),
     iridescence: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.iridescence, 1 + precisionDirection * traitPlan.precision * 0.2 + diversityDirection * traitPlan.diversity * 0.12),
     glowIntensity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.glowIntensity, 1 + energyDirection * (0.07 + traitPlan.energy * 0.2) + depthDirection * traitPlan.depth * 0.08),
+    bodyOuterColor: palette.bodyOuter,
+    bodyInnerColor: palette.bodyInner,
     primaryColor: palette.primary,
     secondaryColor: palette.secondary,
     accentColor: palette.accent,
@@ -554,11 +560,18 @@ function deriveIndividualPalette(genes: Record<TraitName, number>, seed: number)
   const index = Math.floor(scaled) % PALETTE_ANCHORS.length;
   const next = (index + 1) % PALETTE_ANCHORS.length;
   const amount = smoothMix(scaled - Math.floor(scaled));
+  const primary = mixHex(PALETTE_ANCHORS[index][0], PALETTE_ANCHORS[next][0], amount);
+  const secondary = mixHex(PALETTE_ANCHORS[index][1], PALETTE_ANCHORS[next][1], amount);
+  const accent = mixHex(PALETTE_ANCHORS[index][2], PALETTE_ANCHORS[next][2], amount);
+  const energy = mixHex(PALETTE_ANCHORS[index][3], PALETTE_ANCHORS[next][3], amount);
+  const shellFamily = mixHex(primary, accent, 0.14 + random() * 0.48);
   return {
-    primary: mixHex(PALETTE_ANCHORS[index][0], PALETTE_ANCHORS[next][0], amount),
-    secondary: mixHex(PALETTE_ANCHORS[index][1], PALETTE_ANCHORS[next][1], amount),
-    accent: mixHex(PALETTE_ANCHORS[index][2], PALETTE_ANCHORS[next][2], amount),
-    energy: mixHex(PALETTE_ANCHORS[index][3], PALETTE_ANCHORS[next][3], amount),
+    primary,
+    secondary,
+    accent,
+    energy,
+    bodyOuter: mixHex(0xeafcff, shellFamily, 0.72),
+    bodyInner: mixHex(0xffffff, mixHex(secondary, energy, 0.32), 0.46),
   };
 }
 
@@ -602,9 +615,10 @@ export function phenotypeVisualDistance(left: SoundSpiritPhenotypeConfig, right:
     + tupleDistance(left.heartLobeLengths, right.heartLobeLengths, 0.18)
     + Math.abs(left.heartCoreScale - right.heartCoreScale) / 0.18) / 3;
   const palette = (
-    colorDistance(left.primaryColor, right.primaryColor) + colorDistance(left.secondaryColor, right.secondaryColor)
+    colorDistance(left.bodyOuterColor, right.bodyOuterColor) + colorDistance(left.bodyInnerColor, right.bodyInnerColor)
+    + colorDistance(left.primaryColor, right.primaryColor) + colorDistance(left.secondaryColor, right.secondaryColor)
     + colorDistance(left.accentColor, right.accentColor) + colorDistance(left.energyColor, right.energyColor)
-  ) / 4;
+  ) / 6;
   return clamp01(silhouette * 0.38 + structure * 0.25 + heart * 0.2 + palette * 0.17);
 }
 

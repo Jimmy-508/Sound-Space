@@ -7,7 +7,7 @@ import {
   SOUND_SPIRIT_SPECIES_GUARDRAILS,
   type SoundSpiritPhenotypeConfig,
 } from '../spirit/soundSpiritIdentity';
-import type { FileSizeWaveModel } from '../labs/fileSizeWaveModel';
+import { fillFileSizeWaveTrace, getFileSizeWavePhase, type FileSizeWaveModel } from '../labs/fileSizeWaveModel';
 
 interface WaveCanvasProps {
   amplitude: number;
@@ -216,6 +216,7 @@ export function WaveCanvas({
     const waveColors = new Float32Array(wavePointLimit * 3);
     const secondaryPositions = new Float32Array(wavePointLimit * 3);
     const samplePositions = new Float32Array(samplePointLimit * 3);
+    const secondarySamplePositions = new Float32Array(samplePointLimit * 3);
     const sampleStemPositions = new Float32Array(samplePointLimit * 2 * 3);
     const playheadPositions = new Float32Array(2 * 3);
     const playheadMarkerPositions = new Float32Array(3);
@@ -1209,7 +1210,8 @@ export function WaveCanvas({
         const beat = 1 - visibleBeat * 0.31 * phenotypePulse + rebound * musicAwake * 0.17 * phenotypePulse;
         lobe.scale.copy(lobe.userData.baseScale).multiplyScalar(beat);
         lobe.rotation.z = Math.sin(time * 0.2 + index * 1.31) * 0.038;
-        (lobe.material as THREE.ShaderMaterial).uniforms.uHeartBeat.value = Math.min(1.35, visibleBeat * 1.16);
+        const lobeUniforms = (lobe.material as THREE.ShaderMaterial).uniforms;
+        if (lobeUniforms?.uHeartBeat) lobeUniforms.uHeartBeat.value = Math.min(1.35, visibleBeat * 1.16);
       });
       const visualTelemetryTick = Math.floor(time * 12);
       if (localPreview && visualTelemetryTick !== lastVisualTelemetryTick) {
@@ -1523,30 +1525,18 @@ export function WaveCanvas({
       return true;
     };
 
-    const drawFileSizeWave = (model: FileSizeWaveModel) => {
-      const primary = model.traces[0];
-      const primaryPointCount = Math.min(wavePointLimit, primary.stepPoints.length / 2);
+    const drawFileSizeWave = (model: FileSizeWaveModel, time: number) => {
+      const phase = getFileSizeWavePhase(time, model);
+      fillFileSizeWaveTrace(model, 0, phase, wavePositions, samplePositions);
+      const primaryPointCount = Math.min(wavePointLimit, (model.sampleCount - 1) * 2 + 1);
       for (let index = 0; index < primaryPointCount; index += 1) {
-        wavePositions[index * 3] = primary.stepPoints[index * 2];
-        wavePositions[index * 3 + 1] = primary.stepPoints[index * 2 + 1];
-        wavePositions[index * 3 + 2] = 0;
         waveColors[index * 3] = 0.38;
         waveColors[index * 3 + 1] = 0.93;
         waveColors[index * 3 + 2] = 1;
       }
       const markerCount = Math.min(samplePointLimit, model.sampleCount);
-      for (let index = 0; index < markerCount; index += 1) {
-        samplePositions[index * 3] = primary.samples[index * 2];
-        samplePositions[index * 3 + 1] = primary.samples[index * 2 + 1];
-        samplePositions[index * 3 + 2] = 0;
-      }
-      const secondary = model.traces[1];
-      const secondaryPointCount = secondary ? Math.min(wavePointLimit, secondary.stepPoints.length / 2) : 0;
-      for (let index = 0; index < secondaryPointCount; index += 1) {
-        secondaryPositions[index * 3] = secondary.stepPoints[index * 2];
-        secondaryPositions[index * 3 + 1] = secondary.stepPoints[index * 2 + 1];
-        secondaryPositions[index * 3 + 2] = 0;
-      }
+      const secondaryPointCount = model.channelCount > 1 ? primaryPointCount : 0;
+      if (secondaryPointCount) fillFileSizeWaveTrace(model, 1, phase, secondaryPositions, secondarySamplePositions);
       waveGeometry.setDrawRange(0, primaryPointCount);
       pointGeometry.setDrawRange(0, markerCount);
       secondaryGeometry.setDrawRange(0, secondaryPointCount);
@@ -1562,7 +1552,7 @@ export function WaveCanvas({
       sampleContactPoints.visible = true;
       sampleGlowPoints.visible = true;
       samplePoints.visible = true;
-      secondaryLine.visible = Boolean(secondary);
+      secondaryLine.visible = model.channelCount > 1;
     };
 
     const drawWave = (time: number, deltaTime: number) => {
@@ -1584,7 +1574,7 @@ export function WaveCanvas({
       hideSpectrum();
       waveLine.visible = true;
       if (current.mode === 'size' && current.fileSizeWave) {
-        drawFileSizeWave(current.fileSizeWave);
+        drawFileSizeWave(current.fileSizeWave, time);
         return;
       }
       secondaryMaterial.color.setHex(0x4d94e6);
@@ -1852,8 +1842,8 @@ function createMasterSpirit(compact: boolean, phenotype: SoundSpiritPhenotypeCon
   };
 
   const bodyGeometry = createMasterBodyGeometry(compact, phenotype);
-  const bodyOuter = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0x7bd7e8, 0.27, 0, phenotype), geometryMaterials.body, 8.6);
-  const bodyInner = addSurface(group, bodyGeometry, createMasterSpiritMaterial(0xd8fbff, 0.16, 0, phenotype), geometryMaterials.body, 5);
+  const bodyOuter = addSurface(group, bodyGeometry, createMasterSpiritMaterial(phenotype.bodyOuterColor, 0.27, 0, phenotype), geometryMaterials.body, 8.6);
+  const bodyInner = addSurface(group, bodyGeometry, createMasterSpiritMaterial(phenotype.bodyInnerColor, 0.16, 0, phenotype), geometryMaterials.body, 5);
   bodyOuter.scale.set(1.025 * phenotype.bodyFullness, 1.01 * phenotype.bodyLength, 1.04 * phenotype.bodyFullness);
   bodyInner.scale.set(0.92 * phenotype.bodyFullness, 0.965 * phenotype.bodyLength, 0.86 * phenotype.bodyFullness);
   bodyOuter.position.x = phenotype.bodyAsymmetry;

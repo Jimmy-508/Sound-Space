@@ -9,10 +9,14 @@ import { mapWaveAmplitude, mapWaveFrequency } from '../gesture/gestureMappings';
 import type { PointerPoint, Waveform } from '../types';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 import {
-  WAVE_FREQUENCY_MAX,
-  WAVE_FREQUENCY_MIN,
   type SoundSpiritInteractionRecorder,
 } from '../spirit/soundSpiritIdentity';
+import {
+  clampWaveFrequency,
+  getEffectiveWaveFrequencyMax,
+  waveFrequencyToSlider,
+  waveSliderToFrequency,
+} from '../settings/deviceFriendlyAudio';
 
 const waveOptions: Array<{ value: Waveform; label: string }> = [
   { value: 'sine', label: '正弦波' },
@@ -24,9 +28,10 @@ const frequencySliderMax = 1000;
 interface WaveLabProps {
   interactionRecorder: SoundSpiritInteractionRecorder;
   gestureController: GestureInteractionController;
+  deviceFriendlyEnabled: boolean;
 }
 
-export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps) {
+export function WaveLab({ interactionRecorder, gestureController, deviceFriendlyEnabled }: WaveLabProps) {
   const audio = useAudioEngine();
   const [amplitude, setAmplitude] = useState(0.5);
   const [frequency, setFrequency] = useState(440);
@@ -34,6 +39,7 @@ export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps
   const [playing, setPlaying] = useState(false);
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
   const [hint, setHint] = useState('振幅越大，聲音越大。');
+  const effectiveWaveFrequencyMax = getEffectiveWaveFrequencyMax(deviceFriendlyEnabled);
 
   const dispatch: CommandHandler = (command) => {
     if (command.type === 'AMPLITUDE_SET') {
@@ -42,9 +48,10 @@ export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps
       setHint(command.value > amplitude ? '振幅變大，聲音也變大了！' : '振幅變小，聲音也變小了。');
     }
     if (command.type === 'FREQUENCY_SET') {
-      interactionRecorder.observeFrequency(frequency, command.value);
-      setFrequency(command.value);
-      setHint(command.value > frequency ? '頻率變高，聲波變得更密集。' : '頻率變低，聲波變得比較疏。');
+      const next = clampWaveFrequency(command.value, effectiveWaveFrequencyMax);
+      if (next !== frequency) interactionRecorder.observeFrequency(frequency, next);
+      setFrequency(next);
+      setHint(next > frequency ? '頻率變高，聲波變得更密集。' : '頻率變低，聲波變得比較疏。');
     }
     if (command.type === 'WAVEFORM_SET') {
       interactionRecorder.observeWaveform(waveform, command.value);
@@ -63,6 +70,12 @@ export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps
   useEffect(() => audio.setWaveform(waveform), [waveform, audio]);
 
   useEffect(() => {
+    if (frequency > effectiveWaveFrequencyMax) {
+      dispatch({ type: 'FREQUENCY_SET', value: effectiveWaveFrequencyMax });
+    }
+  }, [effectiveWaveFrequencyMax, frequency]);
+
+  useEffect(() => {
     let frame = 0;
     let lastTimestamp = -1;
     const update = () => {
@@ -72,7 +85,7 @@ export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps
       lastTimestamp = gesture.timestamp;
       if (gesture.twoHand.gesture !== 'none') {
         setFrequency((current) => {
-          const next = mapWaveFrequency(current, gesture.twoHand.gesture, gesture.twoHand.rate);
+          const next = mapWaveFrequency(current, gesture.twoHand.gesture, gesture.twoHand.rate, effectiveWaveFrequencyMax);
           if (next !== current) interactionRecorder.observeFrequency(current, next);
           return next;
         });
@@ -88,7 +101,7 @@ export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps
     };
     frame = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frame);
-  }, [gestureController, interactionRecorder]);
+  }, [effectiveWaveFrequencyMax, gestureController, interactionRecorder]);
 
   return (
     <section className="lab-layout">
@@ -113,13 +126,13 @@ export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps
         />
         <RangeControl
           label="音調"
-          value={frequencyToSlider(frequency)}
+          value={waveFrequencyToSlider(frequency, effectiveWaveFrequencyMax, frequencySliderMax)}
           min={0}
           max={frequencySliderMax}
           step={1}
           display={`${frequency} Hz`}
           ariaValueText={`音調 ${frequency} Hz`}
-          onChange={(value) => dispatch({ type: 'FREQUENCY_SET', value: sliderToFrequency(value) })}
+          onChange={(value) => dispatch({ type: 'FREQUENCY_SET', value: waveSliderToFrequency(value, effectiveWaveFrequencyMax, frequencySliderMax) })}
         />
         <SegmentedControl label="波形" value={waveform} options={waveOptions} onChange={(value) => dispatch({ type: 'WAVEFORM_SET', value })} />
         <div className="button-row">
@@ -133,13 +146,4 @@ export function WaveLab({ interactionRecorder, gestureController }: WaveLabProps
       </aside>
     </section>
   );
-}
-
-function frequencyToSlider(frequency: number) {
-  return Math.round(Math.log(frequency / WAVE_FREQUENCY_MIN) / Math.log(WAVE_FREQUENCY_MAX / WAVE_FREQUENCY_MIN) * frequencySliderMax);
-}
-
-function sliderToFrequency(value: number) {
-  const frequency = WAVE_FREQUENCY_MIN * (WAVE_FREQUENCY_MAX / WAVE_FREQUENCY_MIN) ** (value / frequencySliderMax);
-  return Math.min(WAVE_FREQUENCY_MAX, Math.max(WAVE_FREQUENCY_MIN, Math.round(frequency / 10) * 10));
 }

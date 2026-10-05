@@ -5,11 +5,11 @@ export function mapWaveAmplitude(current: number, deltaY: number) {
   return Math.min(1, Math.max(0, current - deltaY * 3.2));
 }
 
-export function mapWaveFrequency(current: number, gesture: TwoHandGesture, rate: number) {
+export function mapWaveFrequency(current: number, gesture: TwoHandGesture, rate: number, maximum = WAVE_FREQUENCY_MAX) {
   if (gesture === 'none') return current;
   const direction = gesture === 'close' ? 1 : -1;
   const next = Math.round(current * Math.exp(direction * rate * 2.4) / 10) * 10;
-  return Math.min(WAVE_FREQUENCY_MAX, Math.max(WAVE_FREQUENCY_MIN, next));
+  return Math.min(maximum, Math.max(WAVE_FREQUENCY_MIN, next));
 }
 
 export class DiscreteGestureAccumulator {
