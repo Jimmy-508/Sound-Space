@@ -13,10 +13,10 @@ import {
 } from '../src/spirit/soundSpiritIdentity';
 
 const expectedStates = ['UNBORN', 'HEART', 'FORMING', 'UNFOLDING', 'AWAKENING', 'ALIVE'];
-const observedStates = [0, 0.5, 1.1, 1.9, 2.9, SOUND_SPIRIT_BIRTH_DURATION_SECONDS]
+const observedStates = [0, 0.8, 1.7, 2.7, 3.6, SOUND_SPIRIT_BIRTH_DURATION_SECONDS]
   .map((time) => getSoundSpiritBirthFrame(time).state);
 assert.deepEqual(observedStates, expectedStates, 'Birth must follow the approved state order.');
-assert.equal(SOUND_SPIRIT_BIRTH_DURATION_SECONDS, 3.5, 'Birth must remain inside the 3-4 second acceptance window.');
+assert.equal(SOUND_SPIRIT_BIRTH_DURATION_SECONDS, 4, 'Birth must remain inside the approved 3.5-4.2 second window.');
 assert.equal(getSoundSpiritBirthFrame(-1).state, 'UNBORN', 'Negative elapsed time must clamp to the unborn state.');
 assert.equal(getSoundSpiritBirthFrame(20), ALIVE_SOUND_SPIRIT_BIRTH_FRAME, 'Completed births must reuse the immutable alive frame.');
 assert.ok(Object.isFrozen(ALIVE_SOUND_SPIRIT_BIRTH_FRAME), 'The shared alive frame must be immutable.');
@@ -34,9 +34,9 @@ const revealKeys = [
   'awakening',
   'livingMotion',
 ] as const;
-const spectacleKeys = ['convergence', 'focusGlow', 'lightAbsorption', 'formationFront', 'overexposure', 'revealEnergy'] as const;
+const spectacleKeys = ['convergence', 'focusGlow', 'lightAbsorption', 'externalLight', 'centralAccumulation', 'formationFront', 'overexposure', 'revealEnergy'] as const;
 let previous = getSoundSpiritBirthFrame(0);
-for (let step = 1; step <= 350; step += 1) {
+for (let step = 1; step <= 400; step += 1) {
   const frame = getSoundSpiritBirthFrame(step / 100);
   revealKeys.forEach((key) => {
     assert.ok(frame[key] >= previous[key], `${key} must never reverse during birth.`);
@@ -44,23 +44,25 @@ for (let step = 1; step <= 350; step += 1) {
   });
   previous = frame;
 }
-for (let step = 0; step < 350; step += 1) {
+for (let step = 0; step < 400; step += 1) {
   const frame = getSoundSpiritBirthFrame(step / 100);
   spectacleKeys.forEach((key) => assert.ok(frame[key] >= 0 && frame[key] <= 1, `${key} must remain bounded.`));
 }
 spectacleKeys.forEach((key) => assert.equal(ALIVE_SOUND_SPIRIT_BIRTH_FRAME[key], 0, `${key} must terminate at ALIVE.`));
-assert.ok(getSoundSpiritBirthFrame(0.5).convergence > 0.4, 'UNBORN/HEART must visibly converge energy.');
-assert.ok(getSoundSpiritBirthFrame(2.88).overexposure > 0.95, 'Completed biological structure must create a brief natural overexposure.');
-assert.ok(getSoundSpiritBirthFrame(2.68).overexposure < 0.02 && getSoundSpiritBirthFrame(3.08).overexposure < 0.02, 'Overexposure must remain tightly bounded near 180ms.');
-assert.ok(getSoundSpiritBirthFrame(0.6).heartReveal > 0, 'The five-lobed heart must be the first visible system.');
-assert.equal(getSoundSpiritBirthFrame(0.6).bodyReveal, 0, 'The body must not precede the heart.');
-assert.ok(getSoundSpiritBirthFrame(1.2).formationFront > 0 && getSoundSpiritBirthFrame(1.2).bodyReveal > 0, 'Body condensation must follow a luminous formation front.');
-assert.ok(getSoundSpiritBirthFrame(1.7).wingRootReveal > getSoundSpiritBirthFrame(1.7).wingVeinReveal, 'Wing roots must stabilize before major veins.');
-assert.ok(getSoundSpiritBirthFrame(2.1).wingVeinReveal > getSoundSpiritBirthFrame(2.1).wingMembraneReveal, 'Wing light architecture must precede membrane condensation.');
-assert.ok(getSoundSpiritBirthFrame(2.3).wingRimReveal < getSoundSpiritBirthFrame(2.3).wingVeinReveal, 'Outer rim must complete after major veins.');
+assert.ok(getSoundSpiritBirthFrame(0.6).convergence > 0.4, 'Screen-scale light must visibly converge before biological formation.');
+assert.ok(getSoundSpiritBirthFrame(3.64).overexposure > 0.95, 'Completed biological structure must create a brief organism-only luminosity peak.');
+assert.ok(getSoundSpiritBirthFrame(3.48).overexposure < 0.01 && getSoundSpiritBirthFrame(3.8).overexposure < 0.01, 'Final luminosity must remain tightly bounded near 150ms.');
+assert.equal(getSoundSpiritBirthFrame(0.6).heartReveal, 0, 'Early convergence must begin without a readable organism.');
+assert.ok(getSoundSpiritBirthFrame(1.0).heartReveal > 0, 'The five-lobed Heart must be the first biological system.');
+assert.equal(getSoundSpiritBirthFrame(1.0).bodyReveal, 0, 'The body must not precede the Heart.');
+assert.ok(getSoundSpiritBirthFrame(1.7).externalLight > 0.8 && getSoundSpiritBirthFrame(1.7).bodyReveal > 0, 'External light must overlap early body formation.');
+assert.ok(getSoundSpiritBirthFrame(1.7).formationFront > 0, 'Body condensation must follow a luminous spatial front.');
+assert.ok(getSoundSpiritBirthFrame(2.25).wingRootReveal > getSoundSpiritBirthFrame(2.25).wingVeinReveal, 'Wing roots must stabilize before major veins.');
+assert.ok(getSoundSpiritBirthFrame(2.65).wingVeinReveal > 0.45 && getSoundSpiritBirthFrame(2.65).wingMembraneReveal === 0, 'Wing light architecture must remain readable before membrane condensation.');
+assert.ok(getSoundSpiritBirthFrame(3.0).wingRimReveal < getSoundSpiritBirthFrame(3.0).wingVeinReveal, 'Outer rim must complete after major veins.');
 assert.equal(isSoundSpiritBirthInteractionLocked(0, 0, 0), false, 'A session without a birth token must remain interactive.');
-assert.equal(isSoundSpiritBirthInteractionLocked(1, 1000, 1000 + 3499), true, 'Creature interaction must stay locked throughout birth.');
-assert.equal(isSoundSpiritBirthInteractionLocked(1, 1000, 1000 + 3500), false, 'Creature interaction must unlock at ALIVE.');
+assert.equal(isSoundSpiritBirthInteractionLocked(1, 1000, 1000 + 3999), true, 'Creature interaction must stay locked throughout birth.');
+assert.equal(isSoundSpiritBirthInteractionLocked(1, 1000, 1000 + 4000), false, 'Creature interaction must unlock at ALIVE.');
 
 const emptyRecorder = createSoundSpiritInteractionRecorder();
 const defaultBirth = resolveSoundSpiritBirth(emptyRecorder.snapshot());
@@ -93,13 +95,16 @@ assert.equal((rendererSource.match(/requestAnimationFrame\(animate\)/g) ?? []).l
 for (const uniform of ['uBirthReveal', 'uBirthCrown', 'uBirthWing']) {
   assert.ok(rendererSource.includes(uniform), `${uniform} must reuse the existing Golden renderer materials.`);
 }
-for (const effect of ['birthEffects', 'birthAura', 'birthPathGroup', 'uBirthFront', 'uBirthOverexposure']) {
+for (const effect of ['birthEffects', 'birthAura', 'birthLightGroup', 'birthCore', 'uBirthFront', 'uBirthOverexposure']) {
   assert.ok(rendererSource.includes(effect), `${effect} must participate in the bounded spectacle.`);
 }
 for (const rejectedEffect of ['birthFlashMaterial', 'birthRingGeometry', 'birthStreaks']) {
   assert.ok(!rendererSource.includes(rejectedEffect), `${rejectedEffect} must not retain the summon/reveal visual language.`);
 }
 assert.ok(rendererSource.includes('CatmullRomCurve3'), 'Environmental light must follow curved gravitational paths.');
-assert.ok(rendererSource.includes('birthPathCount = compact ? 6 : 8'), 'Birth must use a restrained fixed path count.');
+assert.ok(rendererSource.includes('birthLightPathCount = compact ? 12 : 18'), 'Birth must use screen-filling compact and desktop path counts.');
+assert.ok(rendererSource.includes("new THREE.ShaderMaterial") && rendererSource.includes('pathSide'), 'Birth paths must be luminous ribbons with shader-controlled halo and core width.');
+assert.ok(rendererSource.includes('uHead') && rendererSource.includes('tail') && rendererSource.includes('head'), 'Birth ribbons must communicate outside-to-center motion with moving heads and fading tails.');
+assert.ok(!rendererSource.includes('birthPathMaterials: THREE.LineBasicMaterial'), 'Birth must not fall back to single-pixel LineBasicMaterial paths.');
 
 console.log('Sound Spirit Birth verification passed: deterministic state flow, transactional import, interaction arbitration, and single-loop rendering.');

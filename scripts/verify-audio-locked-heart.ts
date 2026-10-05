@@ -59,15 +59,25 @@ assert.ok(refractory[1].at - refractory[0].at >= AUDIO_ONSET_REFRACTORY_MS, 'Acc
 assert.deepEqual(run(alternatingSequence), run(alternatingSequence), 'Onset detection must be deterministic.');
 
 const noOnset = { detected: false, strength: 0, lowStrength: 0, highStrength: 0 };
-const gentleOnset = { detected: true, strength: 0.2, lowStrength: 0.17, highStrength: 0.18 };
-const weakOnset = { detected: true, strength: 0.32, lowStrength: 0.22, highStrength: 0.3 };
-const majorOnset = { detected: true, strength: 0.9, lowStrength: 0.94, highStrength: 0.46 };
+const gentleOnset = { detected: true, strength: 0.105, lowStrength: 0.075, highStrength: 0.09 };
+const weakOnset = { detected: true, strength: 0.12, lowStrength: 0.09, highStrength: 0.12 };
+const moderateLocalPeak = { detected: true, strength: 0.18, lowStrength: 0.14, highStrength: 0.16 };
+const majorOnset = { detected: true, strength: 0.34, lowStrength: 0.3, highStrength: 0.26 };
+
+function energyFor(event: typeof majorOnset | undefined) {
+  if (!event) return 0.025;
+  if (event.strength >= 0.3) return 0.22;
+  if (event.strength >= 0.17) return 0.12;
+  if (event.strength >= 0.115) return 0.055;
+  return 0.035;
+}
 
 function runMajor(events: Map<number, typeof majorOnset>, durationMs: number, stepMs = 32) {
   const state = createMajorBeatGateState();
   const accepted: Array<{ at: number; strength: number; confidence: number }> = [];
   for (let now = 0; now <= durationMs; now += stepMs) {
-    const event = gateMajorBeat(state, events.get(now) ?? noOnset, events.has(now) ? 0.54 : 0.12, now, true);
+    const onset = events.get(now);
+    const event = gateMajorBeat(state, onset ?? noOnset, energyFor(onset), now, true);
     if (event.detected) accepted.push({ at: now, strength: event.strength, confidence: event.confidence });
   }
   return { accepted, confidence: state.confidence };
@@ -78,7 +88,10 @@ assert.equal(runMajor(new Map([[320, gentleOnset], [832, gentleOnset]]), 1400).a
 const strongPulse = runMajor(new Map([[320, majorOnset], [832, majorOnset], [1344, majorOnset], [1856, majorOnset]]), 2200);
 assert.equal(strongPulse.accepted.length, 4, 'Strong evenly spaced bass transients must produce readable Major Beats.');
 assert.ok(strongPulse.accepted.at(-1)!.confidence > strongPulse.accepted[0].confidence, 'Repeated strong pulse must raise musical confidence.');
-const strongWithWeak = runMajor(new Map([[320, majorOnset], [576, weakOnset], [832, majorOnset], [1088, weakOnset], [1344, majorOnset]]), 1700);
+assert.equal(strongPulse.accepted[0].at, 320, 'The first strong beat must pass without prior confidence or BPM support.');
+const localPeakSequence = runMajor(new Map([[320, gentleOnset], [640, gentleOnset], [960, moderateLocalPeak]]), 1300);
+assert.deepEqual(localPeakSequence.accepted.map(({ at }) => at), [960], 'A moderate-amplitude event must pass when it is a strong local peak.');
+const strongWithWeak = runMajor(new Map([[320, majorOnset], [640, weakOnset], [832, majorOnset], [1152, weakOnset], [1344, majorOnset]]), 1700);
 assert.deepEqual(strongWithWeak.accepted.map(({ at }) => at), [320, 832, 1344], 'Weak intermediate transients must not cause full contractions.');
 const denseWeak = new Map<number, typeof majorOnset>();
 for (let at = 320; at < 1800; at += 192) denseWeak.set(at, weakOnset);
@@ -86,7 +99,7 @@ assert.equal(runMajor(denseWeak, 2100).accepted.length, 0, 'Dense weak percussio
 const alternatingMajor = runMajor(new Map([[320, majorOnset], [640, weakOnset], [960, majorOnset], [1280, weakOnset], [1600, majorOnset]]), 1900);
 assert.deepEqual(alternatingMajor.accepted.map(({ at }) => at), [320, 960, 1600], 'Strong/weak accents must preserve only the major pulse.');
 const confidenceState = createMajorBeatGateState();
-[320, 832, 1344].forEach((at) => gateMajorBeat(confidenceState, majorOnset, 0.55, at, true));
+[320, 832, 1344].forEach((at) => gateMajorBeat(confidenceState, majorOnset, 0.22, at, true));
 const capturedConfidence = confidenceState.confidence;
 for (let now = 1376; now <= 6200; now += 32) gateMajorBeat(confidenceState, noOnset, 0.08, now, true);
 assert.ok(capturedConfidence > 0.45 && confidenceState.confidence < 0.16, 'Musical confidence must rise with pulse and decay after it stops.');

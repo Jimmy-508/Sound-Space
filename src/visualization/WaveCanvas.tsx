@@ -16,6 +16,7 @@ import {
 } from '../spirit/soundSpiritPersonality';
 import {
   ALIVE_SOUND_SPIRIT_BIRTH_FRAME,
+  SOUND_SPIRIT_BIRTH_DURATION_SECONDS,
   getSoundSpiritBirthFrame,
   type SoundSpiritBirthFrame,
 } from '../spirit/soundSpiritBirth';
@@ -316,43 +317,34 @@ export function WaveCanvas({
     birthFocusMaterial.color.setHex(spiritPhenotype.secondaryColor);
     const birthAura = new THREE.Sprite(birthAuraMaterial);
     const birthFocus = new THREE.Sprite(birthFocusMaterial);
-    const birthPathGroup = new THREE.Group();
-    const birthPathGeometries: THREE.BufferGeometry[] = [];
-    const birthPathMaterials: THREE.LineBasicMaterial[] = [];
-    const birthPaths: THREE.Line[] = [];
-    const birthPathCount = compact ? 6 : 8;
-    for (let index = 0; index < birthPathCount; index += 1) {
-      const angle = index / birthPathCount * Math.PI * 2 + 0.28;
-      const radius = 0.68 + (index % 3) * 0.105;
-      const outer = new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius * 0.7 + 0.08, -0.02);
-      const tangent = new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0);
-      const bend = index % 2 === 0 ? 0.24 : -0.2;
-      const curve = new THREE.CatmullRomCurve3([
-        outer,
-        outer.clone().multiplyScalar(0.7).addScaledVector(tangent, bend),
-        outer.clone().multiplyScalar(0.4).addScaledVector(tangent, -bend * 0.62).add(new THREE.Vector3(0, 0.08, 0)),
-        new THREE.Vector3(0, 0.14, 0),
-      ]);
-      const geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(35));
-      geometry.setDrawRange(0, 0);
-      const material = new THREE.LineBasicMaterial({
-        color: index % 3 === 0 ? spiritPhenotype.accentColor : index % 2 === 0 ? spiritPhenotype.secondaryColor : spiritPhenotype.primaryColor,
-        transparent: true,
-        opacity: 0,
-        depthTest: false,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const path = new THREE.Line(geometry, material);
-      path.renderOrder = 3;
-      birthPathGeometries.push(geometry);
-      birthPathMaterials.push(material);
-      birthPaths.push(path);
-      birthPathGroup.add(path);
+    const birthCoreMaterial = birthAuraMaterial.clone();
+    birthCoreMaterial.color.setHex(0xffffff);
+    const birthCore = new THREE.Sprite(birthCoreMaterial);
+    const birthLightGroup = new THREE.Group();
+    const birthLightGeometries: THREE.BufferGeometry[] = [];
+    const birthLightMaterials: THREE.ShaderMaterial[] = [];
+    const birthLightRibbons: THREE.Mesh[] = [];
+    const birthLightPathCount = compact ? 12 : 18;
+    for (let index = 0; index < birthLightPathCount; index += 1) {
+      const variation = deterministicBirthVariation(index);
+      const geometry = createBirthLightRibbonGeometry(index, birthLightPathCount, variation.width);
+      const material = createBirthLightRibbonMaterial(
+        index % 3 === 0 ? spiritPhenotype.accentColor : index % 2 === 0 ? spiritPhenotype.secondaryColor : spiritPhenotype.primaryColor,
+      );
+      const ribbon = new THREE.Mesh(geometry, material);
+      ribbon.renderOrder = 3 + index * 0.002;
+      ribbon.userData.delay = variation.delay;
+      ribbon.userData.duration = variation.duration;
+      ribbon.userData.brightness = variation.brightness;
+      birthLightGeometries.push(geometry);
+      birthLightMaterials.push(material);
+      birthLightRibbons.push(ribbon);
+      birthLightGroup.add(ribbon);
     }
     birthAura.renderOrder = 1;
     birthFocus.renderOrder = 2;
-    birthEffects.add(birthAura, birthFocus, birthPathGroup);
+    birthCore.renderOrder = 4;
+    birthEffects.add(birthAura, birthFocus, birthLightGroup, birthCore);
     birthEffects.visible = false;
     playheadMarkerMaterial.needsUpdate = true;
     moteMaterial.needsUpdate = true;
@@ -589,27 +581,36 @@ export function WaveCanvas({
       const liveOnset = current.musicPlaying ? audio?.onsetPulse ?? 0 : 0;
       const viewportAspect = Math.min(1, canvasHeight / canvasWidth);
       const focus = Math.min(1.35, birthFrame.focusGlow * (0.82 + liveEnergy * 0.72));
+      const elapsed = birthFrame.progress * SOUND_SPIRIT_BIRTH_DURATION_SECONDS;
       birthEffects.position.set(0, 0, -0.04);
-      birthAuraMaterial.opacity = Math.min(0.28, focus * 0.12 + birthFrame.revealEnergy * 0.07);
-      birthAura.scale.set((0.6 + focus * 0.22) * viewportAspect, 0.6 + focus * 0.22, 1);
-      birthFocusMaterial.opacity = Math.min(0.48, focus * 0.18 + birthFrame.lightAbsorption * 0.22 + liveEnergy * 0.08);
-      birthFocus.scale.set((0.2 + focus * 0.12) * viewportAspect, 0.48 + focus * 0.22, 1);
-      const absorptionHead = Math.min(35, Math.floor(birthFrame.lightAbsorption * 38));
-      birthPaths.forEach((path, index) => {
-        const stagger = index * 0.018;
-        const pathProgress = THREE.MathUtils.clamp(birthFrame.lightAbsorption * 1.14 - stagger, 0, 1);
-        const head = Math.min(35, Math.max(absorptionHead, Math.floor(pathProgress * 35)));
-        const start = Math.max(0, head - 10 - (index % 3));
-        path.geometry.setDrawRange(start, Math.max(0, head - start + 1));
-        birthPathMaterials[index].opacity = birthFrame.convergence * (0.16 + liveEnergy * 0.18 + liveOnset * 0.06) * (0.82 + (index % 2) * 0.18);
+      birthAuraMaterial.opacity = Math.min(0.46, birthFrame.centralAccumulation * (0.16 + liveEnergy * 0.16) + focus * 0.08);
+      birthAura.scale.set((0.58 + birthFrame.centralAccumulation * 0.42) * viewportAspect, 0.58 + birthFrame.centralAccumulation * 0.42, 1);
+      birthFocusMaterial.opacity = Math.min(0.62, focus * 0.16 + birthFrame.centralAccumulation * 0.3 + liveEnergy * 0.1);
+      birthFocus.scale.set((0.2 + focus * 0.14) * viewportAspect, 0.42 + focus * 0.24, 1);
+      birthCoreMaterial.opacity = Math.min(0.82, birthFrame.centralAccumulation * (0.3 + liveEnergy * 0.24));
+      birthCore.scale.set((0.075 + birthFrame.centralAccumulation * 0.12) * viewportAspect, 0.075 + birthFrame.centralAccumulation * 0.12, 1);
+      birthLightRibbons.forEach((ribbon, index) => {
+        const delay = ribbon.userData.delay as number;
+        const duration = ribbon.userData.duration as number;
+        const travel = THREE.MathUtils.clamp((elapsed - delay) / duration, 0, 1.08);
+        const acceleratedHead = Math.pow(Math.min(1, travel), 1.42);
+        const material = birthLightMaterials[index];
+        material.uniforms.uHead.value = acceleratedHead;
+        material.uniforms.uIntensity.value = birthFrame.externalLight
+          * (ribbon.userData.brightness as number)
+          * (0.72 + liveEnergy * 0.42 + liveOnset * 0.08)
+          * (travel > 1 ? Math.max(0, 1 - (travel - 1) * 12) : 1);
+        material.uniforms.uTime.value = time;
       });
-      birthPathGroup.scale.set(viewportAspect, 1, 1);
       if (localPreview) {
         mount.dataset.spiritBirthConvergence = birthFrame.convergence.toFixed(3);
         mount.dataset.spiritBirthFocus = focus.toFixed(3);
         mount.dataset.spiritBirthAbsorption = birthFrame.lightAbsorption.toFixed(3);
         mount.dataset.spiritBirthFormation = birthFrame.formationFront.toFixed(3);
         mount.dataset.spiritBirthOverexposure = birthFrame.overexposure.toFixed(3);
+        mount.dataset.spiritBirthExternalLight = birthFrame.externalLight.toFixed(3);
+        mount.dataset.spiritBirthAccumulation = birthFrame.centralAccumulation.toFixed(3);
+        mount.dataset.spiritBirthPathCount = String(birthLightPathCount);
       }
     };
 
@@ -1271,7 +1272,12 @@ export function WaveCanvas({
         : spiritDebug === 'power' || spiritDebug === 'glide' || spiritDebug === 'funnel-power' || spiritDebug === 'funnel-glide' || spiritDebug === 'softbody'
           ? 0.72
           : spiritDebug ? 0.47 : 0.37;
-      unifiedSpirit.scale.set(debugScale * viewportAspect * scale, debugScale * scale, 1);
+      const birthPresentationScale = 1 + (1 - birthFrame.awakening) * 0.32;
+      unifiedSpirit.scale.set(
+        debugScale * viewportAspect * scale * birthPresentationScale,
+        debugScale * scale * birthPresentationScale,
+        1,
+      );
       spiritRig.surfaces.forEach(({ mesh, finalMaterial, geometryMaterial }) => {
         mesh.material = previewPass === 'A' ? geometryMaterial : finalMaterial;
         const kind = finalMaterial.uniforms.uKind.value as number;
@@ -1343,8 +1349,8 @@ export function WaveCanvas({
       spiritRig.heartLobes.forEach((lobe, index) => {
         lobe.visible = spiritLayer !== 'body';
         const lobeReveal = smoothstep(0.04 + index * 0.075, 0.48 + index * 0.075, birthFrame.heartReveal);
-        const idlePhase = (time * 0.3 + index * 0.075) % 1;
-        const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.1, 2)) * (0.052 + curiousResponse * 0.018);
+        const idlePhase = (time * 0.46 + index * 0.075) % 1;
+        const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.1, 2)) * (0.085 + curiousResponse * 0.02);
         const lobeAge = beatAge - heartLobeDelays[index];
         const frequencyExpression = index === 4
           ? 0.86 + currentOnsetLowStrength * 0.22
@@ -1358,7 +1364,7 @@ export function WaveCanvas({
           + heartStartlePulse * 0.24
           + ignitionBeat;
         const phenotypePulse = (lobe.userData.pulseStrength as number | undefined) ?? 1;
-        const beat = 1 - visibleBeat * 0.31 * phenotypePulse + rebound * musicalDominance * 0.17 * phenotypePulse;
+        const beat = 1 - visibleBeat * 0.4 * phenotypePulse + rebound * musicalDominance * 0.14 * phenotypePulse;
         lobe.scale.copy(lobe.userData.baseScale).multiplyScalar(beat * (0.08 + lobeReveal * 0.92));
         lobe.rotation.z = Math.sin(time * 0.2 + index * 1.31) * 0.038;
         const lobeUniforms = (lobe.material as THREE.ShaderMaterial).uniforms;
@@ -1377,6 +1383,15 @@ export function WaveCanvas({
         mount.dataset.spiritBeatTotal = String(acceptedBeatTotal);
         mount.dataset.spiritBeatAge = beatAge.toFixed(3);
         mount.dataset.spiritBeatConfidence = majorBeatConfidence.toFixed(3);
+        mount.dataset.spiritOnsetStrength = (liveVisual?.onsetStrength ?? 0).toFixed(3);
+        mount.dataset.spiritOnsetToken = String(liveVisual?.onsetToken ?? 0);
+        mount.dataset.spiritOnsetLow = (liveVisual?.onsetLowStrength ?? 0).toFixed(3);
+        mount.dataset.spiritOnsetHigh = (liveVisual?.onsetHighStrength ?? 0).toFixed(3);
+        mount.dataset.spiritAudioEnergy = (liveVisual?.overallEnergy ?? 0).toFixed(3);
+        mount.dataset.spiritBeatProminence = (liveVisual?.majorBeatProminence ?? 0).toFixed(3);
+        mount.dataset.spiritBeatThreshold = (liveVisual?.majorBeatThreshold ?? 0).toFixed(3);
+        mount.dataset.spiritBeatPeriodic = (liveVisual?.majorBeatPeriodicSupport ?? 0).toFixed(3);
+        mount.dataset.spiritBeatFastPath = String(liveVisual?.majorBeatFastPath ?? false);
       }
       spiritRig.energyMaterials.forEach((material, index) => {
         const propagation = sampleHeartEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * expressedRhythm;
@@ -1996,9 +2011,9 @@ export function WaveCanvas({
       motionQuery.removeEventListener?.('change', updateMotionPreference);
       mount.removeChild(renderer.domElement);
       renderer.dispose();
-      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, moteGeometry, particleGeometry, sampleRingGeometry, ...birthPathGeometries, ...wakeGeometries, ...spiritRig.geometries].forEach((geometry) => geometry.dispose());
+      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, moteGeometry, particleGeometry, sampleRingGeometry, ...birthLightGeometries, ...wakeGeometries, ...spiritRig.geometries].forEach((geometry) => geometry.dispose());
       haloTexture.dispose();
-      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, birthAuraMaterial, birthFocusMaterial, ...birthPathMaterials, ...spiritRig.materials, moteMaterial, particleMaterial, wakeMaterial].forEach((material) => material.dispose());
+      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, birthAuraMaterial, birthFocusMaterial, birthCoreMaterial, ...birthLightMaterials, ...spiritRig.materials, moteMaterial, particleMaterial, wakeMaterial].forEach((material) => material.dispose());
     };
   }, [spiritPhenotype.key, spiritPersonality.key]);
 
@@ -2741,7 +2756,9 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         finalColor += mix(vec3(1.0, 0.7, 0.32), mix(uAccent, uColor, 0.45), uIndividuality) * warmRoot * (vein + rootBlend + spectral * 0.35);
         finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.06 + localRimActivity * 0.14);
         vec3 birthLight = mix(uPrimary, vec3(1.0), 0.66);
-        finalColor += birthLight * uBirthEnergy * (heart * 1.2 + depthGlow * 0.34 + vein * 0.48 + rim * 0.62);
+        finalColor += birthLight * uBirthEnergy
+          * (heart * 1.2 + depthGlow * 0.34 + vein * 1.65 + rim * 1.42 + rootBlend * 0.82);
+        finalColor = mix(finalColor, birthLight * 2.2, clamp((vein + rim * 0.9) * uBirthEnergy * 0.72, 0.0, 0.88));
         float bodyDistance = distance(vLocal.xy, vec2(0.0, 0.48));
         float bodyBoundary = exp(-pow(bodyDistance - uBirthReveal * 1.15, 2.0) / 0.0045) * (1.0 - wing);
         float wingBoundary = exp(-pow(vSpan - uBirthWing, 2.0) / 0.0035) * wing;
@@ -2755,7 +2772,7 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
         float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vFunnelResponse * 0.36 + funnelTravel * 0.86 + contactEnergy * 0.42 + wingTravel * 0.62 + rootBlend * uRootPulse * 0.48 + heart * (0.04 + uHeartBeat * 0.72) + membraneDepth + uMid * wing * 0.06);
         alpha *= mix(1.0, 0.5 + uHeartBeat * 0.62, heart);
-        alpha *= 1.0 + uBirthEnergy * (0.18 + vein * 1.18 + rim * 0.96 + rootBlend * 0.58)
+        alpha *= 1.0 + uBirthEnergy * (0.18 + vein * 2.36 + rim * 1.82 + rootBlend * 0.84)
           + uBirthOverexposure * (heart * 0.42 + vein * 0.34 + rim * 0.38);
         alpha += uOpacity * formationLight * 0.56;
         float body = 1.0 - step(0.5, uKind);
@@ -2766,6 +2783,7 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float birthMask = mix(uBirthReveal, bodyReveal * crownMask, body);
         birthMask *= mix(1.0, wingUnfold, wing);
         alpha *= birthMask;
+        alpha = max(alpha, uOpacity * uBirthEnergy * (vein * 1.7 + rim * 1.45) * wingUnfold);
         if (alpha < 0.008) discard;
         gl_FragColor = vec4(finalColor, alpha);
       }
@@ -2863,11 +2881,11 @@ function sampleSwimmingCycle(phase: number) {
 }
 
 function sampleHeartEnvelope(age: number, release = 0.33) {
-  const end = 0.09 + release;
+  const end = 0.075 + release;
   if (age <= 0 || age >= end) return 0;
-  if (age < 0.06) return smoothstep(0, 0.06, age);
-  if (age < 0.09) return 1;
-  return 1 - smoothstep(0.09, end, age);
+  if (age < 0.045) return smoothstep(0, 0.045, age);
+  if (age < 0.075) return 1;
+  return 1 - smoothstep(0.075, end, age);
 }
 
 function medianBeatInterval(values: Float32Array, count: number, scratch: Float32Array) {
@@ -2905,6 +2923,131 @@ function sampleCatmullSpine(controls: Float32Array, progress: number, target: { 
   );
   target.x = sample(0);
   target.y = sample(1);
+}
+
+function deterministicBirthVariation(index: number) {
+  return {
+    delay: (index % 9) * 0.17 + deterministicBirthValue(index, 1) * 0.38,
+    duration: 0.9 + deterministicBirthValue(index, 2) * 0.72,
+    brightness: 0.72 + deterministicBirthValue(index, 3) * 0.46,
+    width: 0.018 + deterministicBirthValue(index, 4) * 0.018,
+  };
+}
+
+function deterministicBirthValue(index: number, salt: number) {
+  const value = Math.sin((index + 1) * (12.9898 + salt * 7.233)) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function createBirthLightRibbonGeometry(index: number, count: number, width: number) {
+  const lane = index % 8;
+  const spread = deterministicBirthValue(index, 5) * 1.5 - 0.75;
+  const cornerBias = deterministicBirthValue(index, 6) * 0.28 - 0.14;
+  let entry: THREE.Vector3;
+  if (lane === 0 || lane === 4) entry = new THREE.Vector3(-1.08, spread, -0.03);
+  else if (lane === 1 || lane === 5) entry = new THREE.Vector3(1.08, spread, -0.03);
+  else if (lane === 2 || lane === 6) entry = new THREE.Vector3(spread * 1.18, 1.06, -0.03);
+  else entry = new THREE.Vector3(spread * 1.18, -1.06, -0.03);
+  if (lane === 4) entry.y = 0.54 + cornerBias;
+  if (lane === 5) entry.y = -0.5 + cornerBias;
+  if (lane === 6) entry.x = 0.58 + cornerBias;
+  if (lane === 7) entry.x = -0.56 + cornerBias;
+
+  const target = new THREE.Vector3(0, 0.14, -0.03);
+  const direction = target.clone().sub(entry).normalize();
+  const normal = new THREE.Vector3(-direction.y, direction.x, 0);
+  const bend = (deterministicBirthValue(index, 7) * 2 - 1) * (0.2 + deterministicBirthValue(index, 8) * 0.26);
+  const curve = new THREE.CatmullRomCurve3([
+    entry,
+    entry.clone().lerp(target, 0.24).addScaledVector(normal, bend),
+    entry.clone().lerp(target, 0.52).addScaledVector(normal, -bend * 0.56),
+    entry.clone().lerp(target, 0.78).addScaledVector(normal, bend * 0.2),
+    target,
+  ]);
+  const segments = 44;
+  const positions = new Float32Array((segments + 1) * 2 * 3);
+  const progress = new Float32Array((segments + 1) * 2);
+  const side = new Float32Array((segments + 1) * 2);
+  const indices: number[] = [];
+  for (let segment = 0; segment <= segments; segment += 1) {
+    const t = segment / segments;
+    const point = curve.getPoint(t);
+    const tangent = curve.getTangent(t).normalize();
+    const perpendicular = new THREE.Vector3(-tangent.y, tangent.x, 0);
+    const taper = 0.42 + Math.sin(t * Math.PI) * 0.58;
+    for (let edge = 0; edge < 2; edge += 1) {
+      const vertex = segment * 2 + edge;
+      const edgeSide = edge === 0 ? -1 : 1;
+      const offset = perpendicular.clone().multiplyScalar(width * taper * edgeSide);
+      positions[vertex * 3] = point.x + offset.x;
+      positions[vertex * 3 + 1] = point.y + offset.y;
+      positions[vertex * 3 + 2] = point.z;
+      progress[vertex] = t;
+      side[vertex] = edgeSide;
+    }
+    if (segment < segments) {
+      const base = segment * 2;
+      indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('pathProgress', new THREE.BufferAttribute(progress, 1));
+  geometry.setAttribute('pathSide', new THREE.BufferAttribute(side, 1));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  geometry.userData.pathCount = count;
+  return geometry;
+}
+
+function createBirthLightRibbonMaterial(color: number) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(color) },
+      uHead: { value: -0.1 },
+      uIntensity: { value: 0 },
+      uTime: { value: 0 },
+    },
+    vertexShader: `
+      attribute float pathProgress;
+      attribute float pathSide;
+      varying float vProgress;
+      varying float vSide;
+      void main() {
+        vProgress = pathProgress;
+        vSide = pathSide;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uHead;
+      uniform float uIntensity;
+      uniform float uTime;
+      varying float vProgress;
+      varying float vSide;
+      void main() {
+        float behindHead = 1.0 - smoothstep(uHead, uHead + 0.028, vProgress);
+        float tail = smoothstep(uHead - 0.38, uHead - 0.12, vProgress);
+        float head = exp(-pow((vProgress - uHead) / 0.052, 2.0));
+        float travelling = behindHead * tail + head * 1.3;
+        float edge = abs(vSide);
+        float halo = exp(-edge * edge * 2.0);
+        float middle = exp(-edge * edge * 7.0);
+        float core = exp(-edge * edge * 24.0);
+        float shimmer = 0.92 + 0.08 * sin(vProgress * 31.0 - uTime * 2.2);
+        vec3 lightColor = mix(uColor, vec3(0.86, 0.98, 1.0), middle * 0.72 + core * 0.28);
+        float alpha = uIntensity * travelling * shimmer * (halo * 0.16 + middle * 0.3 + core * 0.74);
+        if (alpha < 0.006) discard;
+        gl_FragColor = vec4(lightColor, alpha);
+      }
+    `,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
 }
 
 function dynamicGeometry(positions: Float32Array) {

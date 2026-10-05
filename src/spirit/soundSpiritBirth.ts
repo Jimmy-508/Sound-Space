@@ -16,6 +16,8 @@ export interface SoundSpiritBirthFrame {
   convergence: number;
   focusGlow: number;
   lightAbsorption: number;
+  externalLight: number;
+  centralAccumulation: number;
   formationFront: number;
   wingVeinReveal: number;
   overexposure: number;
@@ -23,7 +25,7 @@ export interface SoundSpiritBirthFrame {
   interactionLocked: boolean;
 }
 
-export const SOUND_SPIRIT_BIRTH_DURATION_SECONDS = 3.5;
+export const SOUND_SPIRIT_BIRTH_DURATION_SECONDS = 4;
 
 export const ALIVE_SOUND_SPIRIT_BIRTH_FRAME: SoundSpiritBirthFrame = Object.freeze({
   state: 'ALIVE',
@@ -41,6 +43,8 @@ export const ALIVE_SOUND_SPIRIT_BIRTH_FRAME: SoundSpiritBirthFrame = Object.free
   convergence: 0,
   focusGlow: 0,
   lightAbsorption: 0,
+  externalLight: 0,
+  centralAccumulation: 0,
   formationFront: 0,
   wingVeinReveal: 1,
   overexposure: 0,
@@ -53,36 +57,38 @@ export function getSoundSpiritBirthFrame(elapsedSeconds: number): SoundSpiritBir
     return ALIVE_SOUND_SPIRIT_BIRTH_FRAME;
   }
   const elapsed = Math.max(0, elapsedSeconds);
-  const state: SoundSpiritBirthState = elapsed < 0.35
+  const state: SoundSpiritBirthState = elapsed < 0.45
     ? 'UNBORN'
-    : elapsed < 0.9
+    : elapsed < 1.25
       ? 'HEART'
-      : elapsed < 1.65
+      : elapsed < 2.25
         ? 'FORMING'
-        : elapsed < 2.55
+        : elapsed < 3.35
           ? 'UNFOLDING'
           : 'AWAKENING';
 
   return {
     state,
     progress: ease(0, SOUND_SPIRIT_BIRTH_DURATION_SECONDS, elapsed),
-    heartReveal: ease(0.35, 0.98, elapsed),
-    energyReveal: ease(0.66, 2.46, elapsed),
-    bodyReveal: ease(0.9, 1.76, elapsed),
-    crownReveal: ease(1.14, 1.88, elapsed),
-    wingRootReveal: ease(1.48, 1.92, elapsed),
-    wingVeinReveal: ease(1.64, 2.36, elapsed),
-    wingRimReveal: ease(1.96, 2.62, elapsed),
-    wingMembraneReveal: ease(2.2, 2.88, elapsed),
-    awakening: ease(2.86, SOUND_SPIRIT_BIRTH_DURATION_SECONDS, elapsed),
-    livingMotion: ease(2.96, SOUND_SPIRIT_BIRTH_DURATION_SECONDS, elapsed),
-    heartPulse: Math.min(1, pulse(elapsed, 0.76, 0.11) + pulse(elapsed, 2.86, 0.13) * 0.5),
-    convergence: ease(0.04, 0.62, elapsed) * (1 - ease(0.98, 1.48, elapsed)),
-    focusGlow: ease(0.14, 0.76, elapsed) * (1 - ease(2.92, 3.28, elapsed)),
-    lightAbsorption: ease(0.18, 0.94, elapsed) * (1 - ease(1.08, 1.58, elapsed)),
-    formationFront: ease(0.72, 2.78, elapsed) * (1 - ease(2.94, 3.24, elapsed)),
-    overexposure: pulse(elapsed, 2.88, 0.09),
-    revealEnergy: ease(0.46, 1.3, elapsed) * (1 - ease(2.92, 3.28, elapsed)),
+    heartReveal: ease(0.72, 1.48, elapsed),
+    energyReveal: ease(0.88, 3.45, elapsed),
+    bodyReveal: ease(1.22, 2.48, elapsed),
+    crownReveal: ease(1.58, 2.58, elapsed),
+    wingRootReveal: ease(2.02, 2.46, elapsed),
+    wingVeinReveal: ease(2.16, 3.04, elapsed),
+    wingRimReveal: ease(2.52, 3.38, elapsed),
+    wingMembraneReveal: ease(2.84, 3.58, elapsed),
+    awakening: ease(3.5, SOUND_SPIRIT_BIRTH_DURATION_SECONDS, elapsed),
+    livingMotion: ease(3.62, SOUND_SPIRIT_BIRTH_DURATION_SECONDS, elapsed),
+    heartPulse: Math.min(1, pulse(elapsed, 1.18, 0.12) + pulse(elapsed, 3.64, 0.11) * 0.42),
+    convergence: ease(0.02, 0.56, elapsed) * (1 - ease(2.2, 3.48, elapsed)),
+    focusGlow: ease(0.3, 1.06, elapsed) * (1 - ease(3.54, 3.88, elapsed)),
+    lightAbsorption: ease(0.04, 2.35, elapsed),
+    externalLight: ease(0.02, 0.3, elapsed) * (1 - ease(3.18, 3.78, elapsed)),
+    centralAccumulation: ease(0.42, 1.36, elapsed) * (1 - ease(3.48, 3.88, elapsed)),
+    formationFront: ease(1.02, 3.38, elapsed) * (1 - ease(3.58, 3.9, elapsed)),
+    overexposure: pulse(elapsed, 3.64, 0.07),
+    revealEnergy: ease(0.62, 1.56, elapsed) * (1 - ease(3.56, 3.9, elapsed)),
     interactionLocked: true,
   };
 }

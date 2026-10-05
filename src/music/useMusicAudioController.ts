@@ -61,7 +61,13 @@ export interface MusicVisualState {
   onsetPulse: number;
   onsetStrength: number;
   onsetToken: number;
+  onsetLowStrength: number;
+  onsetHighStrength: number;
   majorBeatConfidence: number;
+  majorBeatProminence: number;
+  majorBeatThreshold: number;
+  majorBeatPeriodicSupport: number;
+  majorBeatFastPath: boolean;
 }
 
 const initialVisualState: MusicVisualState = {
@@ -78,7 +84,13 @@ const initialVisualState: MusicVisualState = {
   onsetPulse: 0,
   onsetStrength: 0,
   onsetToken: 0,
+  onsetLowStrength: 0,
+  onsetHighStrength: 0,
   majorBeatConfidence: 0,
+  majorBeatProminence: 0,
+  majorBeatThreshold: 0,
+  majorBeatPeriodicSupport: 0,
+  majorBeatFastPath: false,
 };
 
 interface MusicAnalysisState {
@@ -353,10 +365,16 @@ function updateMusicVisualState(
   if (onset.detected) {
     target.onsetPulse = onset.strength;
     target.onsetStrength = onset.strength;
+    target.onsetLowStrength = onset.lowStrength;
+    target.onsetHighStrength = onset.highStrength;
     target.onsetToken += 1;
   }
   const majorBeat = gateMajorBeat(analysis.majorBeat, onset, target.overallEnergy, now, playing);
   target.majorBeatConfidence = majorBeat.confidence;
+  target.majorBeatProminence = majorBeat.prominence;
+  target.majorBeatThreshold = majorBeat.threshold;
+  target.majorBeatPeriodicSupport = majorBeat.periodicSupport;
+  target.majorBeatFastPath = majorBeat.fastPath;
   if (majorBeat.detected) {
     target.beatPulse = majorBeat.strength;
     target.beatStrength = majorBeat.strength;
