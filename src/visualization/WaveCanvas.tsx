@@ -314,49 +314,45 @@ export function WaveCanvas({
     });
     const birthFocusMaterial = birthAuraMaterial.clone();
     birthFocusMaterial.color.setHex(spiritPhenotype.secondaryColor);
-    const birthFlashMaterial = birthAuraMaterial.clone();
-    birthFlashMaterial.color.setHex(0xffffff);
     const birthAura = new THREE.Sprite(birthAuraMaterial);
     const birthFocus = new THREE.Sprite(birthFocusMaterial);
-    const birthFlash = new THREE.Sprite(birthFlashMaterial);
-    const birthRingGeometry = new THREE.RingGeometry(0.245, 0.258, compact ? 40 : 64);
-    const birthRingMaterial = new THREE.MeshBasicMaterial({
-      color: spiritPhenotype.accentColor,
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    });
-    const birthRing = new THREE.Mesh(birthRingGeometry, birthRingMaterial);
-    const birthStreakPositions = new Float32Array(12 * 2 * 3);
-    for (let index = 0; index < 12; index += 1) {
-      const angle = index / 12 * Math.PI * 2 + (index % 2) * 0.08;
-      const inner = 0.22 + (index % 3) * 0.018;
-      const outer = 0.62 + (index % 4) * 0.055;
-      const offset = index * 6;
-      birthStreakPositions[offset] = Math.cos(angle) * inner;
-      birthStreakPositions[offset + 1] = Math.sin(angle) * inner;
-      birthStreakPositions[offset + 3] = Math.cos(angle) * outer;
-      birthStreakPositions[offset + 4] = Math.sin(angle) * outer;
+    const birthPathGroup = new THREE.Group();
+    const birthPathGeometries: THREE.BufferGeometry[] = [];
+    const birthPathMaterials: THREE.LineBasicMaterial[] = [];
+    const birthPaths: THREE.Line[] = [];
+    const birthPathCount = compact ? 6 : 8;
+    for (let index = 0; index < birthPathCount; index += 1) {
+      const angle = index / birthPathCount * Math.PI * 2 + 0.28;
+      const radius = 0.68 + (index % 3) * 0.105;
+      const outer = new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius * 0.7 + 0.08, -0.02);
+      const tangent = new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0);
+      const bend = index % 2 === 0 ? 0.24 : -0.2;
+      const curve = new THREE.CatmullRomCurve3([
+        outer,
+        outer.clone().multiplyScalar(0.7).addScaledVector(tangent, bend),
+        outer.clone().multiplyScalar(0.4).addScaledVector(tangent, -bend * 0.62).add(new THREE.Vector3(0, 0.08, 0)),
+        new THREE.Vector3(0, 0.14, 0),
+      ]);
+      const geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(35));
+      geometry.setDrawRange(0, 0);
+      const material = new THREE.LineBasicMaterial({
+        color: index % 3 === 0 ? spiritPhenotype.accentColor : index % 2 === 0 ? spiritPhenotype.secondaryColor : spiritPhenotype.primaryColor,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const path = new THREE.Line(geometry, material);
+      path.renderOrder = 3;
+      birthPathGeometries.push(geometry);
+      birthPathMaterials.push(material);
+      birthPaths.push(path);
+      birthPathGroup.add(path);
     }
-    const birthStreakGeometry = dynamicGeometry(birthStreakPositions);
-    const birthStreakMaterial = new THREE.LineBasicMaterial({
-      color: spiritPhenotype.primaryColor,
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const birthStreaks = new THREE.LineSegments(birthStreakGeometry, birthStreakMaterial);
     birthAura.renderOrder = 1;
     birthFocus.renderOrder = 2;
-    birthStreaks.renderOrder = 3;
-    birthFlash.renderOrder = 7;
-    birthRing.renderOrder = 9;
-    birthEffects.add(birthAura, birthFocus, birthStreaks, birthFlash, birthRing);
+    birthEffects.add(birthAura, birthFocus, birthPathGroup);
     birthEffects.visible = false;
     playheadMarkerMaterial.needsUpdate = true;
     moteMaterial.needsUpdate = true;
@@ -455,6 +451,8 @@ export function WaveCanvas({
     let contractionPulse = 0;
     let lastMainBeatAt = -10;
     let observedAudioBeatToken = 0;
+    let observedAudioOnsetToken = 0;
+    let majorBeatConfidence = 0;
     let currentOnsetLowStrength = 0;
     let currentOnsetHighStrength = 0;
     let expectedBeatInterval = 0;
@@ -588,30 +586,30 @@ export function WaveCanvas({
       if (!active) return;
       const audio = current.musicVisualStateRef?.current;
       const liveEnergy = current.musicPlaying ? audio?.overallEnergy ?? 0 : 0;
-      const liveBeat = current.musicPlaying ? audio?.beatPulse ?? 0 : 0;
+      const liveOnset = current.musicPlaying ? audio?.onsetPulse ?? 0 : 0;
       const viewportAspect = Math.min(1, canvasHeight / canvasWidth);
       const focus = Math.min(1.35, birthFrame.focusGlow * (0.82 + liveEnergy * 0.72));
-      const flash = Math.min(1.45, birthFrame.transformationFlash * (0.92 + liveBeat * 0.42 + liveEnergy * 0.28));
-      const ring = Math.min(1.25, birthFrame.birthRing * (0.76 + liveBeat * 0.46));
       birthEffects.position.set(0, 0, -0.04);
-      birthEffects.rotation.z = time * 0.035;
-      birthAuraMaterial.opacity = Math.min(0.7, focus * 0.33 + birthFrame.revealEnergy * 0.16);
-      birthAura.scale.set((0.7 + focus * 0.38) * viewportAspect, 0.7 + focus * 0.38, 1);
-      birthFocusMaterial.opacity = Math.min(0.58, focus * 0.24 + birthFrame.convergence * 0.26);
-      birthFocus.scale.set((0.3 + focus * 0.2) * viewportAspect, 1.08 + focus * 0.45, 1);
-      birthFlashMaterial.opacity = Math.min(0.88, flash * 0.62);
-      birthFlash.scale.set((0.32 + flash * 0.52) * viewportAspect, 0.32 + flash * 0.52, 1);
-      const ringExpansion = Math.max(birthFrame.heartReveal * 0.46, birthFrame.wingMembraneReveal * 0.95);
-      birthRingMaterial.opacity = Math.min(0.86, ring * 0.7);
-      birthRing.scale.set((0.38 + ringExpansion * 1.95) * viewportAspect, 0.38 + ringExpansion * 1.95, 1);
-      birthStreakMaterial.opacity = Math.min(0.56, birthFrame.convergence * (0.32 + liveEnergy * 0.44));
-      const streakScale = 1.18 - birthFrame.convergence * 0.68;
-      birthStreaks.scale.set(streakScale * viewportAspect, streakScale, 1);
+      birthAuraMaterial.opacity = Math.min(0.28, focus * 0.12 + birthFrame.revealEnergy * 0.07);
+      birthAura.scale.set((0.6 + focus * 0.22) * viewportAspect, 0.6 + focus * 0.22, 1);
+      birthFocusMaterial.opacity = Math.min(0.48, focus * 0.18 + birthFrame.lightAbsorption * 0.22 + liveEnergy * 0.08);
+      birthFocus.scale.set((0.2 + focus * 0.12) * viewportAspect, 0.48 + focus * 0.22, 1);
+      const absorptionHead = Math.min(35, Math.floor(birthFrame.lightAbsorption * 38));
+      birthPaths.forEach((path, index) => {
+        const stagger = index * 0.018;
+        const pathProgress = THREE.MathUtils.clamp(birthFrame.lightAbsorption * 1.14 - stagger, 0, 1);
+        const head = Math.min(35, Math.max(absorptionHead, Math.floor(pathProgress * 35)));
+        const start = Math.max(0, head - 10 - (index % 3));
+        path.geometry.setDrawRange(start, Math.max(0, head - start + 1));
+        birthPathMaterials[index].opacity = birthFrame.convergence * (0.16 + liveEnergy * 0.18 + liveOnset * 0.06) * (0.82 + (index % 2) * 0.18);
+      });
+      birthPathGroup.scale.set(viewportAspect, 1, 1);
       if (localPreview) {
         mount.dataset.spiritBirthConvergence = birthFrame.convergence.toFixed(3);
         mount.dataset.spiritBirthFocus = focus.toFixed(3);
-        mount.dataset.spiritBirthRing = ring.toFixed(3);
-        mount.dataset.spiritBirthFlash = flash.toFixed(3);
+        mount.dataset.spiritBirthAbsorption = birthFrame.lightAbsorption.toFixed(3);
+        mount.dataset.spiritBirthFormation = birthFrame.formationFront.toFixed(3);
+        mount.dataset.spiritBirthOverexposure = birthFrame.overexposure.toFixed(3);
       }
     };
 
@@ -707,6 +705,14 @@ export function WaveCanvas({
       rhythmImpulse = Math.max(rhythmImpulse * Math.exp(-deltaTime * 8.5), nextImpulse);
       beatAccent = Math.max(beatAccent * Math.exp(-deltaTime * 7.2), Math.min(1, nextImpulse + spectralFlux * automaticGain * 2.4));
       const timeSinceBeat = rhythmClock - lastMainBeatAt;
+      majorBeatConfidence += ((audioVisual?.majorBeatConfidence ?? 0) - majorBeatConfidence)
+        * (1 - Math.exp(-deltaTime * 2.2));
+      if (playing && audioVisual && audioVisual.onsetToken !== observedAudioOnsetToken) {
+        observedAudioOnsetToken = audioVisual.onsetToken;
+        const minorStrength = THREE.MathUtils.clamp(audioVisual.onsetStrength, 0, 1);
+        accentPulse = Math.max(accentPulse, minorStrength * 0.32);
+        rhythmImpulse = Math.max(rhythmImpulse, minorStrength * 0.18);
+      }
       if (playing && audioVisual && audioVisual.beatToken !== observedAudioBeatToken) {
         observedAudioBeatToken = audioVisual.beatToken;
         const detectedStrength = THREE.MathUtils.clamp(audioVisual.beatStrength, 0, 1);
@@ -721,7 +727,7 @@ export function WaveCanvas({
         rhythmPulse = 1;
         currentOnsetLowStrength = audioVisual.beatLowStrength;
         currentOnsetHighStrength = audioVisual.beatHighStrength;
-        accentPulse = Math.max(accentPulse, detectedStrength);
+        accentPulse = Math.max(accentPulse, detectedStrength * 0.72);
         lastMainBeatAt = rhythmClock;
         contractionPulse = Math.max(contractionPulse, detectedStrength);
         pendingVeilPulse = rhythmStrength;
@@ -1081,9 +1087,8 @@ export function WaveCanvas({
       const birthFrame = currentBirthFrame;
       const liveVisual = current.musicVisualStateRef?.current;
       const birthAudioEnergy = current.musicPlaying ? liveVisual?.overallEnergy ?? 0 : 0;
-      const birthAudioBeat = current.musicPlaying ? liveVisual?.beatPulse ?? 0 : 0;
       const birthRevealEnergy = Math.min(1.4, birthFrame.revealEnergy * (0.86 + birthAudioEnergy * 0.82));
-      const birthTransformationFlash = Math.min(1.5, birthFrame.transformationFlash * (0.94 + birthAudioBeat * 0.38));
+      const birthOverexposure = Math.min(1.3, birthFrame.overexposure * (0.94 + (liveVisual?.beatPulse ?? 0) * 0.16));
       const viewportAspect = Math.min(1, canvasHeight / canvasWidth);
       const scale = current.creatureScale ?? 1;
       const motionScale = reducedMotion ? 0.32 : 1;
@@ -1280,7 +1285,9 @@ export function WaveCanvas({
           ? birthFrame.wingRimReveal
           : kind >= 6.8
             ? birthFrame.wingRootReveal
-            : birthFrame.wingMembraneReveal;
+            : kind >= 4.5 && kind < 5.8
+              ? birthFrame.wingVeinReveal
+              : birthFrame.wingMembraneReveal;
         material.uniforms.uTime.value = time;
         material.uniforms.uLife.value = previewPass === 'B' || spiritLayer === 'body' ? 0 : Math.max(lifeEnergy, idleLife);
         material.uniforms.uMusicAwake.value = previewPass === 'B' ? 0 : musicAwake;
@@ -1307,7 +1314,8 @@ export function WaveCanvas({
         material.uniforms.uBirthCrown.value = birthFrame.crownReveal;
         material.uniforms.uBirthWing.value = wingReveal;
         material.uniforms.uBirthEnergy.value = birthRevealEnergy;
-        material.uniforms.uBirthFlash.value = birthTransformationFlash;
+        material.uniforms.uBirthFront.value = birthFrame.formationFront;
+        material.uniforms.uBirthOverexposure.value = birthOverexposure;
         material.uniforms.uCycle.value = cycle;
         material.uniforms.uHeartBeat.value = 0;
         material.uniforms.uBeatAge.value = beatAge;
@@ -1343,14 +1351,14 @@ export function WaveCanvas({
           : 0.82 + currentOnsetHighStrength * 0.16 + currentOnsetLowStrength * 0.08;
         const audioBeat = sampleHeartEnvelope(lobeAge, heartRelease) * expressedRhythm * frequencyExpression;
         const rebound = sampleHeartEnvelope(lobeAge - 0.1, heartRelease * 0.64) * expressedRhythm;
-        const musicalDominance = current.musicPlaying ? 1 : musicAwake;
+        const musicalDominance = musicAwake * majorBeatConfidence;
         const ignitionBeat = birthFrame.heartPulse * (1 - Math.min(0.55, audioBeat * 0.36));
         const visibleBeat = idleBeat * (1 - musicalDominance * 0.94)
           + audioBeat
           + heartStartlePulse * 0.24
           + ignitionBeat;
         const phenotypePulse = (lobe.userData.pulseStrength as number | undefined) ?? 1;
-        const beat = 1 - visibleBeat * 0.31 * phenotypePulse + rebound * musicAwake * 0.17 * phenotypePulse;
+        const beat = 1 - visibleBeat * 0.31 * phenotypePulse + rebound * musicalDominance * 0.17 * phenotypePulse;
         lobe.scale.copy(lobe.userData.baseScale).multiplyScalar(beat * (0.08 + lobeReveal * 0.92));
         lobe.rotation.z = Math.sin(time * 0.2 + index * 1.31) * 0.038;
         const lobeUniforms = (lobe.material as THREE.ShaderMaterial).uniforms;
@@ -1368,6 +1376,7 @@ export function WaveCanvas({
         mount.dataset.spiritBeatStrength = expressedRhythm.toFixed(2);
         mount.dataset.spiritBeatTotal = String(acceptedBeatTotal);
         mount.dataset.spiritBeatAge = beatAge.toFixed(3);
+        mount.dataset.spiritBeatConfidence = majorBeatConfidence.toFixed(3);
       }
       spiritRig.energyMaterials.forEach((material, index) => {
         const propagation = sampleHeartEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * expressedRhythm;
@@ -1549,6 +1558,8 @@ export function WaveCanvas({
         contractionPulse = 0;
         lastMainBeatAt = -10;
         observedAudioBeatToken = current.musicVisualStateRef?.current?.beatToken ?? 0;
+        observedAudioOnsetToken = current.musicVisualStateRef?.current?.onsetToken ?? 0;
+        majorBeatConfidence = 0;
         currentOnsetLowStrength = 0;
         currentOnsetHighStrength = 0;
         expectedBeatInterval = 0;
@@ -1620,6 +1631,8 @@ export function WaveCanvas({
         heartStartlePulse = 0;
         lastMainBeatAt = -10;
         observedAudioBeatToken = 0;
+        observedAudioOnsetToken = 0;
+        majorBeatConfidence = 0;
         currentOnsetLowStrength = 0;
         currentOnsetHighStrength = 0;
         expectedBeatInterval = 0;
@@ -1983,9 +1996,9 @@ export function WaveCanvas({
       motionQuery.removeEventListener?.('change', updateMotionPreference);
       mount.removeChild(renderer.domElement);
       renderer.dispose();
-      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, moteGeometry, particleGeometry, sampleRingGeometry, birthRingGeometry, birthStreakGeometry, ...wakeGeometries, ...spiritRig.geometries].forEach((geometry) => geometry.dispose());
+      [waveGeometry, secondaryGeometry, pointGeometry, stemGeometry, playheadGeometry, playheadMarkerGeometry, moteGeometry, particleGeometry, sampleRingGeometry, ...birthPathGeometries, ...wakeGeometries, ...spiritRig.geometries].forEach((geometry) => geometry.dispose());
       haloTexture.dispose();
-      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, birthAuraMaterial, birthFocusMaterial, birthFlashMaterial, birthRingMaterial, birthStreakMaterial, ...spiritRig.materials, moteMaterial, particleMaterial, wakeMaterial].forEach((material) => material.dispose());
+      [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, birthAuraMaterial, birthFocusMaterial, ...birthPathMaterials, ...spiritRig.materials, moteMaterial, particleMaterial, wakeMaterial].forEach((material) => material.dispose());
     };
   }, [spiritPhenotype.key, spiritPersonality.key]);
 
@@ -2509,7 +2522,8 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uBirthCrown: { value: 1 },
       uBirthWing: { value: 1 },
       uBirthEnergy: { value: 0 },
-      uBirthFlash: { value: 0 },
+      uBirthFront: { value: 0 },
+      uBirthOverexposure: { value: 0 },
     },
     vertexShader: `
       attribute vec3 restPosition;
@@ -2662,7 +2676,8 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uniform float uBirthCrown;
       uniform float uBirthWing;
       uniform float uBirthEnergy;
-      uniform float uBirthFlash;
+      uniform float uBirthFront;
+      uniform float uBirthOverexposure;
       varying vec3 vLocal;
       varying vec3 vNormalView;
       varying vec3 vViewPosition;
@@ -2727,16 +2742,23 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         finalColor += vec3(0.18, 0.62, 0.96) * uTreble * wing * (0.06 + localRimActivity * 0.14);
         vec3 birthLight = mix(uPrimary, vec3(1.0), 0.66);
         finalColor += birthLight * uBirthEnergy * (heart * 1.2 + depthGlow * 0.34 + vein * 0.48 + rim * 0.62);
-        finalColor += mix(birthLight, uAccent, 0.2) * uBirthFlash * (heart * 2.1 + rim * 1.55 + rootBlend * 0.9 + wing * 0.34 + (1.0 - wing) * 0.42);
+        float bodyDistance = distance(vLocal.xy, vec2(0.0, 0.48));
+        float bodyBoundary = exp(-pow(bodyDistance - uBirthReveal * 1.15, 2.0) / 0.0045) * (1.0 - wing);
+        float wingBoundary = exp(-pow(vSpan - uBirthWing, 2.0) / 0.0035) * wing;
+        float formationLight = (bodyBoundary + wingBoundary * (0.72 + vein * 0.48 + rim * 0.62)) * uBirthFront;
+        finalColor += mix(birthLight, uAccent, vSpan * 0.28) * formationLight * 1.65;
+        finalColor += mix(birthLight, uAccent, 0.18) * uBirthOverexposure
+          * (heart * 2.0 + vein * 1.62 + rim * 1.75 + rootBlend * 1.18 + (1.0 - wing) * depthGlow * 0.72);
         finalColor *= uGlowIntensity;
         float detailAlpha = 1.0 + spectral * 0.12 + vein * (energyPulse * uEnergyFlow * 0.42) + localRimActivity * 0.32;
         float featheredMask = mix(1.0, vWingMask, clamp(wing + spectral + rootBlend, 0.0, 1.0));
         float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
         float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vFunnelResponse * 0.36 + funnelTravel * 0.86 + contactEnergy * 0.42 + wingTravel * 0.62 + rootBlend * uRootPulse * 0.48 + heart * (0.04 + uHeartBeat * 0.72) + membraneDepth + uMid * wing * 0.06);
         alpha *= mix(1.0, 0.5 + uHeartBeat * 0.62, heart);
-        alpha *= 1.0 + uBirthEnergy * 0.28 + uBirthFlash * (heart * 0.5 + rim * 0.42 + wing * 0.12);
+        alpha *= 1.0 + uBirthEnergy * (0.18 + vein * 1.18 + rim * 0.96 + rootBlend * 0.58)
+          + uBirthOverexposure * (heart * 0.42 + vein * 0.34 + rim * 0.38);
+        alpha += uOpacity * formationLight * 0.56;
         float body = 1.0 - step(0.5, uKind);
-        float bodyDistance = distance(vLocal.xy, vec2(0.0, 0.48));
         float bodyReveal = smoothstep(0.0, 0.06, uBirthReveal)
           * (1.0 - smoothstep(uBirthReveal * 1.15, uBirthReveal * 1.15 + 0.16, bodyDistance));
         float crownMask = mix(uBirthCrown, 1.0, 1.0 - smoothstep(0.66, 0.9, vLocal.y));

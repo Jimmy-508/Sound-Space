@@ -28,12 +28,13 @@ const revealKeys = [
   'crownReveal',
   'energyReveal',
   'wingRootReveal',
+  'wingVeinReveal',
   'wingMembraneReveal',
   'wingRimReveal',
   'awakening',
   'livingMotion',
 ] as const;
-const spectacleKeys = ['convergence', 'focusGlow', 'birthRing', 'transformationFlash', 'revealEnergy'] as const;
+const spectacleKeys = ['convergence', 'focusGlow', 'lightAbsorption', 'formationFront', 'overexposure', 'revealEnergy'] as const;
 let previous = getSoundSpiritBirthFrame(0);
 for (let step = 1; step <= 350; step += 1) {
   const frame = getSoundSpiritBirthFrame(step / 100);
@@ -49,11 +50,14 @@ for (let step = 0; step < 350; step += 1) {
 }
 spectacleKeys.forEach((key) => assert.equal(ALIVE_SOUND_SPIRIT_BIRTH_FRAME[key], 0, `${key} must terminate at ALIVE.`));
 assert.ok(getSoundSpiritBirthFrame(0.5).convergence > 0.4, 'UNBORN/HEART must visibly converge energy.');
-assert.ok(getSoundSpiritBirthFrame(2.58).transformationFlash > 0.95, 'Wing reveal must contain a brief transformation peak.');
+assert.ok(getSoundSpiritBirthFrame(2.88).overexposure > 0.95, 'Completed biological structure must create a brief natural overexposure.');
+assert.ok(getSoundSpiritBirthFrame(2.68).overexposure < 0.02 && getSoundSpiritBirthFrame(3.08).overexposure < 0.02, 'Overexposure must remain tightly bounded near 180ms.');
 assert.ok(getSoundSpiritBirthFrame(0.6).heartReveal > 0, 'The five-lobed heart must be the first visible system.');
 assert.equal(getSoundSpiritBirthFrame(0.6).bodyReveal, 0, 'The body must not precede the heart.');
-assert.ok(getSoundSpiritBirthFrame(1.7).wingRootReveal > getSoundSpiritBirthFrame(1.7).wingMembraneReveal, 'Wings must unfold root first.');
-assert.ok(getSoundSpiritBirthFrame(2.15).wingMembraneReveal > getSoundSpiritBirthFrame(2.15).wingRimReveal, 'Wing rims must follow the membrane.');
+assert.ok(getSoundSpiritBirthFrame(1.2).formationFront > 0 && getSoundSpiritBirthFrame(1.2).bodyReveal > 0, 'Body condensation must follow a luminous formation front.');
+assert.ok(getSoundSpiritBirthFrame(1.7).wingRootReveal > getSoundSpiritBirthFrame(1.7).wingVeinReveal, 'Wing roots must stabilize before major veins.');
+assert.ok(getSoundSpiritBirthFrame(2.1).wingVeinReveal > getSoundSpiritBirthFrame(2.1).wingMembraneReveal, 'Wing light architecture must precede membrane condensation.');
+assert.ok(getSoundSpiritBirthFrame(2.3).wingRimReveal < getSoundSpiritBirthFrame(2.3).wingVeinReveal, 'Outer rim must complete after major veins.');
 assert.equal(isSoundSpiritBirthInteractionLocked(0, 0, 0), false, 'A session without a birth token must remain interactive.');
 assert.equal(isSoundSpiritBirthInteractionLocked(1, 1000, 1000 + 3499), true, 'Creature interaction must stay locked throughout birth.');
 assert.equal(isSoundSpiritBirthInteractionLocked(1, 1000, 1000 + 3500), false, 'Creature interaction must unlock at ALIVE.');
@@ -89,8 +93,13 @@ assert.equal((rendererSource.match(/requestAnimationFrame\(animate\)/g) ?? []).l
 for (const uniform of ['uBirthReveal', 'uBirthCrown', 'uBirthWing']) {
   assert.ok(rendererSource.includes(uniform), `${uniform} must reuse the existing Golden renderer materials.`);
 }
-for (const effect of ['birthEffects', 'birthAura', 'birthRing', 'birthStreaks', 'uBirthFlash']) {
+for (const effect of ['birthEffects', 'birthAura', 'birthPathGroup', 'uBirthFront', 'uBirthOverexposure']) {
   assert.ok(rendererSource.includes(effect), `${effect} must participate in the bounded spectacle.`);
 }
+for (const rejectedEffect of ['birthFlashMaterial', 'birthRingGeometry', 'birthStreaks']) {
+  assert.ok(!rendererSource.includes(rejectedEffect), `${rejectedEffect} must not retain the summon/reveal visual language.`);
+}
+assert.ok(rendererSource.includes('CatmullRomCurve3'), 'Environmental light must follow curved gravitational paths.');
+assert.ok(rendererSource.includes('birthPathCount = compact ? 6 : 8'), 'Birth must use a restrained fixed path count.');
 
 console.log('Sound Spirit Birth verification passed: deterministic state flow, transactional import, interaction arbitration, and single-loop rendering.');

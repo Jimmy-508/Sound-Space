@@ -5,6 +5,7 @@ import {
   detectAudioOnset,
   type AudioOnsetDetectorState,
 } from './audioOnsetDetector';
+import { createMajorBeatGateState, gateMajorBeat, type MajorBeatGateState } from './majorBeatGate';
 
 const supportedAudioExtensions = ['.mp3', '.wav', '.m4a', '.aac'];
 const supportedAudioMimeTypes = [
@@ -57,6 +58,10 @@ export interface MusicVisualState {
   beatToken: number;
   beatLowStrength: number;
   beatHighStrength: number;
+  onsetPulse: number;
+  onsetStrength: number;
+  onsetToken: number;
+  majorBeatConfidence: number;
 }
 
 const initialVisualState: MusicVisualState = {
@@ -70,10 +75,15 @@ const initialVisualState: MusicVisualState = {
   beatToken: 0,
   beatLowStrength: 0,
   beatHighStrength: 0,
+  onsetPulse: 0,
+  onsetStrength: 0,
+  onsetToken: 0,
+  majorBeatConfidence: 0,
 };
 
 interface MusicAnalysisState {
   onset: AudioOnsetDetectorState;
+  majorBeat: MajorBeatGateState;
   previousSpectrum: Float32Array | null;
 }
 
@@ -88,6 +98,7 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
   const visualStateRef = useRef<MusicVisualState>({ ...initialVisualState });
   const visualBeatRef = useRef<MusicAnalysisState>({
     onset: createAudioOnsetDetectorState(),
+    majorBeat: createMajorBeatGateState(),
     previousSpectrum: null,
   });
   const gainRef = useRef<GainNode | null>(null);
@@ -205,7 +216,7 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
       audio.currentTime = 0;
       audio.load();
       visualStateRef.current = { ...initialVisualState };
-      visualBeatRef.current = { onset: createAudioOnsetDetectorState(), previousSpectrum: null };
+      visualBeatRef.current = { onset: createAudioOnsetDetectorState(), majorBeat: createMajorBeatGateState(), previousSpectrum: null };
       onSessionChange({
         duration: buffer.duration,
         current: 0,
@@ -335,11 +346,20 @@ function updateMusicVisualState(
   target.overallEnergy = target.bassEnergy * 0.46 + target.midEnergy * 0.36 + target.trebleEnergy * 0.18;
   target.beatPulse *= Math.exp(-deltaTime * 9.5);
   target.beatStrength *= Math.exp(-deltaTime * 4.8);
+  target.onsetPulse *= Math.exp(-deltaTime * 10.5);
+  target.onsetStrength *= Math.exp(-deltaTime * 5.8);
 
   const onset = detectAudioOnset(analysis.onset, { bass, mid, treble, spectralFlux, playing }, now);
   if (onset.detected) {
-    target.beatPulse = onset.strength;
-    target.beatStrength = onset.strength;
+    target.onsetPulse = onset.strength;
+    target.onsetStrength = onset.strength;
+    target.onsetToken += 1;
+  }
+  const majorBeat = gateMajorBeat(analysis.majorBeat, onset, target.overallEnergy, now, playing);
+  target.majorBeatConfidence = majorBeat.confidence;
+  if (majorBeat.detected) {
+    target.beatPulse = majorBeat.strength;
+    target.beatStrength = majorBeat.strength;
     target.beatLowStrength = onset.lowStrength;
     target.beatHighStrength = onset.highStrength;
     target.beatAt = now;
