@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test:spirit": "esbuild ./scripts/verify-spirit-identity.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-spirit-identity.mjs && node node_modules/.tmp/verify-spirit-identity.mjs",
+    "test:personality": "esbuild ./scripts/verify-spirit-personality.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-spirit-personality.mjs && node node_modules/.tmp/verify-spirit-personality.mjs",
+    "test:home-audio": "esbuild ./scripts/verify-home-audio-wave.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-home-audio-wave.mjs && node node_modules/.tmp/verify-home-audio-wave.mjs",
     "test:gesture": "esbuild ./scripts/verify-gesture-foundation.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-gesture-foundation.mjs && node node_modules/.tmp/verify-gesture-foundation.mjs",
     "test:gesture-interactions": "esbuild ./scripts/verify-gesture-interactions.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-gesture-interactions.mjs && node node_modules/.tmp/verify-gesture-interactions.mjs",
     "test:gesture-polish": "esbuild ./scripts/verify-gesture-polish.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-gesture-polish.mjs && node node_modules/.tmp/verify-gesture-polish.mjs"

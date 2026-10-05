@@ -8,6 +8,11 @@ import {
   type SoundSpiritPhenotypeConfig,
 } from '../spirit/soundSpiritIdentity';
 import { fillFileSizeWaveTrace, getFileSizeWavePhase, type FileSizeWaveModel } from '../labs/fileSizeWaveModel';
+import { getHomeSfxBlend, mixHomeAudioWave, sampleHomeSfxWaveform } from '../audio/homeAudioWaveform';
+import {
+  DEFAULT_SOUND_SPIRIT_PERSONALITY,
+  type SoundSpiritPersonality,
+} from '../spirit/soundSpiritPersonality';
 
 interface WaveCanvasProps {
   amplitude: number;
@@ -31,13 +36,15 @@ interface WaveCanvasProps {
   repulsors?: Repulsor[];
   repulsorsRef?: RefObject<Repulsor[]>;
   gestureForcesRef?: RefObject<SpiritGestureForces>;
-  homeSoundEnvelope?: Float32Array | null;
+  homeSoundWaveform?: Float32Array | null;
+  homeSoundSampleRate?: number;
   homeSoundStartedAt?: number;
   homeSoundDuration?: number;
   homeSoundToken?: number;
   homeMusicData?: Uint8Array | null;
   homeMusicPlaying?: boolean;
   spiritPhenotype?: SoundSpiritPhenotypeConfig;
+  spiritPersonality?: SoundSpiritPersonality;
   pointer: PointerPoint;
 }
 
@@ -89,13 +96,15 @@ export function WaveCanvas({
   repulsors = [],
   repulsorsRef,
   gestureForcesRef,
-  homeSoundEnvelope = null,
+  homeSoundWaveform = null,
+  homeSoundSampleRate = 0,
   homeSoundStartedAt = 0,
   homeSoundDuration = 0,
   homeSoundToken = 0,
   homeMusicData = null,
   homeMusicPlaying = false,
   spiritPhenotype = DEFAULT_SOUND_SPIRIT_PHENOTYPE,
+  spiritPersonality = DEFAULT_SOUND_SPIRIT_PERSONALITY,
   pointer,
 }: WaveCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -121,13 +130,15 @@ export function WaveCanvas({
     repulsors,
     repulsorsRef,
     gestureForcesRef,
-    homeSoundEnvelope,
+    homeSoundWaveform,
+    homeSoundSampleRate,
     homeSoundStartedAt,
     homeSoundDuration,
     homeSoundToken,
     homeMusicData,
     homeMusicPlaying,
     spiritPhenotype,
+    spiritPersonality,
     pointer,
   });
 
@@ -153,13 +164,15 @@ export function WaveCanvas({
     repulsors,
     repulsorsRef,
     gestureForcesRef,
-    homeSoundEnvelope,
+    homeSoundWaveform,
+    homeSoundSampleRate,
     homeSoundStartedAt,
     homeSoundDuration,
     homeSoundToken,
     homeMusicData,
     homeMusicPlaying,
     spiritPhenotype,
+    spiritPersonality,
     pointer,
   };
 
@@ -385,6 +398,7 @@ export function WaveCanvas({
     let pendingMoteAt = -1;
     let profileSeed = -1;
     let creatureGenome = createSpiritProfile(spiritPhenotype.seed, spiritPhenotype);
+    const personality = spiritPersonality;
     let creatureX = creatureGenome.spawnX;
     let creatureY = creatureGenome.spawnY;
     let creatureVelocityX = Math.cos(creatureGenome.wanderPhase) * 0.025;
@@ -421,6 +435,7 @@ export function WaveCanvas({
     const wingContactSpan = new Float32Array(2);
     let lastDebugTelemetryTick = -1;
     let lastVisualTelemetryTick = -1;
+    let lastHomeTelemetryTick = -1;
     const wingSpring = [new Float32Array(5), new Float32Array(5)];
     const wingVelocity = [new Float32Array(5), new Float32Array(5)];
     const funnelRingCount = 6;
@@ -679,9 +694,11 @@ export function WaveCanvas({
 
     const selectLifeState = (time: number, horizontalLimit: number, verticalLimit: number) => {
       const choice = nextLifeRandom();
-      lifeState = choice < 0.24 ? 'drift' : choice < 0.78 ? 'cruise' : 'glide';
-      const reach = lifeState === 'drift' ? 0.42 : lifeState === 'cruise' ? 0.92 : 0.68;
-      const minimumDistance = lifeState === 'drift' ? 0.14 : lifeState === 'cruise' ? 0.3 : 0.22;
+      const driftThreshold = 0.24 - (personality.glideBias - 1) * 0.18;
+      const cruiseThreshold = 0.78 - (personality.glideBias - 1) * 0.36;
+      lifeState = choice < driftThreshold ? 'drift' : choice < cruiseThreshold ? 'cruise' : 'glide';
+      const reach = (lifeState === 'drift' ? 0.42 : lifeState === 'cruise' ? 0.92 : 0.68) * personality.wanderRadius;
+      const minimumDistance = (lifeState === 'drift' ? 0.14 : lifeState === 'cruise' ? 0.3 : 0.22) * personality.wanderRadius;
       let candidateX = creatureX;
       let candidateY = creatureY;
       let candidateDistance = 0;
@@ -692,7 +709,7 @@ export function WaveCanvas({
           horizontalLimit * 0.88,
         );
         candidateY = THREE.MathUtils.clamp(
-          creatureY + (nextLifeRandom() * 2 - 1) * verticalLimit * reach,
+          creatureY + (nextLifeRandom() * 2 - 1) * verticalLimit * reach * personality.verticalDrift,
           -verticalLimit * 0.84,
           verticalLimit * 0.84,
         );
@@ -710,13 +727,13 @@ export function WaveCanvas({
         : lifeState === 'cruise'
           ? 5.2 + nextLifeRandom() * 5.4
           : 2.4 + nextLifeRandom() * 2.8;
-      lifeStateUntil = time + duration;
+      lifeStateUntil = time + duration / personality.turnResponsiveness;
     };
 
     const updateSpiritPhysics = (time: number, deltaTime: number, current: WaveCanvasProps) => {
       const motionScale = reducedMotion ? 0.24 : 1;
       const scale = current.creatureScale ?? 1;
-      startlePulse *= Math.exp(-deltaTime * 5.6);
+      startlePulse *= Math.exp(-deltaTime * 5.6 * personality.recoveryRate);
       contactPulse *= Math.exp(-deltaTime * 3.8);
       contactAge += deltaTime;
       heartStartlePulse *= Math.exp(-deltaTime * 4.6);
@@ -758,14 +775,18 @@ export function WaveCanvas({
             ? 0.05
             : lifeState === 'curious' ? 0.042 : 0.16;
       const musicMotion = current.musicPlaying ? overallEnergy * 0.032 + rhythmImpulse * 0.018 : 0;
-      const desiredSpeed = (stateSpeed + musicMotion) * arrival * motionScale;
+      const desiredSpeed = (stateSpeed * personality.idleSpeed + musicMotion * personality.rhythmResponse) * arrival * motionScale;
       let desiredVelocityX = targetDeltaX / targetDistance * desiredSpeed;
       let desiredVelocityY = targetDeltaY / targetDistance * desiredSpeed;
+      const pathCurve = Math.sin(time * 0.55 + creatureGenome.wanderPhase) * 0.016 * (personality.pathCurvature - 1);
+      desiredVelocityX -= targetDeltaY / targetDistance * pathCurve;
+      desiredVelocityY += targetDeltaX / targetDistance * pathCurve;
+      desiredVelocityY += Math.sin(time * 0.41 + creatureGenome.breathPhase) * 0.008 * (personality.verticalDrift - 1);
       if (lifeState === 'glide') {
         desiredVelocityX = creatureVelocityX * 0.985 + desiredVelocityX * 0.015;
         desiredVelocityY = creatureVelocityY * 0.985 + desiredVelocityY * 0.015;
       }
-      const steering = lifeState === 'drift' ? 0.48 : lifeState === 'glide' ? 0.22 : 0.72;
+      const steering = (lifeState === 'drift' ? 0.48 : lifeState === 'glide' ? 0.22 : 0.72) * personality.turnResponsiveness;
       let accelerationX = (desiredVelocityX - creatureVelocityX) * steering;
       let accelerationY = (desiredVelocityY - creatureVelocityY) * steering;
       const insideEdgeZone = Math.abs(creatureX) > horizontalLimit || Math.abs(creatureY) > verticalLimit;
@@ -801,6 +822,7 @@ export function WaveCanvas({
         const swipeSpeed = Math.hypot(repulsor.velocityX ?? 0, repulsor.velocityY ?? 0);
         const fastApproach = repulsor.type === 'ripple' || (swipeSpeed > 0.72 && awareness > 0.12);
         const directContact = Boolean(repulsor.contact) && distance < collisionRadius + 0.045;
+        const personalityResponse = repulsor.type === 'ripple' ? personality.explosionResponse : personality.sweepResponse;
         interactionX = repulsorX;
         interactionY = repulsorY;
 
@@ -832,14 +854,14 @@ export function WaveCanvas({
         const avoidance = Math.max(influence, awareness * (directContact ? 1.12 : fastApproach ? 0.92 : 0.56));
         if (avoidance > 0) {
           const responseStrength = directContact ? 1.45 : fastApproach ? 1.18 : 0.48;
-          const force = avoidance * Math.max(responseStrength, repulsor.strength) * creatureGenome.avoidanceSensitivity;
+          const force = avoidance * Math.max(responseStrength, repulsor.strength) * creatureGenome.avoidanceSensitivity * personalityResponse;
           repulsorAwayX += awayX * force;
           repulsorAwayY += awayY * force;
           nearestThreat = Math.max(nearestThreat, avoidance);
         }
 
         if (isNewRepulsorUpdate && (fastApproach || directContact)) {
-          const impulse = Math.max(influence, awareness) * (directContact ? 0.065 : 0.04 + Math.min(0.18, swipeSpeed * 0.05));
+          const impulse = Math.max(influence, awareness) * (directContact ? 0.065 : 0.04 + Math.min(0.18, swipeSpeed * 0.05)) * personalityResponse;
           const safeAwayX = awayX + inwardX * Math.max(horizontalEdge, verticalEdge) * 0.9;
           const safeAwayY = awayY + inwardY * Math.max(horizontalEdge, verticalEdge) * 0.9;
           const safeLength = Math.max(0.001, Math.hypot(safeAwayX, safeAwayY));
@@ -847,7 +869,7 @@ export function WaveCanvas({
           creatureVelocityY += safeAwayY / safeLength * impulse;
           repulsorEscapeX = safeAwayX / safeLength;
           repulsorEscapeY = safeAwayY / safeLength;
-          repulsorEscapeUntil = time + creatureGenome.repulsorCommitment;
+          repulsorEscapeUntil = time + creatureGenome.repulsorCommitment / personality.recoveryRate;
           lifeState = 'startled';
           lifeStateUntil = repulsorEscapeUntil;
           startlePulse = Math.max(startlePulse, Math.min(1, awareness * (directContact ? 0.82 : 0.64) + swipeSpeed * 0.26));
@@ -866,9 +888,11 @@ export function WaveCanvas({
         const attractionSteering = computeAttractionSteering(
           towardX,
           towardY,
-          attraction.strength,
+          attraction.strength * personality.attractionStrength,
           time,
           creatureGenome.wanderPhase,
+          personality.preferredDistance,
+          personality.pathCurvature,
         );
         accelerationX += attractionSteering.accelerationX;
         accelerationY += attractionSteering.accelerationY;
@@ -877,14 +901,14 @@ export function WaveCanvas({
         interactionY = targetY;
       }
 
-      curiousResponse += (curiousTarget - curiousResponse) * (1 - Math.exp(-deltaTime * (curiousTarget > curiousResponse ? 5.2 : 1.45)));
+      curiousResponse += (curiousTarget - curiousResponse) * (1 - Math.exp(-deltaTime * (curiousTarget > curiousResponse ? 5.2 * personality.attractionStrength : 1.45 / personality.lingerDuration)));
       if (nearestThreat > 0) {
         repulsorAwayX += inwardX * Math.max(horizontalEdge, verticalEdge) * 2.2;
         repulsorAwayY += inwardY * Math.max(horizontalEdge, verticalEdge) * 2.2;
         const awayLength = Math.max(0.001, Math.hypot(repulsorAwayX, repulsorAwayY));
         const awayX = repulsorAwayX / awayLength;
         const awayY = repulsorAwayY / awayLength;
-        const escapeSpeed = (0.052 + nearestThreat * 0.2 + startlePulse * 0.1) * motionScale;
+        const escapeSpeed = (0.052 + nearestThreat * 0.2 + startlePulse * 0.1) * motionScale * personality.explosionResponse;
         accelerationX = (awayX * escapeSpeed - creatureVelocityX) * (2.8 + nearestThreat * 2.1);
         accelerationY = (awayY * escapeSpeed - creatureVelocityY) * (2.8 + nearestThreat * 2.1);
         repulsorEscapeX = awayX;
@@ -895,7 +919,7 @@ export function WaveCanvas({
       } else if (curiousResponse > 0.06) {
         lifeState = 'curious';
         lifeStateUntil = time + 0.8;
-        releaseLookUntil = time + 1.4;
+        releaseLookUntil = time + 1.4 * personality.lingerDuration;
       } else if (insideEdgeZone) {
         if (time >= escapeUntil) {
           const phase = creatureGenome.escapePhase + time * 1.618;
@@ -931,7 +955,7 @@ export function WaveCanvas({
       }
       creatureVelocityX += accelerationX * deltaTime;
       creatureVelocityY += accelerationY * deltaTime;
-      const maxSpeed = (0.13 + overallEnergy * 0.07 + threatResponse * 0.18 + startlePulse * 0.14 + (time < escapeUntil ? 0.06 : 0)) * motionScale;
+      const maxSpeed = (0.13 * personality.idleSpeed + overallEnergy * 0.07 * personality.rhythmResponse + threatResponse * 0.18 + startlePulse * 0.14 + (time < escapeUntil ? 0.06 : 0)) * motionScale;
       const speed = Math.hypot(creatureVelocityX, creatureVelocityY);
       if (speed > maxSpeed) {
         creatureVelocityX = creatureVelocityX / speed * maxSpeed;
@@ -942,7 +966,7 @@ export function WaveCanvas({
       if (speed > 0.003) {
         const targetHeading = Math.atan2(creatureVelocityY, creatureVelocityX);
         const turn = Math.atan2(Math.sin(targetHeading - creatureHeading), Math.cos(targetHeading - creatureHeading));
-        creatureHeading += turn * Math.min(1, deltaTime * (2.1 + midEnergy * 1.8 + startlePulse * 2.4));
+        creatureHeading += turn * Math.min(1, deltaTime * (2.1 + midEnergy * 1.8 + startlePulse * 2.4) * personality.turnResponsiveness);
       }
       if (anchorDebug) {
         creatureX = 0;
@@ -961,6 +985,7 @@ export function WaveCanvas({
         mount.dataset.spiritStartled = startlePulse.toFixed(2);
         mount.dataset.spiritX = creatureX.toFixed(3);
         mount.dataset.spiritY = creatureY.toFixed(3);
+        mount.dataset.spiritPersonality = personality.key;
       }
     };
 
@@ -976,11 +1001,12 @@ export function WaveCanvas({
       const heartRelease = expectedBeatInterval > 0
         ? THREE.MathUtils.clamp(expectedBeatInterval * 0.48, 0.19, 0.31)
         : 0.3;
-      const rootBeatPulse = sampleHeartEnvelope(beatAge - 0.045, heartRelease * 0.8) * rhythmStrength;
-      const veinBeatPulse = sampleHeartEnvelope(beatAge - 0.09, heartRelease * 0.86) * rhythmStrength;
-      const rimBeatPulse = sampleHeartEnvelope(beatAge - 0.145, heartRelease * 0.75) * rhythmStrength;
-      const funnelBeatPulse = sampleHeartEnvelope(beatAge - 0.075, heartRelease) * rhythmStrength;
-      const idleLife = 0.1 + curiousResponse * 0.08 + startlePulse * 0.14;
+      const expressedRhythm = Math.min(1.35, rhythmStrength * personality.rhythmResponse);
+      const rootBeatPulse = sampleHeartEnvelope(beatAge - 0.045, heartRelease * 0.8) * expressedRhythm;
+      const veinBeatPulse = sampleHeartEnvelope(beatAge - 0.09, heartRelease * 0.86) * expressedRhythm;
+      const rimBeatPulse = sampleHeartEnvelope(beatAge - 0.145, heartRelease * 0.75) * expressedRhythm;
+      const funnelBeatPulse = sampleHeartEnvelope(beatAge - 0.075, heartRelease) * expressedRhythm;
+      const idleLife = 0.1 * (0.9 + personality.vitality * 0.2) + curiousResponse * 0.08 + startlePulse * 0.14;
       const vitality = idleLife + 0.06 + musicAwake * (0.09 + musicEnergy * 0.18 + grooveEnergy * 0.32) + accentPulse * 0.16;
       const autonomousStrokeRate = lifeState === 'drift'
         ? 0.11
@@ -998,8 +1024,8 @@ export function WaveCanvas({
             : lifeState === 'curious' ? 0.2 : 0.92;
       const musicStrokeRate = Math.min(0.42, 0.19 + grooveEnergy * 0.18 + musicEnergy * 0.06);
       const musicStrokePower = 0.36 + grooveEnergy * 0.34 + bassEnergy * 0.18 + accentPulse * 0.08;
-      const strokeRate = THREE.MathUtils.lerp(autonomousStrokeRate, musicStrokeRate, musicAwake);
-      const strokePower = THREE.MathUtils.lerp(autonomousStrokePower, musicStrokePower, musicAwake);
+      const strokeRate = THREE.MathUtils.lerp(autonomousStrokeRate * personality.wingRate, musicStrokeRate * personality.rhythmResponse, musicAwake);
+      const strokePower = THREE.MathUtils.lerp(autonomousStrokePower * personality.wingPower, musicStrokePower * personality.rhythmResponse, musicAwake);
       const membraneTension = 0.28 + midEnergy * 0.2 + grooveEnergy * 0.22 + rootBeatPulse * 0.18;
       const energyFlow = 0.08 + musicAwake * (0.035 + musicEnergy * 0.08 + grooveEnergy * 0.08) + veinBeatPulse * 0.46;
       const rimActivity = 0.08 + musicAwake * (0.025 + trebleEnergy * 0.08 + grooveEnergy * 0.07) + rimBeatPulse * 0.58;
@@ -1022,7 +1048,7 @@ export function WaveCanvas({
           const idleUndulation = Math.sin(time * 0.24 - zoneProgress * 1.55 + sidePhase * 6) * (0.006 + zoneProgress * 0.022);
           const zoneAmplitude = 0.72 + zone * 0.135;
           const rootStability = 0.08 + Math.pow(zoneProgress, 0.72) * 0.92;
-          const membraneDrag = (-creatureAccelerationY * 0.08 - creatureAccelerationX * (sideIndex === 0 ? -0.035 : 0.035)) * zoneProgress;
+          const membraneDrag = (-creatureAccelerationY * 0.08 - creatureAccelerationX * (sideIndex === 0 ? -0.035 : 0.035)) * zoneProgress * personality.followThrough;
           const contactDistance = Math.abs(zoneProgress - wingContactSpan[sideIndex]);
           const localContact = wingContactPulse[sideIndex] * Math.max(0, 1 - contactDistance * 3.2) * (0.035 + zoneProgress * 0.055);
           const target = spiritDebug === 'neutral' || spiritDebug === 'closeup' || spiritDebug === 'funnel-neutral'
@@ -1047,8 +1073,8 @@ export function WaveCanvas({
       const funnelPower = spiritDebug === 'funnel-power';
       const funnelGlide = spiritDebug === 'funnel-glide';
       const propulsion = rootStroke * 0.24 * motionScale;
-      const dragX = -creatureVelocityX * 2.25 - creatureAccelerationX * 0.92 + waterResistance * 2.6 + propulsion * 0.46;
-      const dragZ = -creatureVelocityY * 0.56 - creatureAccelerationY * 0.29 + Math.abs(turnDelta) * speed * 0.3;
+      const dragX = (-creatureVelocityX * 2.25 - creatureAccelerationX * 0.92 + waterResistance * 2.6 + propulsion * 0.46) * personality.followThrough;
+      const dragZ = (-creatureVelocityY * 0.56 - creatureAccelerationY * 0.29 + Math.abs(turnDelta) * speed * 0.3) * personality.followThrough;
       for (let ring = 0; ring < funnelRingCount; ring += 1) {
         const progress = ring / (funnelRingCount - 1);
         const previousX = ring === 0 ? 0 : funnelCenterX[ring - 1];
@@ -1177,8 +1203,8 @@ export function WaveCanvas({
         material.uniforms.uCycle.value = cycle;
         material.uniforms.uHeartBeat.value = 0;
         material.uniforms.uBeatAge.value = beatAge;
-        material.uniforms.uBeatStrength.value = spiritLayer === 'body' ? 0 : rhythmStrength;
-        material.uniforms.uRhythmPulse.value = spiritLayer === 'body' ? 0 : rhythmPulse * rhythmStrength;
+        material.uniforms.uBeatStrength.value = spiritLayer === 'body' ? 0 : expressedRhythm;
+        material.uniforms.uRhythmPulse.value = spiritLayer === 'body' ? 0 : rhythmPulse * expressedRhythm;
         material.uniforms.uRootPulse.value = spiritLayer === 'body' ? 0 : rootBeatPulse;
         material.uniforms.uVeinPulse.value = spiritLayer === 'body' ? 0 : veinBeatPulse;
         material.uniforms.uRimPulse.value = spiritLayer === 'body' ? 0 : rimBeatPulse;
@@ -1203,8 +1229,8 @@ export function WaveCanvas({
         const idlePhase = (time * 0.3 + index * 0.075) % 1;
         const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.1, 2)) * (0.052 + curiousResponse * 0.018);
         const lobeAge = beatAge - heartLobeDelays[index];
-        const audioBeat = sampleHeartEnvelope(lobeAge, heartRelease) * rhythmStrength;
-        const rebound = sampleHeartEnvelope(lobeAge - 0.1, heartRelease * 0.64) * rhythmStrength;
+        const audioBeat = sampleHeartEnvelope(lobeAge, heartRelease) * expressedRhythm;
+        const rebound = sampleHeartEnvelope(lobeAge - 0.1, heartRelease * 0.64) * expressedRhythm;
         const visibleBeat = THREE.MathUtils.lerp(idleBeat, audioBeat, musicAwake) + heartStartlePulse * 0.24;
         const phenotypePulse = (lobe.userData.pulseStrength as number | undefined) ?? 1;
         const beat = 1 - visibleBeat * 0.31 * phenotypePulse + rebound * musicAwake * 0.17 * phenotypePulse;
@@ -1220,13 +1246,13 @@ export function WaveCanvas({
         mount.dataset.spiritFunnelMidPx = (Math.abs(funnelCenterX[2]) * horizontalPixelsPerUnit).toFixed(2);
         mount.dataset.spiritFunnelLowerPx = (Math.abs(funnelCenterX[4]) * horizontalPixelsPerUnit).toFixed(2);
         mount.dataset.spiritFunnelTipPx = (Math.abs(funnelCenterX[5]) * horizontalPixelsPerUnit).toFixed(2);
-        mount.dataset.spiritHeart = (sampleHeartEnvelope(beatAge, heartRelease) * rhythmStrength).toFixed(2);
-        mount.dataset.spiritBeatStrength = rhythmStrength.toFixed(2);
+        mount.dataset.spiritHeart = (sampleHeartEnvelope(beatAge, heartRelease) * expressedRhythm).toFixed(2);
+        mount.dataset.spiritBeatStrength = expressedRhythm.toFixed(2);
         mount.dataset.spiritBeatTotal = String(acceptedBeatTotal);
         mount.dataset.spiritBeatAge = beatAge.toFixed(3);
       }
       spiritRig.energyMaterials.forEach((material, index) => {
-        const propagation = sampleHeartEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * rhythmStrength;
+        const propagation = sampleHeartEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * expressedRhythm;
         const phenotypeEnergy = (material.userData.opacityFactor as number | undefined) ?? 1;
         material.opacity = (spiritLayer !== null
           ? 0
@@ -1328,7 +1354,7 @@ export function WaveCanvas({
         writeOrganicPoint(motePositions, index, moteStateX[index], moteStateY[index]);
 
         const phaseFraction = mote.phase / (Math.PI * 2);
-        const delayedEnergy = sampleHeartEnvelope(beatAge - 0.16 - phaseFraction * 0.12, heartRelease * 0.78) * rhythmStrength;
+        const delayedEnergy = sampleHeartEnvelope(beatAge - 0.16 - phaseFraction * 0.12, heartRelease * 0.78) * expressedRhythm;
         const brightnessTarget = spiritLayer === 'motes'
           ? 0.76
           : 0.12 + trebleEnergy * 0.2 + delayedEnergy * (0.34 + phaseFraction * 0.26);
@@ -1587,30 +1613,37 @@ export function WaveCanvas({
       const pointTotal = 280;
       const homeElapsed = current.mode === 'home' ? (performance.now() - (current.homeSoundStartedAt ?? 0)) / 1000 : Infinity;
       const homeDuration = current.homeSoundDuration ?? 0;
-      const homeRelease = homeElapsed > homeDuration ? Math.max(0, 1 - (homeElapsed - homeDuration) / 0.42) : 1;
-      const homeSoundActive = Boolean(current.homeSoundEnvelope?.length && homeElapsed >= 0 && homeRelease > 0);
-      const homeProgress = homeDuration > 0 ? Math.min(1, Math.max(0, homeElapsed / homeDuration)) : 0;
+      const homeSfxBlend = getHomeSfxBlend(homeElapsed, homeDuration);
+      const homeSoundActive = Boolean(current.homeSoundWaveform?.length && current.homeSoundSampleRate && homeSfxBlend > 0);
       const homeMusicActive = Boolean(current.mode === 'home' && current.homeMusicPlaying && current.homeMusicData?.length);
+      let homeSoundPeak = 0;
       for (let index = 0; index < pointTotal; index += 1) {
         const t = index / Math.max(pointTotal - 1, 1);
         const x = t * 1.8 - 0.9;
-        let y = resolveY(t, time, current);
+        const idleSample = resolveY(t, time, current);
+        let musicSample: number | null = null;
         if (homeMusicActive && current.homeMusicData) {
           const sourcePosition = t * (current.homeMusicData.length - 1);
           const sourceIndex = Math.floor(sourcePosition);
           const nextIndex = Math.min(current.homeMusicData.length - 1, sourceIndex + 1);
           const blend = sourcePosition - sourceIndex;
           const sample = (current.homeMusicData[sourceIndex] ?? 128) * (1 - blend) + (current.homeMusicData[nextIndex] ?? 128) * blend;
-          y = (sample - 128) / 128 * 0.52;
+          musicSample = (sample - 128) / 128 * 0.52;
         }
+        let soundSample = 0;
         let soundEnergy = 0;
-        if (homeSoundActive && current.homeSoundEnvelope) {
-          const samplePosition = Math.min(1, Math.max(0, homeProgress + (t - 0.5) * 0.34));
-          const envelopeIndex = Math.min(current.homeSoundEnvelope.length - 1, Math.floor(samplePosition * current.homeSoundEnvelope.length));
-          const soundSample = current.homeSoundEnvelope[envelopeIndex] ?? 0;
-          soundEnergy = Math.abs(soundSample) * homeRelease;
-          y += soundSample * (homeMusicActive ? 0.2 : 0.48) * homeRelease;
+        if (homeSoundActive && current.homeSoundWaveform) {
+          soundSample = sampleHomeSfxWaveform(
+            current.homeSoundWaveform,
+            current.homeSoundSampleRate ?? 0,
+            homeDuration,
+            homeElapsed,
+            t,
+          ) * 0.52;
+          soundEnergy = Math.abs(soundSample) * homeSfxBlend;
+          homeSoundPeak = Math.max(homeSoundPeak, Math.abs(soundSample));
         }
+        const y = mixHomeAudioWave(idleSample, musicSample, soundSample, homeSfxBlend);
         wavePositions[index * 3] = x;
         wavePositions[index * 3 + 1] = y;
         wavePositions[index * 3 + 2] = 0;
@@ -1620,6 +1653,13 @@ export function WaveCanvas({
         secondaryPositions[index * 3] = x;
         secondaryPositions[index * 3 + 1] = current.mode === 'quantize' ? quantize(y, current.bitDepth ?? 4) : y * 0.52 - 0.34;
         secondaryPositions[index * 3 + 2] = 0;
+      }
+      const homeTelemetryTick = Math.floor(time * 8);
+      if (localPreview && current.mode === 'home' && homeTelemetryTick !== lastHomeTelemetryTick) {
+        lastHomeTelemetryTick = homeTelemetryTick;
+        mount.dataset.homeWaveSource = homeMusicActive ? (homeSoundActive ? 'music+sfx' : 'music') : homeSoundActive ? 'sfx' : 'idle';
+        mount.dataset.homeWaveSfxBlend = homeSfxBlend.toFixed(3);
+        mount.dataset.homeWaveSfxPeak = homeSoundPeak.toFixed(3);
       }
       waveGeometry.setDrawRange(0, pointTotal);
       secondaryGeometry.setDrawRange(0, pointTotal);
@@ -1757,7 +1797,7 @@ export function WaveCanvas({
       haloTexture.dispose();
       [waveMaterial, secondaryMaterial, pointMaterial, pointGlowMaterial, contactMaterial, stemMaterial, ringMaterial, wavePointMaterial, playheadMaterial, playheadMarkerMaterial, ...spiritRig.materials, moteMaterial, particleMaterial, wakeMaterial].forEach((material) => material.dispose());
     };
-  }, [spiritPhenotype.key]);
+  }, [spiritPhenotype.key, spiritPersonality.key]);
 
   return <div className="wave-canvas" ref={mountRef} aria-hidden="true" />;
 }

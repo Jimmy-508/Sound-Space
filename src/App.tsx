@@ -25,10 +25,11 @@ import { WaveCanvas } from './visualization/WaveCanvas';
 import { HomeMusicTitles } from './components/HomeMusicTitles';
 import {
   DEFAULT_SOUND_SPIRIT_PHENOTYPE,
-  createLocalSpiritPreviewPhenotype,
+  createLocalSpiritPreviewBirth,
   createSoundSpiritInteractionRecorder,
   resolveSoundSpiritBirth,
 } from './spirit/soundSpiritIdentity';
+import { DEFAULT_SOUND_SPIRIT_PERSONALITY } from './spirit/soundSpiritPersonality';
 
 const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: string; icon: React.ReactNode }> = [
   { id: 'wave', title: '聲波實驗室', description: '動手改變聲音的響度與音調', icon: <Waves size={22} /> },
@@ -50,13 +51,17 @@ export default function App() {
     && /^(one|two|pointing|sweep|explosion)$/.test(gesturePreviewParam ?? '')
       ? gesturePreviewParam as 'one' | 'two' | 'pointing' | 'sweep' | 'explosion'
       : null;
+  const localPreviewBirth = localSpiritPreview
+    ? createLocalSpiritPreviewBirth(previewParams.get('spiritIdentity'))
+    : null;
   const [activeView, setActiveView] = useState<ActiveView>(localSpiritPreview ? 'music' : 'home');
   const [pointer, setPointer] = useState<PointerPoint>({ x: 0.5, y: 0.5 });
   const [musicSession, setMusicSession] = useState<MusicSessionState>(initialMusicSession);
   const [spiritPhenotype, setSpiritPhenotype] = useState(
-    localSpiritPreview
-      ? createLocalSpiritPreviewPhenotype(previewParams.get('spiritIdentity'))
-      : DEFAULT_SOUND_SPIRIT_PHENOTYPE,
+    localPreviewBirth?.phenotype ?? DEFAULT_SOUND_SPIRIT_PHENOTYPE,
+  );
+  const [spiritPersonality, setSpiritPersonality] = useState(
+    localPreviewBirth?.personality ?? DEFAULT_SOUND_SPIRIT_PERSONALITY,
   );
   const [homePlayback, setHomePlayback] = useState<InteractionPlayback | null>(null);
   const [gestureEnabled, setGestureEnabled] = useState(Boolean(localGesturePreview));
@@ -109,16 +114,17 @@ export default function App() {
     return { sourceUrl, visualSeed };
   }, []);
 
-  const commitSpiritPhenotype = useCallback(() => {
+  const commitSpiritBirth = useCallback(() => {
     const birth = resolveSoundSpiritBirth(spiritInteractionRef.current.snapshot());
     setSpiritPhenotype(birth.phenotype);
+    setSpiritPersonality(birth.personality);
   }, []);
 
   const musicController = useMusicAudioController({
     session: musicSession,
     onSessionChange: updateMusicSession,
     onReplaceFile: replaceMusicFile,
-    onSuccessfulLoad: commitSpiritPhenotype,
+    onSuccessfulLoad: commitSpiritBirth,
   });
 
   useEffect(() => () => {
@@ -492,7 +498,8 @@ export default function App() {
             frequency={360}
             pointer={pointer}
             mode="home"
-            homeSoundEnvelope={homePlayback?.envelope ?? null}
+            homeSoundWaveform={homePlayback?.waveform ?? null}
+            homeSoundSampleRate={homePlayback?.sampleRate ?? 0}
             homeSoundStartedAt={homePlayback?.startedAt ?? 0}
             homeSoundDuration={homePlayback?.duration ?? 0}
             homeSoundToken={homePlayback?.token ?? 0}
@@ -513,6 +520,7 @@ export default function App() {
           onSessionChange={updateMusicSession}
           controller={musicController}
           spiritPhenotype={spiritPhenotype}
+          spiritPersonality={spiritPersonality}
           gestureController={gestureInteractionRef.current}
           worldInteraction={worldInteractionRef.current}
         />

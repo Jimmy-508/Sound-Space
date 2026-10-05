@@ -40,6 +40,8 @@ export function computeAttractionSteering(
   strength: number,
   time: number,
   phase: number,
+  preferredDistance = 1,
+  curvature = 1,
 ) {
   const distance = Math.max(0.001, Math.hypot(deltaX, deltaY));
   const directionX = deltaX / distance;
@@ -48,9 +50,9 @@ export function computeAttractionSteering(
     const progress = Math.min(1, Math.max(0, (value - start) / Math.max(0.00001, end - start)));
     return progress * progress * (3 - 2 * progress);
   };
-  const approach = smoothstep(0.045, 0.56, distance) * strength;
-  const nearTarget = 1 - smoothstep(0.045, 0.23, distance);
-  const orbit = Math.sin(time * 1.7 + phase) * nearTarget * 0.018;
+  const approach = smoothstep(0.045 * preferredDistance, 0.56 * preferredDistance, distance) * strength;
+  const nearTarget = 1 - smoothstep(0.045 * preferredDistance, 0.23 * preferredDistance, distance);
+  const orbit = Math.sin(time * 1.7 + phase) * nearTarget * 0.018 * curvature;
   return {
     accelerationX: directionX * approach * 0.12 - directionY * orbit,
     accelerationY: directionY * approach * 0.12 + directionX * orbit,

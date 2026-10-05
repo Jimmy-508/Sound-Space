@@ -1,11 +1,11 @@
 export interface InteractionPlayback {
   startedAt: number;
   duration: number;
-  envelope: Float32Array;
+  waveform: Float32Array;
+  sampleRate: number;
   token: number;
 }
 
-const envelopePointCount = 512;
 const minimumPlayIntervalMs = 45;
 export type InteractionSfx = 'select' | 'explosion' | 'blueTears';
 
@@ -19,7 +19,7 @@ export class InteractionSoundPlayer {
   private context: AudioContext | null = null;
   private gain: GainNode | null = null;
   private buffers = new Map<InteractionSfx, AudioBuffer>();
-  private envelopes = new Map<InteractionSfx, Float32Array>();
+  private waveforms = new Map<InteractionSfx, Float32Array>();
   private preloadPromise: Promise<void> | null = null;
   private lastStartedAt = -Infinity;
   private token = 0;
@@ -81,8 +81,8 @@ export class InteractionSoundPlayer {
 
   private startCached(kind: InteractionSfx): InteractionPlayback | null {
     const buffer = this.buffers.get(kind);
-    const envelope = this.envelopes.get(kind);
-    if (!this.context || this.context.state !== 'running' || !this.gain || !buffer || !envelope) return null;
+    const waveform = this.waveforms.get(kind);
+    if (!this.context || this.context.state !== 'running' || !this.gain || !buffer || !waveform) return null;
 
     const source = this.context.createBufferSource();
     source.buffer = buffer;
@@ -93,7 +93,8 @@ export class InteractionSoundPlayer {
     return {
       startedAt: this.lastStartedAt,
       duration: buffer.duration,
-      envelope,
+      waveform,
+      sampleRate: buffer.sampleRate,
       token: this.token,
     };
   }
@@ -117,7 +118,7 @@ export class InteractionSoundPlayer {
       entries.forEach((entry) => {
         if (!entry) return;
         this.buffers.set(entry[0], entry[1]);
-        this.envelopes.set(entry[0], buildEnvelope(entry[1], envelopePointCount));
+        this.waveforms.set(entry[0], buildInteractionWaveform(entry[1]));
       });
     } catch (error) {
       throw error;
@@ -125,30 +126,25 @@ export class InteractionSoundPlayer {
   }
 }
 
-function buildEnvelope(buffer: AudioBuffer, pointCount: number) {
-  const envelope = new Float32Array(pointCount);
-  const samplesPerPoint = Math.max(1, Math.floor(buffer.length / pointCount));
+export function buildInteractionWaveform(buffer: AudioBuffer) {
+  const waveform = new Float32Array(buffer.length);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
   let maximum = 0;
 
-  for (let point = 0; point < pointCount; point += 1) {
-    const start = point * samplesPerPoint;
-    const end = Math.min(buffer.length, start + samplesPerPoint);
-    let signedPeak = 0;
-    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
-      const data = buffer.getChannelData(channel);
-      for (let index = start; index < end; index += 1) {
-        if (Math.abs(data[index]) > Math.abs(signedPeak)) signedPeak = data[index];
-      }
+  for (let index = 0; index < buffer.length; index += 1) {
+    let sample = 0;
+    for (let channel = 0; channel < channels.length; channel += 1) {
+      sample += channels[channel][index] ?? 0;
     }
-    envelope[point] = signedPeak;
-    maximum = Math.max(maximum, Math.abs(signedPeak));
+    waveform[index] = sample / Math.max(1, buffer.numberOfChannels);
+    maximum = Math.max(maximum, Math.abs(waveform[index]));
   }
 
   const normalization = maximum > 0.0001 ? 1 / maximum : 1;
-  for (let index = 0; index < envelope.length; index += 1) {
-    envelope[index] = Math.min(1, envelope[index] * normalization);
+  for (let index = 0; index < waveform.length; index += 1) {
+    waveform[index] = Math.max(-1, Math.min(1, waveform[index] * normalization));
   }
-  return envelope;
+  return waveform;
 }
 
 export const interactionSound = new InteractionSoundPlayer();

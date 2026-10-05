@@ -367,6 +367,7 @@ class FakeAudioContext {
     return {
       duration: 0.5,
       length: 8,
+      sampleRate: 44100,
       numberOfChannels: 1,
       getChannelData: () => new Float32Array([0, 0.2, -0.4, 0.8, -0.3, 0.1, 0, 0]),
     };
@@ -388,8 +389,10 @@ assert.equal(sound.preload(), firstPreload, 'Preload must be cached and not fetc
 await firstPreload;
 assert.equal(sound.hasCachedBuffer('explosion'), true);
 await sound.warm();
-await sound.play('explosion');
+const explosionPlayback = await sound.play('explosion');
 assert.equal(starts, 1, 'A warmed cached explosion should start without another fetch/decode.');
+assert.equal(explosionPlayback?.sampleRate, 44100, 'Playback metadata must expose the decoded sample rate.');
+assert.equal(explosionPlayback?.waveform.length, 8, 'Explosion visualization must receive decoded PCM rather than a duration-only envelope.');
 sound.setEnabled(false);
 await sound.play('select');
 assert.equal(starts, 1, 'SFX OFF must suppress capture feedback without creating another context.');

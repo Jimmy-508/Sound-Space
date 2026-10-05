@@ -1,4 +1,8 @@
 import type { Waveform } from '../types';
+import {
+  generateSoundSpiritPersonality,
+  type SoundSpiritPersonality,
+} from './soundSpiritPersonality';
 
 export const WAVE_FREQUENCY_MIN = 120;
 export const WAVE_FREQUENCY_MAX = 4000;
@@ -638,16 +642,17 @@ export function createSoundSpiritPhenotype(history: SoundSpiritInteractionHistor
 export interface SoundSpiritBirthSnapshot {
   genome: SoundSpiritGenome;
   phenotype: SoundSpiritPhenotypeConfig;
+  personality: SoundSpiritPersonality;
 }
 
 export function resolveSoundSpiritBirth(history: SoundSpiritInteractionHistory): SoundSpiritBirthSnapshot {
   const resolved = resolveSoundSpiritGenome(history);
   const genome = resolved === DEFAULT_SOUND_SPIRIT_GENOME ? resolved : Object.freeze({ ...resolved });
-  return Object.freeze({ genome, phenotype: generateSoundSpiritPhenotype(genome) });
+  return createBirthSnapshot(genome);
 }
 
-export function createLocalSpiritPreviewPhenotype(preset: string | null) {
-  if (!preset || preset === 'default') return DEFAULT_SOUND_SPIRIT_PHENOTYPE;
+export function createLocalSpiritPreviewBirth(preset: string | null) {
+  if (!preset || preset === 'default') return createBirthSnapshot(DEFAULT_SOUND_SPIRIT_GENOME);
   const base: SoundSpiritGenome = {
     hasHistory: true,
     energy: 0.5,
@@ -657,12 +662,24 @@ export function createLocalSpiritPreviewPhenotype(preset: string | null) {
     interactionDepth: 0.48,
     seed: hashText(`local-preview:${preset}`),
   };
-  if (preset === 'energy') return generateSoundSpiritPhenotype({ ...base, energy: 0.96 });
-  if (preset === 'frequency') return generateSoundSpiritPhenotype({ ...base, frequency: 0.96 });
-  if (preset === 'diversity') return generateSoundSpiritPhenotype({ ...base, diversity: 0.96, interactionDepth: 0.72 });
-  if (preset === 'precision') return generateSoundSpiritPhenotype({ ...base, precision: 0.96, interactionDepth: 0.72 });
-  if (preset === 'depth') return generateSoundSpiritPhenotype({ ...base, diversity: 0.9, precision: 0.9, interactionDepth: 0.98 });
-  return DEFAULT_SOUND_SPIRIT_PHENOTYPE;
+  if (preset === 'energy') return createBirthSnapshot(Object.freeze({ ...base, energy: 0.96 }));
+  if (preset === 'frequency') return createBirthSnapshot(Object.freeze({ ...base, frequency: 0.96 }));
+  if (preset === 'diversity') return createBirthSnapshot(Object.freeze({ ...base, diversity: 0.96, interactionDepth: 0.72 }));
+  if (preset === 'precision') return createBirthSnapshot(Object.freeze({ ...base, precision: 0.96, interactionDepth: 0.72 }));
+  if (preset === 'depth') return createBirthSnapshot(Object.freeze({ ...base, diversity: 0.9, precision: 0.9, interactionDepth: 0.98 }));
+  return createBirthSnapshot(DEFAULT_SOUND_SPIRIT_GENOME);
+}
+
+export function createLocalSpiritPreviewPhenotype(preset: string | null) {
+  return createLocalSpiritPreviewBirth(preset).phenotype;
+}
+
+function createBirthSnapshot(genome: SoundSpiritGenome): SoundSpiritBirthSnapshot {
+  return Object.freeze({
+    genome,
+    phenotype: generateSoundSpiritPhenotype(genome),
+    personality: generateSoundSpiritPersonality(genome),
+  });
 }
 
 export function normalizeFrequency(value: number) {
