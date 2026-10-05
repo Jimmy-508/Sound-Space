@@ -86,7 +86,7 @@ assert.ok(!musicSource.includes('音樂賦予牠生命。'), 'Birth must communi
 assert.ok(!musicSource.includes('SoundSpiritInteractionRecorder'), 'Music and birth must write zero DNA history.');
 const decodeIndex = controllerSource.indexOf('await context.decodeAudioData');
 const replaceIndex = controllerSource.indexOf('onReplaceFile(file)');
-const successIndex = controllerSource.indexOf('onSuccessfulLoad()');
+const successIndex = controllerSource.indexOf('onSuccessfulLoad(CINEMATIC_BIRTH_DELAY_MS)');
 assert.ok(decodeIndex >= 0 && decodeIndex < replaceIndex && replaceIndex < successIndex, 'The active session and creature may change only after decoding succeeds.');
 assert.ok(controllerSource.indexOf('setError(unsupportedAudioMessage)', successIndex) > successIndex, 'Decode failure must remain contained after the success path.');
 assert.equal((birthSource.match(/requestAnimationFrame/g) ?? []).length, 0, 'Birth must not create an animation loop.');

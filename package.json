@@ -14,7 +14,10 @@
     "test:gesture-interactions": "esbuild ./scripts/verify-gesture-interactions.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-gesture-interactions.mjs && node node_modules/.tmp/verify-gesture-interactions.mjs",
     "test:gesture-polish": "esbuild ./scripts/verify-gesture-polish.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-gesture-polish.mjs && node node_modules/.tmp/verify-gesture-polish.mjs",
     "test:birth": "esbuild ./scripts/verify-spirit-birth.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-spirit-birth.mjs && node node_modules/.tmp/verify-spirit-birth.mjs",
-    "test:rhythm": "esbuild ./scripts/verify-audio-locked-heart.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-audio-locked-heart.mjs && node node_modules/.tmp/verify-audio-locked-heart.mjs"
+    "test:rhythm": "esbuild ./scripts/verify-audio-locked-heart.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-audio-locked-heart.mjs && node node_modules/.tmp/verify-audio-locked-heart.mjs",
+    "test:beat-map": "esbuild ./scripts/verify-offline-beat-map.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-offline-beat-map.mjs && node node_modules/.tmp/verify-offline-beat-map.mjs",
+    "test:heart-clock": "esbuild ./scripts/verify-beat-map-heart.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-beat-map-heart.mjs && node node_modules/.tmp/verify-beat-map-heart.mjs",
+    "test:cinematic": "esbuild ./scripts/verify-cinematic-birth.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/verify-cinematic-birth.mjs && node node_modules/.tmp/verify-cinematic-birth.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.35",

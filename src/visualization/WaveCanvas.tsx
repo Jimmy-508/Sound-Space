@@ -10,6 +10,7 @@ import {
 import { fillFileSizeWaveTrace, getFileSizeWavePhase, type FileSizeWaveModel } from '../labs/fileSizeWaveModel';
 import { getHomeSfxBlend, mixHomeAudioWave, sampleHomeSfxWaveform } from '../audio/homeAudioWaveform';
 import type { MusicVisualState } from '../music/useMusicAudioController';
+import { sampleHeartContractionEnvelope } from '../music/beatMapClock';
 import {
   DEFAULT_SOUND_SPIRIT_PERSONALITY,
   type SoundSpiritPersonality,
@@ -460,6 +461,8 @@ export function WaveCanvas({
     let pendingRibbonAt = -1;
     let pendingMotePulse = 0;
     let pendingMoteAt = -1;
+    let nextAutonomousBeatAt = 1.1;
+    let lastBioelectricSource: 'none' | 'musical' | 'autonomous' = 'none';
     let profileSeed = -1;
     let creatureGenome = createSpiritProfile(spiritPhenotype.seed, spiritPhenotype);
     const personality = spiritPersonality;
@@ -614,6 +617,38 @@ export function WaveCanvas({
       }
     };
 
+    const triggerBioelectricHeartPulse = (
+      strength: number,
+      lowStrength: number,
+      highStrength: number,
+      musical: boolean,
+    ) => {
+      const timeSinceBeat = rhythmClock - lastMainBeatAt;
+      if (musical && lastMainBeatAt > 0 && timeSinceBeat < 0.255) return;
+      if (lastMainBeatAt > 0 && timeSinceBeat >= 0.18 && timeSinceBeat <= 1.8) {
+        recentBeatIntervals[acceptedBeatCursor] = timeSinceBeat;
+        acceptedBeatCursor = (acceptedBeatCursor + 1) % recentBeatIntervals.length;
+        acceptedBeatCount = Math.min(recentBeatIntervals.length, acceptedBeatCount + 1);
+        expectedBeatInterval = medianBeatInterval(recentBeatIntervals, acceptedBeatCount, beatIntervalScratch);
+      }
+      rhythmStrength = musical ? 0.72 + strength * 0.56 : 0.42 + strength * 0.22;
+      lastBioelectricSource = musical ? 'musical' : 'autonomous';
+      acceptedBeatTotal += 1;
+      rhythmPulse = 1;
+      currentOnsetLowStrength = lowStrength;
+      currentOnsetHighStrength = highStrength;
+      accentPulse = Math.max(accentPulse, strength * (musical ? 0.72 : 0.28));
+      lastMainBeatAt = rhythmClock;
+      contractionPulse = Math.max(contractionPulse, strength);
+      pendingVeilPulse = rhythmStrength;
+      pendingVeilAt = rhythmClock + creatureGenome.veilDelay;
+      pendingRibbonPulse = rhythmStrength;
+      pendingRibbonAt = rhythmClock + creatureGenome.ribbonDelay;
+      pendingMotePulse = rhythmStrength;
+      pendingMoteAt = rhythmClock + creatureGenome.moteDelay;
+      nextAutonomousBeatAt = rhythmClock + autonomousHeartInterval(personality.vitality);
+    };
+
     const updateSpectrumLevels = (data: Uint8Array, deltaTime: number, playing: boolean, audioVisual?: MusicVisualState) => {
       rhythmClock += deltaTime;
       let bassTotal = 0;
@@ -705,7 +740,6 @@ export function WaveCanvas({
       const nextImpulse = Math.min(1, (relativeRise * 3 + variancePulse * (playing ? 0.22 : 0.04)) * creatureGenome.rhythmSensitivity);
       rhythmImpulse = Math.max(rhythmImpulse * Math.exp(-deltaTime * 8.5), nextImpulse);
       beatAccent = Math.max(beatAccent * Math.exp(-deltaTime * 7.2), Math.min(1, nextImpulse + spectralFlux * automaticGain * 2.4));
-      const timeSinceBeat = rhythmClock - lastMainBeatAt;
       majorBeatConfidence += ((audioVisual?.majorBeatConfidence ?? 0) - majorBeatConfidence)
         * (1 - Math.exp(-deltaTime * 2.2));
       if (playing && audioVisual && audioVisual.onsetToken !== observedAudioOnsetToken) {
@@ -717,26 +751,15 @@ export function WaveCanvas({
       if (playing && audioVisual && audioVisual.beatToken !== observedAudioBeatToken) {
         observedAudioBeatToken = audioVisual.beatToken;
         const detectedStrength = THREE.MathUtils.clamp(audioVisual.beatStrength, 0, 1);
-        if (lastMainBeatAt > 0 && timeSinceBeat >= 0.18 && timeSinceBeat <= 1.6) {
-          recentBeatIntervals[acceptedBeatCursor] = timeSinceBeat;
-          acceptedBeatCursor = (acceptedBeatCursor + 1) % recentBeatIntervals.length;
-          acceptedBeatCount = Math.min(recentBeatIntervals.length, acceptedBeatCount + 1);
-          expectedBeatInterval = medianBeatInterval(recentBeatIntervals, acceptedBeatCount, beatIntervalScratch);
-        }
-        rhythmStrength = 0.54 + detectedStrength * 0.66;
-        acceptedBeatTotal += 1;
-        rhythmPulse = 1;
-        currentOnsetLowStrength = audioVisual.beatLowStrength;
-        currentOnsetHighStrength = audioVisual.beatHighStrength;
-        accentPulse = Math.max(accentPulse, detectedStrength * 0.72);
-        lastMainBeatAt = rhythmClock;
-        contractionPulse = Math.max(contractionPulse, detectedStrength);
-        pendingVeilPulse = rhythmStrength;
-        pendingVeilAt = rhythmClock + creatureGenome.veilDelay;
-        pendingRibbonPulse = rhythmStrength;
-        pendingRibbonAt = rhythmClock + creatureGenome.ribbonDelay;
-        pendingMotePulse = rhythmStrength;
-        pendingMoteAt = rhythmClock + creatureGenome.moteDelay;
+        triggerBioelectricHeartPulse(detectedStrength, audioVisual.beatLowStrength, audioVisual.beatHighStrength, true);
+      }
+      const musicalControlActive = Boolean(playing && audioVisual?.musicalControlActive);
+      if (musicalControlActive) {
+        nextAutonomousBeatAt = Math.max(nextAutonomousBeatAt, rhythmClock + 0.72);
+      } else if (currentBirthFrame.state === 'ALIVE'
+        && rhythmClock >= nextAutonomousBeatAt
+        && rhythmClock - lastMainBeatAt >= 0.56) {
+        triggerBioelectricHeartPulse(0.58 * personality.vitality, 0.48, 0.32, false);
       }
       rhythmPulse *= Math.exp(-deltaTime * 13.5);
       accentPulse *= Math.exp(-deltaTime * 7.5);
@@ -1101,10 +1124,10 @@ export function WaveCanvas({
         ? THREE.MathUtils.clamp(expectedBeatInterval * 0.34, 0.14, 0.24)
         : 0.2;
       const expressedRhythm = Math.min(1.35, rhythmStrength * personality.rhythmResponse);
-      const rootBeatPulse = sampleHeartEnvelope(beatAge - 0.045, heartRelease * 0.8) * expressedRhythm;
-      const veinBeatPulse = sampleHeartEnvelope(beatAge - 0.09, heartRelease * 0.86) * expressedRhythm;
-      const rimBeatPulse = sampleHeartEnvelope(beatAge - 0.145, heartRelease * 0.75) * expressedRhythm;
-      const funnelBeatPulse = sampleHeartEnvelope(beatAge - 0.075, heartRelease) * expressedRhythm;
+      const rootBeatPulse = sampleHeartContractionEnvelope(beatAge - 0.045, heartRelease * 0.8) * expressedRhythm;
+      const veinBeatPulse = sampleHeartContractionEnvelope(beatAge - 0.09, heartRelease * 0.86) * expressedRhythm;
+      const rimBeatPulse = sampleHeartContractionEnvelope(beatAge - 0.145, heartRelease * 0.75) * expressedRhythm;
+      const funnelBeatPulse = sampleHeartContractionEnvelope(beatAge - 0.075, heartRelease) * expressedRhythm;
       const idleLife = 0.1 * (0.9 + personality.vitality * 0.2) + curiousResponse * 0.08 + startlePulse * 0.14;
       const vitality = idleLife + 0.06 + musicAwake * (0.09 + musicEnergy * 0.18 + grooveEnergy * 0.32) + accentPulse * 0.16;
       const autonomousStrokeRate = lifeState === 'drift'
@@ -1355,8 +1378,8 @@ export function WaveCanvas({
         const frequencyExpression = index === 4
           ? 0.86 + currentOnsetLowStrength * 0.22
           : 0.82 + currentOnsetHighStrength * 0.16 + currentOnsetLowStrength * 0.08;
-        const audioBeat = sampleHeartEnvelope(lobeAge, heartRelease) * expressedRhythm * frequencyExpression;
-        const rebound = sampleHeartEnvelope(lobeAge - 0.1, heartRelease * 0.64) * expressedRhythm;
+        const audioBeat = sampleHeartContractionEnvelope(lobeAge, heartRelease) * expressedRhythm * frequencyExpression;
+        const rebound = sampleHeartContractionEnvelope(lobeAge - 0.1, heartRelease * 0.64) * expressedRhythm;
         const musicalDominance = musicAwake * majorBeatConfidence;
         const ignitionBeat = birthFrame.heartPulse * (1 - Math.min(0.55, audioBeat * 0.36));
         const visibleBeat = idleBeat * (1 - musicalDominance * 0.94)
@@ -1378,7 +1401,7 @@ export function WaveCanvas({
         mount.dataset.spiritFunnelMidPx = (Math.abs(funnelCenterX[2]) * horizontalPixelsPerUnit).toFixed(2);
         mount.dataset.spiritFunnelLowerPx = (Math.abs(funnelCenterX[4]) * horizontalPixelsPerUnit).toFixed(2);
         mount.dataset.spiritFunnelTipPx = (Math.abs(funnelCenterX[5]) * horizontalPixelsPerUnit).toFixed(2);
-        mount.dataset.spiritHeart = (sampleHeartEnvelope(beatAge, heartRelease) * expressedRhythm).toFixed(2);
+        mount.dataset.spiritHeart = (sampleHeartContractionEnvelope(beatAge, heartRelease) * expressedRhythm).toFixed(2);
         mount.dataset.spiritBeatStrength = expressedRhythm.toFixed(2);
         mount.dataset.spiritBeatTotal = String(acceptedBeatTotal);
         mount.dataset.spiritBeatAge = beatAge.toFixed(3);
@@ -1392,9 +1415,21 @@ export function WaveCanvas({
         mount.dataset.spiritBeatThreshold = (liveVisual?.majorBeatThreshold ?? 0).toFixed(3);
         mount.dataset.spiritBeatPeriodic = (liveVisual?.majorBeatPeriodicSupport ?? 0).toFixed(3);
         mount.dataset.spiritBeatFastPath = String(liveVisual?.majorBeatFastPath ?? false);
+        mount.dataset.spiritBeatSource = liveVisual?.beatSource ?? 'none';
+        mount.dataset.spiritBeatSongTime = (liveVisual?.beatSongTime ?? -1).toFixed(3);
+        mount.dataset.spiritBeatMapReady = String(liveVisual?.beatMapReady ?? false);
+        mount.dataset.spiritBeatMapCount = String(liveVisual?.beatMapCount ?? 0);
+        mount.dataset.spiritBeatMapAnalysisMs = (liveVisual?.beatMapAnalysisMs ?? 0).toFixed(2);
+        mount.dataset.spiritBeatMapNextIndex = String(liveVisual?.beatMapNextIndex ?? 0);
+        mount.dataset.spiritBeatMapNextTime = (liveVisual?.beatMapNextTime ?? -1).toFixed(3);
+        mount.dataset.spiritMusicalControl = String(liveVisual?.musicalControlActive ?? false);
+        mount.dataset.spiritPulseSource = lastBioelectricSource;
+        mount.dataset.spiritRootPulse = rootBeatPulse.toFixed(3);
+        mount.dataset.spiritVeinPulse = veinBeatPulse.toFixed(3);
+        mount.dataset.spiritRimPulse = rimBeatPulse.toFixed(3);
       }
       spiritRig.energyMaterials.forEach((material, index) => {
-        const propagation = sampleHeartEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * expressedRhythm;
+        const propagation = sampleHeartContractionEnvelope(beatAge - 0.055 - index * 0.048, heartRelease * 0.82) * expressedRhythm;
         const phenotypeEnergy = (material.userData.opacityFactor as number | undefined) ?? 1;
         material.opacity = (spiritLayer !== null
           ? 0
@@ -1496,7 +1531,7 @@ export function WaveCanvas({
         writeOrganicPoint(motePositions, index, moteStateX[index], moteStateY[index]);
 
         const phaseFraction = mote.phase / (Math.PI * 2);
-        const delayedEnergy = sampleHeartEnvelope(beatAge - 0.16 - phaseFraction * 0.12, heartRelease * 0.78) * expressedRhythm;
+        const delayedEnergy = sampleHeartContractionEnvelope(beatAge - 0.16 - phaseFraction * 0.12, heartRelease * 0.78) * expressedRhythm;
         const brightnessTarget = spiritLayer === 'motes'
           ? 0.76
           : 0.12 + trebleEnergy * 0.2 + delayedEnergy * (0.34 + phaseFraction * 0.26);
@@ -1583,6 +1618,8 @@ export function WaveCanvas({
         acceptedBeatCursor = 0;
         recentBeatIntervals.fill(0);
         rhythmClock = 0;
+        nextAutonomousBeatAt = 1.1;
+        lastBioelectricSource = 'none';
         pendingVeilPulse = 0;
         pendingVeilAt = -1;
         pendingRibbonPulse = 0;
@@ -1656,6 +1693,8 @@ export function WaveCanvas({
         acceptedBeatCursor = 0;
         recentBeatIntervals.fill(0);
         rhythmClock = 0;
+        nextAutonomousBeatAt = 1.1;
+        lastBioelectricSource = 'none';
         rhythmStrength = 0;
         rhythmPulse = 0;
         rhythmImpulse = 0;
@@ -1692,6 +1731,7 @@ export function WaveCanvas({
         mount.dataset.spiritBirthState = currentBirthFrame.state;
         mount.dataset.spiritBirthProgress = currentBirthFrame.progress.toFixed(3);
         mount.dataset.spiritBirthLocked = String(currentBirthFrame.interactionLocked);
+        mount.dataset.spiritBirthStartedAt = String(current.spiritBirthStartedAt ?? 0);
       }
       updateSpiritPhysics(time, deltaTime, current, currentBirthFrame);
       drawBirthSpectacle(current, time);
@@ -2880,12 +2920,8 @@ function sampleSwimmingCycle(phase: number) {
   return THREE.MathUtils.lerp(-0.06, 0, smoothstep(0.78, 1, normalized));
 }
 
-function sampleHeartEnvelope(age: number, release = 0.33) {
-  const end = 0.075 + release;
-  if (age <= 0 || age >= end) return 0;
-  if (age < 0.045) return smoothstep(0, 0.045, age);
-  if (age < 0.075) return 1;
-  return 1 - smoothstep(0.075, end, age);
+function autonomousHeartInterval(vitality: number) {
+  return 1.48 / THREE.MathUtils.clamp(0.92 + vitality * 0.12, 0.94, 1.08);
 }
 
 function medianBeatInterval(values: Float32Array, count: number, scratch: Float32Array) {

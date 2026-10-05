@@ -115,11 +115,11 @@ export default function App() {
     return { sourceUrl, visualSeed };
   }, []);
 
-  const commitSpiritBirth = useCallback(() => {
+  const commitSpiritBirth = useCallback((birthDelayMs: number) => {
     const birth = resolveSoundSpiritBirth(spiritInteractionRef.current.snapshot());
     setSpiritPhenotype(birth.phenotype);
     setSpiritPersonality(birth.personality);
-    setSpiritBirth((current) => ({ token: current.token + 1, startedAt: performance.now() }));
+    setSpiritBirth((current) => ({ token: current.token + 1, startedAt: performance.now() + birthDelayMs }));
   }, []);
 
   const musicController = useMusicAudioController({

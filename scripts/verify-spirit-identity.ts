@@ -210,7 +210,7 @@ assert(rendererSource.includes('addWingSurface(mainGeometry, 0xb9f5ff'), 'The ma
 assert(rendererSource.includes('createMasterSpiritMaterial(phenotype.bodyOuterColor'), 'The rendered body shell must receive its phenotype tint.');
 assert(DEFAULT_SOUND_SPIRIT_PHENOTYPE.bodyOuterColor === 0x7bd7e8 && DEFAULT_SOUND_SPIRIT_PHENOTYPE.bodyInnerColor === 0xd8fbff, 'Default body materials must retain the exact Golden colors.');
 assert(appSource.includes('resolveSoundSpiritBirth(spiritInteractionRef.current.snapshot())'), 'Every successful import must read the current accumulated DNA history.');
-assert(musicControllerSource.indexOf('await context.decodeAudioData') < musicControllerSource.indexOf('onSuccessfulLoad();'), 'Birth must occur only after successful audio decode.');
+assert(musicControllerSource.indexOf('await context.decodeAudioData') < musicControllerSource.indexOf('onSuccessfulLoad(CINEMATIC_BIRTH_DELAY_MS)'), 'Birth must occur only after successful audio decode.');
 assert(!identitySource.includes('Math.random'), 'Genome and phenotype resolution must remain fully seeded and deterministic.');
 
 for (let seed = 1; seed <= 32; seed += 1) {

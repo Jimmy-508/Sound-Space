@@ -713,6 +713,12 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
             aria-label="音樂播放位置"
             aria-valuetext={`${formatTime(session.current)} / ${formatTime(session.duration)}`}
             style={{ '--timeline-progress': `${session.duration ? session.current / session.duration * 100 : 0}%` } as CSSProperties}
+            onPointerDown={controller.beginSeek}
+            onPointerUp={controller.endSeek}
+            onPointerCancel={controller.endSeek}
+            onKeyDown={controller.beginSeek}
+            onKeyUp={controller.endSeek}
+            onBlur={controller.endSeek}
             onChange={(event) => {
               const time = Number(event.currentTarget.value);
               controller.seek(time);

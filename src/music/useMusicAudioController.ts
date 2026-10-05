@@ -6,6 +6,14 @@ import {
   type AudioOnsetDetectorState,
 } from './audioOnsetDetector';
 import { createMajorBeatGateState, gateMajorBeat, type MajorBeatGateState } from './majorBeatGate';
+import {
+  advanceBeatMapClock,
+  createBeatMapClockState,
+  MUSICAL_HEART_CAPTURE_WINDOW_SECONDS,
+  resetBeatMapClock,
+  type BeatMapClockState,
+} from './beatMapClock';
+import { analyzeAudioBufferForMajorBeats, type OfflineBeatMap } from './offlineBeatMap';
 
 const supportedAudioExtensions = ['.mp3', '.wav', '.m4a', '.aac'];
 const supportedAudioMimeTypes = [
@@ -22,12 +30,14 @@ const supportedAudioMimeTypes = [
 
 export const audioAccept = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,.mp3,.wav,.m4a,.aac';
 export const unsupportedAudioMessage = '這個音訊格式目前無法在此瀏覽器播放，請改用其他 MP3、WAV 或 M4A 檔案。';
+export const CINEMATIC_BIRTH_DELAY_MS = 2000;
+export const CINEMATIC_INTRO_PATH = 'audio/12_Cinematic_intro.wav';
 
 interface ControllerOptions {
   session: MusicSessionState;
   onSessionChange: (patch: Partial<MusicSessionState>) => void;
   onReplaceFile: (file: File) => { sourceUrl: string; visualSeed: number };
-  onSuccessfulLoad: () => void;
+  onSuccessfulLoad: (birthDelayMs: number) => void;
 }
 
 export interface MusicAudioController {
@@ -42,6 +52,8 @@ export interface MusicAudioController {
   pause: () => void;
   stop: () => void;
   seek: (time: number) => void;
+  beginSeek: () => void;
+  endSeek: () => void;
   handleLoadedMetadata: () => void;
   handleAudioError: () => void;
   handleEnded: () => void;
@@ -68,6 +80,14 @@ export interface MusicVisualState {
   majorBeatThreshold: number;
   majorBeatPeriodicSupport: number;
   majorBeatFastPath: boolean;
+  beatSource: 'none' | 'musical';
+  beatSongTime: number;
+  beatMapReady: boolean;
+  beatMapCount: number;
+  beatMapAnalysisMs: number;
+  beatMapNextIndex: number;
+  beatMapNextTime: number;
+  musicalControlActive: boolean;
 }
 
 const initialVisualState: MusicVisualState = {
@@ -91,6 +111,14 @@ const initialVisualState: MusicVisualState = {
   majorBeatThreshold: 0,
   majorBeatPeriodicSupport: 0,
   majorBeatFastPath: false,
+  beatSource: 'none',
+  beatSongTime: -1,
+  beatMapReady: false,
+  beatMapCount: 0,
+  beatMapAnalysisMs: 0,
+  beatMapNextIndex: 0,
+  beatMapNextTime: -1,
+  musicalControlActive: false,
 };
 
 interface MusicAnalysisState {
@@ -117,6 +145,11 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
   const spectrumBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const timeBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const loadVersionRef = useRef(0);
+  const introAudioRef = useRef<HTMLAudioElement | null>(null);
+  const beatMapRef = useRef<OfflineBeatMap | null>(null);
+  const beatMapClockRef = useRef<BeatMapClockState>(createBeatMapClockState());
+  const scrubbingRef = useRef(false);
+  const seekResumeTimerRef = useRef(0);
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
@@ -145,6 +178,38 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
       const now = performance.now();
       const audio = audioRef.current;
       const analyser = analyserRef.current;
+      const visual = visualStateRef.current;
+      const beatMap = beatMapRef.current;
+      if (audio && beatMap) {
+        const beatFrame = advanceBeatMapClock(
+          beatMapClockRef.current,
+          beatMap.timestamps,
+          audio.currentTime,
+          !audio.paused,
+          scrubbingRef.current,
+        );
+        visual.beatMapReady = true;
+        visual.beatMapCount = beatMap.timestamps.length;
+        visual.beatMapAnalysisMs = beatMap.analysisTimeMs;
+        visual.beatMapNextIndex = beatFrame.nextIndex;
+        visual.beatMapNextTime = beatFrame.nextBeatTime;
+        visual.musicalControlActive = beatFrame.musicalControlActive;
+        visual.majorBeatConfidence = beatFrame.musicalControlActive ? 1 : 0;
+        if (beatFrame.pulse) {
+          visual.beatPulse = 1;
+          visual.beatStrength = 1;
+          visual.beatLowStrength = 1;
+          visual.beatHighStrength = 0.72;
+          visual.beatAt = now - beatFrame.pulse.attackAge * 1000;
+          visual.beatSongTime = beatFrame.pulse.beatTime;
+          visual.beatSource = 'musical';
+          visual.beatToken += 1;
+        }
+      } else {
+        visual.musicalControlActive = false;
+        visual.majorBeatConfidence = 0;
+        visual.beatMapNextTime = -1;
+      }
       if (audio && !audio.paused && now - lastProgressUpdate >= 100) {
         onSessionChange({ current: audio.currentTime });
         lastProgressUpdate = now;
@@ -156,7 +221,7 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
         timeBufferRef.current = waveform;
         analyser.getByteFrequencyData(frequency);
         analyser.getByteTimeDomainData(waveform);
-        updateMusicVisualState(visualStateRef.current, visualBeatRef.current, frequency, analyser, now, Boolean(audio && !audio.paused));
+        updateMusicVisualState(visual, visualBeatRef.current, frequency, analyser, now, Boolean(audio && !audio.paused));
         setSpectrumData(frequency.slice());
         setTimeDomainData(waveform.slice());
         lastAnalyserUpdate = now;
@@ -169,6 +234,9 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
 
   useEffect(() => () => {
     audioRef.current?.pause();
+    stopCinematicIntro(introAudioRef);
+    window.clearTimeout(seekResumeTimerRef.current);
+    loadVersionRef.current += 1;
     analyserRef.current?.disconnect();
     gainRef.current?.disconnect();
     void contextRef.current?.close();
@@ -208,8 +276,12 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
     }
     const loadVersion = loadVersionRef.current + 1;
     loadVersionRef.current = loadVersion;
+    stopCinematicIntro(introAudioRef);
+    beatMapRef.current = null;
+    beatMapClockRef.current = createBeatMapClockState();
+    scrubbingRef.current = false;
+    window.clearTimeout(seekResumeTimerRef.current);
     setError('');
-    const audioGraphReady = ensureAudioGraph().catch(() => undefined);
 
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -239,14 +311,25 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
         zoom: 1,
         viewStart: 0,
       });
-      onSuccessfulLoad();
-      await audioGraphReady;
-      try {
-        await audio.play();
-        setPlaying(true);
-      } catch {
-        setPlaying(false);
-      }
+      setPlaying(false);
+      void analyzeAudioBufferForMajorBeats(buffer, {
+        shouldCancel: () => loadVersion !== loadVersionRef.current,
+      }).then((beatMap) => {
+        if (!beatMap || loadVersion !== loadVersionRef.current) return;
+        beatMapRef.current = beatMap;
+        const currentAudio = audioRef.current;
+        resetBeatMapClock(beatMapClockRef.current, beatMap.timestamps, currentAudio?.currentTime ?? 0);
+        const visual = visualStateRef.current;
+        visual.beatMapReady = true;
+        visual.beatMapCount = beatMap.timestamps.length;
+        visual.beatMapAnalysisMs = beatMap.analysisTimeMs;
+        if (isLocalDevelopment()) {
+          document.documentElement.dataset.beatMapTimes = Array.from(beatMap.timestamps, (time) => time.toFixed(3)).join(',');
+        }
+      });
+      await playCinematicIntro(introAudioRef, loadVersion, loadVersionRef);
+      if (loadVersion !== loadVersionRef.current) return;
+      onSuccessfulLoad(CINEMATIC_BIRTH_DELAY_MS);
     } catch {
       if (loadVersion === loadVersionRef.current) setError(unsupportedAudioMessage);
     }
@@ -258,6 +341,16 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
     if (sessionRef.current.duration && audio.currentTime >= sessionRef.current.duration - 0.02) audio.currentTime = 0;
     try {
       await ensureAudioGraph();
+      const beatMap = beatMapRef.current;
+      if (beatMap) {
+        resetBeatMapClock(beatMapClockRef.current, beatMap.timestamps, audio.currentTime);
+        const nextBeat = beatMap.timestamps[beatMapClockRef.current.nextIndex] ?? -1;
+        const capturesSoon = nextBeat >= 0 && nextBeat - audio.currentTime <= MUSICAL_HEART_CAPTURE_WINDOW_SECONDS;
+        visualStateRef.current.musicalControlActive = capturesSoon;
+        visualStateRef.current.majorBeatConfidence = capturesSoon ? 1 : 0;
+        visualStateRef.current.beatMapNextIndex = beatMapClockRef.current.nextIndex;
+        visualStateRef.current.beatMapNextTime = nextBeat;
+      }
       await audio.play();
       setPlaying(true);
       setError('');
@@ -272,6 +365,8 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
     if (!audio) return;
     audio.pause();
     onSessionChange({ current: audio.currentTime });
+    visualStateRef.current.musicalControlActive = false;
+    visualStateRef.current.majorBeatConfidence = 0;
     setPlaying(false);
   }, [onSessionChange]);
 
@@ -280,15 +375,42 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
     if (!audio) return;
     audio.pause();
     audio.currentTime = 0;
+    const beatMap = beatMapRef.current;
+    if (beatMap) resetBeatMapClock(beatMapClockRef.current, beatMap.timestamps, 0);
     onSessionChange({ current: 0, viewStart: 0 });
+    visualStateRef.current.musicalControlActive = false;
+    visualStateRef.current.majorBeatConfidence = 0;
     setPlaying(false);
   }, [onSessionChange]);
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
     if (audio) audio.currentTime = time;
+    const beatMap = beatMapRef.current;
+    if (beatMap) resetBeatMapClock(beatMapClockRef.current, beatMap.timestamps, time);
+    scrubbingRef.current = true;
+    window.clearTimeout(seekResumeTimerRef.current);
+    seekResumeTimerRef.current = window.setTimeout(() => {
+      scrubbingRef.current = false;
+      const currentAudio = audioRef.current;
+      const currentMap = beatMapRef.current;
+      if (currentAudio && currentMap) resetBeatMapClock(beatMapClockRef.current, currentMap.timestamps, currentAudio.currentTime);
+    }, 140);
     onSessionChange({ current: time });
   }, [onSessionChange]);
+
+  const beginSeek = useCallback(() => {
+    scrubbingRef.current = true;
+    window.clearTimeout(seekResumeTimerRef.current);
+  }, []);
+
+  const endSeek = useCallback(() => {
+    window.clearTimeout(seekResumeTimerRef.current);
+    scrubbingRef.current = false;
+    const audio = audioRef.current;
+    const beatMap = beatMapRef.current;
+    if (audio && beatMap) resetBeatMapClock(beatMapClockRef.current, beatMap.timestamps, audio.currentTime);
+  }, []);
 
   const handleLoadedMetadata = useCallback(() => {
     const audio = audioRef.current;
@@ -304,6 +426,8 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
 
   const handleEnded = useCallback(() => {
     setPlaying(false);
+    visualStateRef.current.musicalControlActive = false;
+    visualStateRef.current.majorBeatConfidence = 0;
     onSessionChange({ current: sessionRef.current.duration });
   }, [onSessionChange]);
 
@@ -319,6 +443,8 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
     pause,
     stop,
     seek,
+    beginSeek,
+    endSeek,
     handleLoadedMetadata,
     handleAudioError,
     handleEnded,
@@ -370,19 +496,10 @@ function updateMusicVisualState(
     target.onsetToken += 1;
   }
   const majorBeat = gateMajorBeat(analysis.majorBeat, onset, target.overallEnergy, now, playing);
-  target.majorBeatConfidence = majorBeat.confidence;
   target.majorBeatProminence = majorBeat.prominence;
   target.majorBeatThreshold = majorBeat.threshold;
   target.majorBeatPeriodicSupport = majorBeat.periodicSupport;
   target.majorBeatFastPath = majorBeat.fastPath;
-  if (majorBeat.detected) {
-    target.beatPulse = majorBeat.strength;
-    target.beatStrength = majorBeat.strength;
-    target.beatLowStrength = onset.lowStrength;
-    target.beatHighStrength = onset.highStrength;
-    target.beatAt = now;
-    target.beatToken += 1;
-  }
 }
 
 function averageFrequencyBand(spectrum: Uint8Array, analyser: AnalyserNode, minimumHz: number, maximumHz: number) {
@@ -419,4 +536,54 @@ function isSupportedAudioFile(file: File) {
   const name = file.name.toLowerCase();
   const type = file.type.toLowerCase();
   return supportedAudioExtensions.some((extension) => name.endsWith(extension)) || supportedAudioMimeTypes.includes(type);
+}
+
+async function playCinematicIntro(
+  introRef: { current: HTMLAudioElement | null },
+  loadVersion: number,
+  loadVersionRef: { current: number },
+) {
+  stopCinematicIntro(introRef);
+  const intro = new Audio(new URL(CINEMATIC_INTRO_PATH, document.baseURI).href);
+  intro.preload = 'auto';
+  introRef.current = intro;
+  if (isLocalDevelopment()) {
+    document.documentElement.dataset.cinematicIntroState = 'starting';
+    document.documentElement.dataset.cinematicIntroStartedAt = '';
+    document.documentElement.dataset.cinematicIntroEndedAt = '';
+    intro.addEventListener('playing', () => {
+      document.documentElement.dataset.cinematicIntroState = 'playing';
+      document.documentElement.dataset.cinematicIntroStartedAt = performance.now().toFixed(1);
+      document.documentElement.dataset.cinematicIntroDuration = Number.isFinite(intro.duration) ? intro.duration.toFixed(3) : '';
+    }, { once: true });
+    intro.addEventListener('ended', () => {
+      document.documentElement.dataset.cinematicIntroState = 'ended';
+      document.documentElement.dataset.cinematicIntroEndedAt = performance.now().toFixed(1);
+    }, { once: true });
+  }
+  try {
+    await intro.play();
+  } catch {
+    if (isLocalDevelopment()) {
+      document.documentElement.dataset.cinematicIntroState = 'failed';
+      console.warn('Sound Space cinematic intro could not play; Birth will use the two-second fallback.');
+    }
+  }
+  if (loadVersion !== loadVersionRef.current) stopCinematicIntro(introRef);
+}
+
+function stopCinematicIntro(introRef: { current: HTMLAudioElement | null }) {
+  const intro = introRef.current;
+  if (!intro) return;
+  intro.pause();
+  intro.removeAttribute('src');
+  intro.load();
+  introRef.current = null;
+  if (isLocalDevelopment() && document.documentElement.dataset.cinematicIntroState !== 'ended') {
+    document.documentElement.dataset.cinematicIntroState = 'stopped';
+  }
+}
+
+function isLocalDevelopment() {
+  return window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
 }
