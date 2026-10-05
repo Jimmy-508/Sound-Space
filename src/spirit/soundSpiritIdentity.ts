@@ -70,8 +70,18 @@ export interface SoundSpiritPhenotypeConfig {
   bodyFullness: number;
   bodyLength: number;
   bodyAsymmetry: number;
+  crownHeight: number;
+  crownWidth: number;
+  crownEarHeight: number;
+  crownEarWidth: number;
+  crownEarAngle: number;
+  crownTipRoundness: number;
+  crownNotchDepth: number;
+  crownShoulderCurve: number;
   wingSpan: number;
   wingHeight: number;
+  wingPose: number;
+  wingFullness: number;
   wingSweep: number;
   wingCurvature: number;
   wingScallop: number;
@@ -113,8 +123,18 @@ export const SOUND_SPIRIT_SPECIES_GUARDRAILS = Object.freeze({
   wingRootX: 0.145,
   heartPresent: true,
   heartLobeCount: 5,
-  wingSpan: Object.freeze([0.88, 1.15] as const),
-  wingHeight: Object.freeze([0.9, 1.12] as const),
+  crownHeight: Object.freeze([0.86, 1.18] as const),
+  crownWidth: Object.freeze([0.88, 1.14] as const),
+  crownEarHeight: Object.freeze([0.86, 1.18] as const),
+  crownEarWidth: Object.freeze([0.86, 1.16] as const),
+  crownEarAngle: Object.freeze([-0.12, 0.12] as const),
+  crownTipRoundness: Object.freeze([-0.18, 0.18] as const),
+  crownNotchDepth: Object.freeze([-0.012, 0.018] as const),
+  crownShoulderCurve: Object.freeze([0.88, 1.14] as const),
+  wingSpan: Object.freeze([0.84, 1.18] as const),
+  wingHeight: Object.freeze([0.86, 1.15] as const),
+  wingPose: Object.freeze([-0.14, 0.14] as const),
+  wingFullness: Object.freeze([0.88, 1.14] as const),
   wingSweep: Object.freeze([0.92, 1.12] as const),
   wingCurvature: Object.freeze([-0.12, 0.12] as const),
   wingScallop: Object.freeze([-0.055, 0.055] as const),
@@ -174,8 +194,18 @@ export const DEFAULT_SOUND_SPIRIT_PHENOTYPE: SoundSpiritPhenotypeConfig = Object
   bodyFullness: 1,
   bodyLength: 1,
   bodyAsymmetry: 0,
+  crownHeight: 1,
+  crownWidth: 1,
+  crownEarHeight: 1,
+  crownEarWidth: 1,
+  crownEarAngle: 0,
+  crownTipRoundness: 0,
+  crownNotchDepth: 0,
+  crownShoulderCurve: 1,
   wingSpan: 1,
   wingHeight: 1,
+  wingPose: 0,
+  wingFullness: 1,
   wingSweep: 1,
   wingCurvature: 0,
   wingScallop: 0,
@@ -406,6 +436,8 @@ export function generateSoundSpiritPhenotype(genome: SoundSpiritGenome): SoundSp
   const depthDirection = geneDirection(depth, geometryRandom);
   const geometryBias = geometryRandom() * 2 - 1;
   const routeBias = geometryRandom() * 2 - 1;
+  const crownBias = geometryRandom() * 2 - 1;
+  const poseBias = geometryRandom() * 2 - 1;
   const richness = clamp01(depth * 0.42 + diversity * 0.25 + precision * 0.33);
   const palette = deriveIndividualPalette(genes, genome.seed);
   const lobeVariation = 0.055 + traitPlan.diversity * 0.105 + traitPlan.energy * 0.035;
@@ -424,8 +456,18 @@ export function generateSoundSpiritPhenotype(genome: SoundSpiritGenome): SoundSp
     bodyFullness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyFullness, 1 + energyDirection * (0.035 + traitPlan.energy * 0.07) + geometryBias * 0.012),
     bodyLength: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyLength, 1 - frequencyDirection * (0.018 + traitPlan.frequency * 0.025) + depthDirection * (0.012 + traitPlan.depth * 0.04)),
     bodyAsymmetry: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyAsymmetry, diversityDirection * (0.008 + traitPlan.diversity * 0.027)),
-    wingSpan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSpan, 1 + frequencyDirection * (0.045 + traitPlan.frequency * 0.1) + geometryBias * 0.014),
-    wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 - frequencyDirection * (0.028 + traitPlan.frequency * 0.055) + precisionDirection * traitPlan.precision * 0.035),
+    crownHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.crownHeight, 1 + crownBias * (0.055 + traitPlan.diversity * 0.07) + energyDirection * traitPlan.energy * 0.025),
+    crownWidth: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.crownWidth, 1 - crownBias * (0.04 + traitPlan.frequency * 0.055) + geometryBias * 0.02),
+    crownEarHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.crownEarHeight, 1 + crownBias * (0.07 + traitPlan.diversity * 0.055)),
+    crownEarWidth: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.crownEarWidth, 1 + geometryBias * (0.055 + traitPlan.frequency * 0.05)),
+    crownEarAngle: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.crownEarAngle, poseBias * (0.035 + traitPlan.diversity * 0.075)),
+    crownTipRoundness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.crownTipRoundness, -crownBias * (0.05 + traitPlan.precision * 0.11)),
+    crownNotchDepth: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.crownNotchDepth, (crownBias * 0.007 + diversityDirection * traitPlan.diversity * 0.009)),
+    crownShoulderCurve: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.crownShoulderCurve, 1 + poseBias * (0.045 + traitPlan.frequency * 0.065)),
+    wingSpan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSpan, 1 + frequencyDirection * (0.06 + traitPlan.frequency * 0.115) + geometryBias * 0.018),
+    wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 - frequencyDirection * (0.04 + traitPlan.frequency * 0.07) + precisionDirection * traitPlan.precision * 0.045),
+    wingPose: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingPose, poseBias * (0.045 + traitPlan.frequency * 0.065 + traitPlan.diversity * 0.035)),
+    wingFullness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingFullness, 1 + geometryBias * (0.04 + traitPlan.precision * 0.075)),
     wingSweep: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSweep, 1 + frequencyDirection * traitPlan.frequency * 0.045 + diversityDirection * (0.025 + traitPlan.diversity * 0.065) + depthDirection * traitPlan.depth * 0.025),
     wingCurvature: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingCurvature, frequencyDirection * (0.025 + traitPlan.frequency * 0.045) + routeBias * (0.025 + traitPlan.diversity * 0.05)),
     wingScallop: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingScallop, diversityDirection * (0.014 + traitPlan.diversity * 0.036) + geometryBias * 0.008),
@@ -497,17 +539,17 @@ function deriveTraitPlan(genes: Record<TraitName, number>, seed: number): TraitW
 }
 
 const PALETTE_ANCHORS = [
-  [0x36dcff, 0x7d6dff, 0xff72ba, 0xffa56f],
-  [0x42f0df, 0x4b9dff, 0xffd27d, 0xffb66f],
-  [0x4ba2ff, 0x966cff, 0xff789d, 0xff9d72],
-  [0x9a8cff, 0x54dfff, 0xf38bff, 0xffbd78],
-  [0x32e6d0, 0x6f7cff, 0xff68d2, 0xff987c],
-  [0x776eff, 0x46cfff, 0xffb15f, 0xff8f76],
+  [0x22d9ff, 0x6758ff, 0xff54b8, 0xff9660],
+  [0x24efd4, 0x318dff, 0xffd15c, 0xffaa45],
+  [0x358cff, 0x8b55ff, 0xff568c, 0xff825f],
+  [0x9d72ff, 0x35d9ff, 0xf05aff, 0xffb454],
+  [0x20e4c5, 0x5968ff, 0xff45cb, 0xff745e],
+  [0x6554ff, 0x29c8ff, 0xffa83d, 0xff6f55],
 ] as const;
 
 function deriveIndividualPalette(genes: Record<TraitName, number>, seed: number) {
   const random = seededRandom(seed ^ 0xc2b2ae35);
-  const position = fract(random() * 0.52 + genes.frequency * 0.18 + genes.diversity * 0.13 + genes.energy * 0.1 + genes.precision * 0.07);
+  const position = fract(random() * 0.72 + genes.frequency * 0.14 + genes.diversity * 0.09 + genes.energy * 0.07 + genes.precision * 0.05);
   const scaled = position * PALETTE_ANCHORS.length;
   const index = Math.floor(scaled) % PALETTE_ANCHORS.length;
   const next = (index + 1) % PALETTE_ANCHORS.length;
@@ -539,10 +581,10 @@ function enforceMinimumVisualSeparation(phenotype: SoundSpiritPhenotypeConfig, d
     return { ...phenotype, heartScale: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartScale, 1 + direction * 0.14), heartGlow: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartGlow, 1 + direction * 0.24) };
   }
   if (dominant === 'frequency') {
-    return { ...phenotype, wingSpan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSpan, 1 + direction * 0.12), wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 - direction * 0.08) };
+    return { ...phenotype, wingSpan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSpan, 1 + direction * 0.16), wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 - direction * 0.11), wingPose: direction * 0.09 };
   }
   if (dominant === 'diversity') {
-    return { ...phenotype, wingSweep: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSweep, 1 + direction * 0.09), wingScallop: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingScallop, direction * 0.045) };
+    return { ...phenotype, wingSweep: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSweep, 1 + direction * 0.09), wingScallop: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingScallop, direction * 0.045), crownEarHeight: 1 + direction * 0.14, crownNotchDepth: direction * 0.012 };
   }
   if (dominant === 'precision') {
     return { ...phenotype, wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 + direction * 0.09), membraneLayerExtra: direction > 0 ? 1 : 0, veinExtra: direction > 0 ? 2 : 0 };
@@ -568,13 +610,26 @@ export function phenotypeVisualDistance(left: SoundSpiritPhenotypeConfig, right:
 
 function phenotypeSilhouetteDistance(left: SoundSpiritPhenotypeConfig, right: SoundSpiritPhenotypeConfig) {
   return averageDifference(left, right, [
-    ['wingSpan', 0.15], ['wingHeight', 0.12], ['wingSweep', 0.12], ['wingCurvature', 0.12],
-    ['wingScallop', 0.055], ['bodyLength', 0.07], ['bodyFullness', 0.11], ['heartScale', 0.2],
+    ['crownHeight', 0.18], ['crownWidth', 0.14], ['crownEarHeight', 0.18], ['crownNotchDepth', 0.018],
+    ['wingSpan', 0.18], ['wingHeight', 0.15], ['wingPose', 0.14], ['wingFullness', 0.14],
+    ['wingSweep', 0.12], ['wingCurvature', 0.12], ['wingScallop', 0.055],
+    ['bodyLength', 0.07], ['bodyFullness', 0.11], ['heartScale', 0.2],
   ]);
 }
 
 export function createSoundSpiritPhenotype(history: SoundSpiritInteractionHistory) {
-  return generateSoundSpiritPhenotype(resolveSoundSpiritGenome(history));
+  return resolveSoundSpiritBirth(history).phenotype;
+}
+
+export interface SoundSpiritBirthSnapshot {
+  genome: SoundSpiritGenome;
+  phenotype: SoundSpiritPhenotypeConfig;
+}
+
+export function resolveSoundSpiritBirth(history: SoundSpiritInteractionHistory): SoundSpiritBirthSnapshot {
+  const resolved = resolveSoundSpiritGenome(history);
+  const genome = resolved === DEFAULT_SOUND_SPIRIT_GENOME ? resolved : Object.freeze({ ...resolved });
+  return Object.freeze({ genome, phenotype: generateSoundSpiritPhenotype(genome) });
 }
 
 export function createLocalSpiritPreviewPhenotype(preset: string | null) {

@@ -7,6 +7,7 @@ import {
   createSoundSpiritPhenotype,
   generateSoundSpiritPhenotype,
   phenotypeVisualDistance,
+  resolveSoundSpiritBirth,
   resolveSoundSpiritGenome,
   type SoundSpiritGenome,
   type SoundSpiritPhenotypeConfig,
@@ -41,7 +42,8 @@ const goldenBaseline: SoundSpiritPhenotypeConfig = {
   key: 'default', isDefault: true, seed: 1,
   energy: 0.5, frequency: 0.5, diversity: 0.5, precision: 0.5, interactionDepth: 0,
   bodyFullness: 1, bodyLength: 1, bodyAsymmetry: 0,
-  wingSpan: 1, wingHeight: 1, wingSweep: 1, wingCurvature: 0, wingScallop: 0, wingInnerContour: 0, wingAsymmetry: 0,
+  crownHeight: 1, crownWidth: 1, crownEarHeight: 1, crownEarWidth: 1, crownEarAngle: 0, crownTipRoundness: 0, crownNotchDepth: 0, crownShoulderCurve: 1,
+  wingSpan: 1, wingHeight: 1, wingPose: 0, wingFullness: 1, wingSweep: 1, wingCurvature: 0, wingScallop: 0, wingInnerContour: 0, wingAsymmetry: 0,
   membraneOpacity: 1, membraneLayerExtra: 0, veinExtra: 0, veinFan: 0, veinBranch: 0, veinOpacity: 1, rimOpacity: 1,
   heartScale: 1, heartVariation: 0, heartLobeWidths: [1, 1, 1, 1, 1], heartLobeLengths: [1, 1, 1, 1, 1],
   heartCoreScale: 1, heartPulse: 1, heartGlow: 1,
@@ -136,14 +138,25 @@ for (let left = 0; left < representativePhenotypes.length; left += 1) {
     assert(phenotypeVisualDistance(representativePhenotypes[left], representativePhenotypes[right]) >= 0.1, 'Representative histories must not collapse into the same phenotype.');
   }
 }
+const farIdentitySignatures = new Set(representativePhenotypes.map((phenotype) => [
+  phenotype.crownHeight, phenotype.crownWidth, phenotype.crownEarHeight, phenotype.crownNotchDepth,
+  phenotype.wingPose, phenotype.wingSpan, phenotype.wingHeight, phenotype.wingFullness,
+].map((value) => value.toFixed(3)).join(':')));
+assert(farIdentitySignatures.size === representativePhenotypes.length, 'Representative histories must retain distinct non-color crown and wing identities.');
 
 const frozenRecorder = populateBroadHistory();
-const frozenPhenotype = createSoundSpiritPhenotype(frozenRecorder.snapshot());
+const firstBirth = resolveSoundSpiritBirth(frozenRecorder.snapshot());
+const frozenPhenotype = firstBirth.phenotype;
 const frozenSnapshot = JSON.stringify(frozenPhenotype);
 frozenRecorder.observeFrequency(3600, 180);
 frozenRecorder.observeAmplitude(0.9, 0.15);
 assert(JSON.stringify(frozenPhenotype) === frozenSnapshot, 'Later interactions must not morph an existing phenotype snapshot.');
-assert(JSON.stringify(createSoundSpiritPhenotype(frozenRecorder.snapshot())) !== frozenSnapshot, 'Only a later explicit birth may use newer history.');
+const secondBirth = resolveSoundSpiritBirth(frozenRecorder.snapshot());
+assert(JSON.stringify(secondBirth.phenotype) !== frozenSnapshot, 'A later successful import must resolve the latest accumulated history.');
+assert(secondBirth.genome.seed !== firstBirth.genome.seed, 'Intervening meaningful Wave interactions must change the next birth seed.');
+const unchangedBirth = resolveSoundSpiritBirth(frozenRecorder.snapshot());
+assert(deepEqual(unchangedBirth, secondBirth), 'Re-importing unchanged history must remain deterministic.');
+assert(Object.isFrozen(secondBirth) && Object.isFrozen(secondBirth.genome), 'Birth must be an immutable stable snapshot.');
 
 const spam = createSoundSpiritInteractionRecorder();
 for (let index = 0; index < 120; index += 1) {
@@ -165,9 +178,19 @@ const [bodyLengthMin, bodyLengthMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyLengt
 const [membraneMin, membraneMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.membraneOpacity;
 const [glowMin, glowMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.glowIntensity;
 const [asymmetryMin, asymmetryMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.wingAsymmetry;
+const [crownHeightMin, crownHeightMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.crownHeight;
+const [crownWidthMin, crownWidthMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.crownWidth;
+const [wingPoseMin, wingPoseMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.wingPose;
+const [wingFullnessMin, wingFullnessMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.wingFullness;
 const rendererSource = readFileSync('src/visualization/WaveCanvas.tsx', 'utf8');
+const appSource = readFileSync('src/App.tsx', 'utf8');
+const musicControllerSource = readFileSync('src/music/useMusicAudioController.ts', 'utf8');
+const identitySource = readFileSync('src/spirit/soundSpiritIdentity.ts', 'utf8');
 assert(rendererSource.includes('addWingSurface(mainGeometry, 0xb9f5ff'), 'The main shell membrane must remain icy white for every phenotype.');
 assert(rendererSource.includes('createMasterSpiritMaterial(0x7bd7e8'), 'The body shell must retain the Golden icy-cyan material.');
+assert(appSource.includes('resolveSoundSpiritBirth(spiritInteractionRef.current.snapshot())'), 'Every successful import must read the current accumulated DNA history.');
+assert(musicControllerSource.indexOf('await context.decodeAudioData') < musicControllerSource.indexOf('onSuccessfulLoad();'), 'Birth must occur only after successful audio decode.');
+assert(!identitySource.includes('Math.random'), 'Genome and phenotype resolution must remain fully seeded and deterministic.');
 
 for (let seed = 1; seed <= 32; seed += 1) {
   for (let mask = 0; mask < 32; mask += 1) {
@@ -184,6 +207,15 @@ for (let seed = 1; seed <= 32; seed += 1) {
     assert(Object.values(phenotype).every((entry) => typeof entry !== 'number' || Number.isFinite(entry)), 'Phenotype must contain no NaN or Infinity.');
     assert(phenotype.wingSpan >= wingSpanMin && phenotype.wingSpan <= wingSpanMax, 'Wing span must remain bounded.');
     assert(phenotype.wingHeight >= wingHeightMin && phenotype.wingHeight <= wingHeightMax, 'Wing height must remain bounded.');
+    assert(phenotype.wingPose >= wingPoseMin && phenotype.wingPose <= wingPoseMax, 'Wing pose must remain elegant and bounded.');
+    assert(phenotype.wingFullness >= wingFullnessMin && phenotype.wingFullness <= wingFullnessMax, 'Wing membrane fullness must remain bounded.');
+    assert(phenotype.crownHeight >= crownHeightMin && phenotype.crownHeight <= crownHeightMax, 'Twin-ear crown height must remain bounded.');
+    assert(phenotype.crownWidth >= crownWidthMin && phenotype.crownWidth <= crownWidthMax, 'Twin-ear crown width must remain bounded.');
+    assert(phenotype.crownEarHeight >= 0.86 && phenotype.crownEarHeight <= 1.18, 'Twin-ear crown must retain bounded biological tips.');
+    assert(phenotype.crownEarWidth >= 0.86 && phenotype.crownEarWidth <= 1.16, 'Twin-ear width must remain within the species language.');
+    assert(phenotype.crownEarAngle >= -0.12 && phenotype.crownEarAngle <= 0.12, 'Twin-ear opening angle must remain bounded.');
+    assert(phenotype.crownTipRoundness >= -0.18 && phenotype.crownTipRoundness <= 0.18, 'Crown tips must remain soft rather than horn-like.');
+    assert(phenotype.crownNotchDepth >= -0.012 && phenotype.crownNotchDepth <= 0.018, 'Central crown notch must remain shallow and organic.');
     assert(phenotype.bodyFullness >= bodyFullnessMin && phenotype.bodyFullness <= bodyFullnessMax, 'Body fullness must remain bounded.');
     assert(phenotype.bodyLength >= bodyLengthMin && phenotype.bodyLength <= bodyLengthMax, 'Body length must preserve the Holy Cross silhouette.');
     assert(phenotype.wingAsymmetry >= asymmetryMin && phenotype.wingAsymmetry <= asymmetryMax, 'Controlled asymmetry must remain subtle.');

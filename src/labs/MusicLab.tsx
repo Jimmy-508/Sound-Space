@@ -9,7 +9,7 @@ import { audioAccept, type MusicAudioController } from '../music/useMusicAudioCo
 import type { PointerPoint } from '../types';
 import type { WorldInteractionController } from '../interaction/worldInteraction';
 import { worldInteractionThresholds } from '../interaction/worldInteraction';
-import { TapSequenceArbiter, updatePointerIntent, type PointerIntent } from '../interaction/pointerArbitration';
+import { TapSequenceArbiter, TouchSessionArbiter, cancelTouchIntentsForPinch, updatePointerIntent, type PointerIntent } from '../interaction/pointerArbitration';
 import { formatTime } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 import type { Repulsor, SpiritGestureForces } from '../visualization/repulsor';
@@ -44,6 +44,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
   const worldPathRef = useRef(new Map<number, { x: number; y: number; time: number; velocityX: number; velocityY: number }>());
   const pointerIntentsRef = useRef(new Map<number, PointerIntent>());
   const tapArbiterRef = useRef(new TapSequenceArbiter());
+  const touchSessionRef = useRef(new TouchSessionArbiter());
   const tapTimersRef = useRef(new Map<'mouse' | 'touch', number>());
   const scaleAnimationRef = useRef(0);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -79,6 +80,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     gesturePinchedRef.current = false;
     worldPathRef.current.clear();
     pointerIntentsRef.current.clear();
+    touchSessionRef.current.reset();
     tapArbiterRef.current.clear();
     worldInteraction.clear('mouse');
     worldInteraction.clear('touch');
@@ -176,6 +178,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
         else worldInteraction.clear('gesture');
       }
       for (const candidate of pointerIntentsRef.current.values()) {
+        if (candidate.source === 'touch' && !touchSessionRef.current.canArmAttraction()) continue;
         if (candidate.state !== 'pending' || now - candidate.startedAt < worldInteractionThresholds.holdMs) continue;
         candidate.state = 'attraction';
         setRepulsor(null);
@@ -374,6 +377,13 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     return candidate;
   };
 
+  const cancelTouchAttractionForPinch = () => {
+    cancelTouchIntentsForPinch(pointerIntentsRef.current);
+    worldInteraction.clear('touch');
+    setRepulsor(null);
+    lastRepulsorPointRef.current = null;
+  };
+
   const resetCreatureScale = () => {
     cancelAnimationFrame(scaleAnimationRef.current);
     setRepulsor(null);
@@ -406,7 +416,6 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
 
   const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
-      startPointerIntent(event);
       if (event.pointerType === 'touch') {
         event.currentTarget.setPointerCapture(event.pointerId);
         touchPointersRef.current.set(event.pointerId, {
@@ -416,18 +425,21 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           startY: event.clientY,
           startTime: performance.now(),
         });
-        if (touchPointersRef.current.size === 2) {
+        const ownership = touchSessionRef.current.begin(event.pointerId);
+        if (ownership.enteredPinch) {
+          cancelTouchAttractionForPinch();
           const [first, second] = [...touchPointersRef.current.values()];
           pinchRef.current = {
             distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
             mode: 'spectrum',
             creatureScale,
           };
-          setRepulsor(null);
           return;
         }
+        if (touchSessionRef.current.canArmAttraction()) startPointerIntent(event);
         return;
       }
+      startPointerIntent(event);
       return;
     }
     if (viewMode !== 'wave' || !session.duration || !session.sourceUrl) return;
@@ -520,13 +532,14 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
       const isTap = intent?.state === 'pending'
         && now - intent.startedAt <= worldInteractionThresholds.tapDurationMs
         && touchPointersRef.current.size <= 1
-        && !pinchRef.current;
+        && !touchSessionRef.current.isPinchLocked();
       if (isTap) recordTap(intent.source, event.clientX, event.clientY, now);
       if (event.pointerType === 'touch') {
         touchPointersRef.current.delete(event.pointerId);
+        const ownership = touchSessionRef.current.release(event.pointerId);
         setRepulsor(null);
         lastRepulsorPointRef.current = null;
-        if (touchPointersRef.current.size < 2) pinchRef.current = null;
+        if (ownership.activeCount === 0) pinchRef.current = null;
       }
       releasePointerIntent(event);
       return;
@@ -546,9 +559,10 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     if (viewMode === 'spectrum') {
       releasePointerIntent(event);
       touchPointersRef.current.delete(event.pointerId);
+      const ownership = touchSessionRef.current.release(event.pointerId);
       setRepulsor(null);
       lastRepulsorPointRef.current = null;
-      if (touchPointersRef.current.size < 2) pinchRef.current = null;
+      if (ownership.activeCount === 0) pinchRef.current = null;
       return;
     }
     touchPointersRef.current.delete(event.pointerId);

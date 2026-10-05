@@ -8,6 +8,7 @@ import type { PointerPoint, SamplingTab } from '../types';
 import { formatBytes } from '../utils/format';
 import { WaveCanvas } from '../visualization/WaveCanvas';
 import type { SoundSpiritInteractionRecorder } from '../spirit/soundSpiritIdentity';
+import { calculatePcmFileSize, createFileSizeWaveModel } from './fileSizeWaveModel';
 
 const sampleRates = [8000, 22050, 44100, 48000, 96000];
 const samplePointCounts = [9, 18, 30, 36, 60];
@@ -37,9 +38,13 @@ export function SamplingLab({ interactionRecorder, gestureController }: Sampling
   const sampleCount = samplePointCounts[sampleRateIndex];
   const bitDepth = bitDepths[bitDepthIndex];
   const quantizeBit = quantizeBits[quantizeBitIndex];
-  const bytes = sizeSampleRate * (bitDepth / 8) * channels * seconds;
+  const bytes = calculatePcmFileSize(sizeSampleRate, bitDepth, channels, seconds);
   const formatted = formatBytes(bytes);
   const levels = useMemo(() => 2 ** quantizeBit, [quantizeBit]);
+  const fileSizeWave = useMemo(
+    () => createFileSizeWaveModel(sizeSampleRate, bitDepth, channels),
+    [sizeSampleRate, bitDepth, channels],
+  );
   const coreIntensity = Math.min(1, Math.max(0, bytes / 70000000));
   const setObservedSampleRateIndex = (next: number, sizeMode = false) => {
     const previous = sizeMode ? sizeSampleRate : sampleRate;
@@ -169,9 +174,10 @@ export function SamplingLab({ interactionRecorder, gestureController }: Sampling
           amplitude={0.72}
           frequency={420}
           pointer={pointer}
-          mode={tab === 'sample' ? 'sample' : tab === 'quantize' ? 'quantize' : 'wave'}
+          mode={tab === 'sample' ? 'sample' : tab === 'quantize' ? 'quantize' : 'size'}
           sampleCount={sampleCount}
           bitDepth={quantizeBit}
+          fileSizeWave={tab === 'size' ? fileSizeWave : undefined}
         />
         <div className="stage-note">
           <span>{tab === 'sample' ? '取樣越密集，記錄到的聲音資訊越完整。' : tab === 'quantize' ? '量化位元數越高，振幅記錄越精細。' : '資料核心會隨檔案大小變亮。'}</span>

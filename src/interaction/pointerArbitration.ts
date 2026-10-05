@@ -32,6 +32,47 @@ export function updatePointerIntent(intent: PointerIntent, x: number, y: number)
   return intent.state;
 }
 
+export class TouchSessionArbiter {
+  private activePointers = new Set<number>();
+  private pinchLocked = false;
+
+  begin(pointerId: number) {
+    this.activePointers.add(pointerId);
+    const enteredPinch = this.activePointers.size >= 2 && !this.pinchLocked;
+    if (this.activePointers.size >= 2) this.pinchLocked = true;
+    return { enteredPinch, pinchLocked: this.pinchLocked, activeCount: this.activePointers.size };
+  }
+
+  release(pointerId: number) {
+    this.activePointers.delete(pointerId);
+    if (this.activePointers.size === 0) this.pinchLocked = false;
+    return { pinchLocked: this.pinchLocked, activeCount: this.activePointers.size };
+  }
+
+  canArmAttraction() {
+    return !this.pinchLocked && this.activePointers.size <= 1;
+  }
+
+  isPinchLocked() {
+    return this.pinchLocked;
+  }
+
+  reset() {
+    this.activePointers.clear();
+    this.pinchLocked = false;
+  }
+}
+
+export function cancelTouchIntentsForPinch(intents: Map<number, PointerIntent>) {
+  let cancelledAttraction = false;
+  for (const [pointerId, candidate] of intents) {
+    if (candidate.source !== 'touch') continue;
+    if (candidate.state === 'attraction') cancelledAttraction = true;
+    intents.delete(pointerId);
+  }
+  return cancelledAttraction;
+}
+
 interface TapCandidate {
   count: number;
   x: number;

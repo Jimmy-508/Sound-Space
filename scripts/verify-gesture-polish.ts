@@ -10,8 +10,9 @@ import { GestureFrameStore, type TrackedHand } from '../src/gesture/types';
 import { computeAttractionSteering, computeWavefrontInfluence } from '../src/visualization/repulsor';
 import { WorldInteractionController } from '../src/interaction/worldInteraction';
 import { AdaptiveEmissionBudget } from '../src/interaction/adaptiveEmissionBudget';
-import { TapSequenceArbiter, movementTolerance, updatePointerIntent, type PointerIntent } from '../src/interaction/pointerArbitration';
+import { TapSequenceArbiter, TouchSessionArbiter, cancelTouchIntentsForPinch, movementTolerance, updatePointerIntent, type PointerIntent } from '../src/interaction/pointerArbitration';
 import { defaultAppSettings, loadAppSettings, saveAppSettings } from '../src/settings/appSettings';
+import { calculatePcmFileSize, createFileSizeWaveModel } from '../src/labs/fileSizeWaveModel';
 
 const landmarks = Array.from({ length: 21 }, (_, index) => ({
   x: 0.32 + index % 5 * 0.035,
@@ -216,6 +217,39 @@ const attractionIntent: PointerIntent = { ...touchIntent, state: 'attraction', x
 assert.equal(updatePointerIntent(attractionIntent, 30, 0), 'attraction');
 assert.equal(updatePointerIntent(attractionIntent, 37, 0), 'drag', 'A larger move cancels touch attraction.');
 
+const touchSession = new TouchSessionArbiter();
+assert.equal(touchSession.begin(1).pinchLocked, false);
+assert.equal(touchSession.canArmAttraction(), true, 'One touch may arm the intentional 450ms attraction.');
+assert.equal(touchSession.begin(2).enteredPinch, true, 'The second finger must immediately claim pinch ownership.');
+assert.equal(touchSession.canArmAttraction(), false, 'Pinch must cancel pending or active attraction.');
+assert.equal(touchSession.release(2).pinchLocked, true, 'One remaining finger must stay locked out after pinch.');
+assert.equal(touchSession.canArmAttraction(), false);
+assert.equal(touchSession.release(1).pinchLocked, false, 'All pinch touches must release before a new session.');
+assert.equal(touchSession.begin(3).pinchLocked, false, 'A fresh independent touch may arm attraction again.');
+touchSession.reset();
+
+const pinchIntents = new Map<number, PointerIntent>([
+  [1, { ...touchIntent, state: 'pending' }],
+  [2, { ...touchIntent, state: 'attraction' }],
+  [3, { ...touchIntent, source: 'mouse', state: 'attraction' }],
+]);
+assert.equal(cancelTouchIntentsForPinch(pinchIntents), true, 'Second-finger pinch must report and cancel an active touch attraction.');
+assert.equal(pinchIntents.has(1), false, 'Pending touch attraction must be cancelled as soon as the second finger enters.');
+assert.equal(pinchIntents.has(2), false, 'Active touch attraction must be cancelled as soon as the second finger enters.');
+assert.equal(pinchIntents.has(3), true, 'Touch pinch cancellation must not disturb an unrelated mouse session.');
+
+const sparseWave = createFileSizeWaveModel(8000, 8, 1);
+const denseWave = createFileSizeWaveModel(96000, 8, 1);
+const fineWave = createFileSizeWaveModel(8000, 32, 1);
+const stereoWave = createFileSizeWaveModel(44100, 16, 2);
+assert.ok(denseWave.sampleCount > sparseWave.sampleCount, 'Sampling rate must increase pedagogical temporal density without changing pitch.');
+assert.ok(fineWave.quantizationLevels > sparseWave.quantizationLevels, 'Bit depth must increase pedagogical amplitude resolution.');
+assert.equal(sparseWave.traces.length, 1, 'Mono must render one trace.');
+assert.equal(stereoWave.traces.length, 2, 'Stereo must render two traces.');
+assert.notDeepEqual([...stereoWave.traces[0].samples], [...stereoWave.traces[1].samples], 'Stereo traces must be deterministic but visibly distinct.');
+assert.equal(createFileSizeWaveModel(44100, 16, 2).signature, stereoWave.signature, 'Wave representation must be deterministic and independent of duration.');
+assert.equal(calculatePcmFileSize(44100, 16, 2, 120), calculatePcmFileSize(44100, 16, 2, 60) * 2, 'Duration must continue to change file size only.');
+
 const taps = new TapSequenceArbiter();
 assert.equal(taps.tap('touch', 10, 10, 0), 'single');
 assert.equal(taps.tap('touch', 11, 10, 100), 'double-pending');
@@ -280,6 +314,10 @@ assert.ok(musicSource.includes('resetCreatureScale'));
 assert.ok(musicSource.includes("state: 'pending'"));
 assert.ok(musicSource.includes("state = 'attraction'"));
 assert.ok(musicSource.includes('worldInteractionThresholds.holdMs'));
+assert.ok(musicSource.includes('cancelTouchAttractionForPinch()'), 'Second-finger entry must cancel touch attraction immediately.');
+assert.ok(musicSource.includes('touchSessionRef.current.isPinchLocked()'), 'Tap and attraction paths must respect pinch-session ownership.');
+assert.ok(samplingSource.includes("mode={tab === 'sample' ? 'sample' : tab === 'quantize' ? 'quantize' : 'size'}"), 'File Size must use the integrated digital waveform mode.');
+assert.ok(samplingSource.includes('createFileSizeWaveModel(sizeSampleRate, bitDepth, channels)'), 'All UI and gesture paths must feed one File Size waveform model.');
 assert.ok(settingsSource.includes('藍眼淚效果'));
 assert.ok(stylesSource.includes('.home {') && stylesSource.match(/\.home\s*\{[^}]*touch-action:\s*none/s));
 assert.ok(stylesSource.match(/\.music-stage\[data-gesture-zone="spirit"\]\s*\{[^}]*touch-action:\s*none/s));

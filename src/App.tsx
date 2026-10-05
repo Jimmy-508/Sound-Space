@@ -27,7 +27,7 @@ import {
   DEFAULT_SOUND_SPIRIT_PHENOTYPE,
   createLocalSpiritPreviewPhenotype,
   createSoundSpiritInteractionRecorder,
-  createSoundSpiritPhenotype,
+  resolveSoundSpiritBirth,
 } from './spirit/soundSpiritIdentity';
 
 const labs: Array<{ id: Exclude<LabId, 'home'>; title: string; description: string; icon: React.ReactNode }> = [
@@ -109,7 +109,8 @@ export default function App() {
   }, []);
 
   const commitSpiritPhenotype = useCallback(() => {
-    setSpiritPhenotype(createSoundSpiritPhenotype(spiritInteractionRef.current.snapshot()));
+    const birth = resolveSoundSpiritBirth(spiritInteractionRef.current.snapshot());
+    setSpiritPhenotype(birth.phenotype);
   }, []);
 
   const musicController = useMusicAudioController({
