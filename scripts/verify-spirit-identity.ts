@@ -6,6 +6,7 @@ import {
   createSoundSpiritInteractionRecorder,
   createSoundSpiritPhenotype,
   generateSoundSpiritPhenotype,
+  phenotypeVisualDistance,
   resolveSoundSpiritGenome,
   type SoundSpiritGenome,
   type SoundSpiritPhenotypeConfig,
@@ -40,10 +41,11 @@ const goldenBaseline: SoundSpiritPhenotypeConfig = {
   key: 'default', isDefault: true, seed: 1,
   energy: 0.5, frequency: 0.5, diversity: 0.5, precision: 0.5, interactionDepth: 0,
   bodyFullness: 1, bodyLength: 1, bodyAsymmetry: 0,
-  wingSpan: 1, wingHeight: 1, wingSweep: 1, wingCurvature: 0, wingAsymmetry: 0,
-  membraneOpacity: 1, membraneLayerExtra: 0, veinExtra: 0, veinOpacity: 1, rimOpacity: 1,
-  heartScale: 1, heartVariation: 0, heartGlow: 1,
-  energyOpacity: 1, energyPathExtra: 0, energyRouting: 0,
+  wingSpan: 1, wingHeight: 1, wingSweep: 1, wingCurvature: 0, wingScallop: 0, wingInnerContour: 0, wingAsymmetry: 0,
+  membraneOpacity: 1, membraneLayerExtra: 0, veinExtra: 0, veinFan: 0, veinBranch: 0, veinOpacity: 1, rimOpacity: 1,
+  heartScale: 1, heartVariation: 0, heartLobeWidths: [1, 1, 1, 1, 1], heartLobeLengths: [1, 1, 1, 1, 1],
+  heartCoreScale: 1, heartPulse: 1, heartGlow: 1,
+  energyOpacity: 1, energyPathExtra: 0, energyRouting: 0, energyRoutePhase: 0, energyPathEmphasis: 1,
   particleRichness: 1, iridescence: 1, glowIntensity: 1,
   primaryColor: 0x6ee7ff, secondaryColor: 0xa48bff, accentColor: 0xffcf86, energyColor: 0xffb968,
   primaryHue: 199, secondaryHue: 249, accentHue: 292,
@@ -63,6 +65,13 @@ const genomeA = resolveSoundSpiritGenome(sameA.snapshot());
 const genomeB = resolveSoundSpiritGenome(sameB.snapshot());
 assert(deepEqual(genomeA, genomeB), 'The same ordered history must produce the same genome.');
 assert(deepEqual(generateSoundSpiritPhenotype(genomeA), generateSoundSpiritPhenotype(genomeA)), 'The same genome must produce the same phenotype.');
+
+const alternateSeedPhenotype = generateSoundSpiritPhenotype({ ...genomeA, seed: genomeA.seed ^ 0x51f15e });
+assert(
+  alternateSeedPhenotype.primaryColor !== generateSoundSpiritPhenotype(genomeA).primaryColor
+    || alternateSeedPhenotype.secondaryColor !== generateSoundSpiritPhenotype(genomeA).secondaryColor,
+  'A different seed must be able to produce a different continuous palette.',
+);
 
 const orderedA = createSoundSpiritInteractionRecorder();
 orderedA.observeWaveform('sine', 'square');
@@ -85,6 +94,8 @@ const highFrequency = createSoundSpiritInteractionRecorder();
 highFrequency.observeFrequency(120, 4000);
 const highFrequencyGenome = resolveSoundSpiritGenome(highFrequency.snapshot());
 assert(highFrequencyGenome.frequency > 0.6, 'Frequency must combine perceptual position, explored range, and regions.');
+assert(highFrequencyGenome.energy === 0.5, 'Unexplored amplitude must remain neutral.');
+assert(highFrequencyGenome.precision === 0.5, 'Unexplored sampling controls must remain neutral.');
 assert(generateSoundSpiritPhenotype(highFrequencyGenome).wingSpan > 1.03, 'Broad frequency exploration must visibly alter wing proportion.');
 
 const sampling = createSoundSpiritInteractionRecorder();
@@ -93,13 +104,38 @@ sampling.snapshot();
 sampling.observeBitDepth(1, 32);
 const samplingGenome = resolveSoundSpiritGenome(sampling.snapshot());
 assert(samplingGenome.precision > 0.5, 'Sampling exploration must change the precision gene.');
+assert(samplingGenome.energy === 0.5, 'Unexplored amplitude must remain neutral.');
+assert(samplingGenome.frequency === 0.5, 'Unexplored frequency must remain neutral.');
 assert(samplingGenome.interactionDepth > 0, 'Meaningful Sampling exploration must change the genome.');
+
+const diversityRecorder = createSoundSpiritInteractionRecorder();
+diversityRecorder.observeWaveform('sine', 'square');
+diversityRecorder.observeWaveform('square', 'triangle');
+diversityRecorder.observeAmplitude(0.18, 0.82);
+diversityRecorder.snapshot();
+diversityRecorder.observeFrequency(180, 2800);
+const diversityGenome = resolveSoundSpiritGenome(diversityRecorder.snapshot());
 
 const broadGenome = resolveSoundSpiritGenome(populateBroadHistory().snapshot());
 assert(broadGenome.diversity > 0.65, 'Cross-feature exploration must create diversity.');
 assert(broadGenome.interactionDepth > highEnergyGenome.interactionDepth, 'Cross-lab breadth must enrich interaction depth.');
 const broadPhenotype = generateSoundSpiritPhenotype(broadGenome);
-assert(broadPhenotype.veinExtra > 0 && broadPhenotype.energyPathExtra > 0, 'Broad exploration must add bounded structural detail.');
+assert(
+  broadPhenotype.veinExtra + broadPhenotype.energyPathExtra + broadPhenotype.membraneLayerExtra > 0
+    || Math.abs(broadPhenotype.energyRouting) > 0.025,
+  'Broad exploration must add bounded structural detail without maximizing every effect.',
+);
+
+const representativePhenotypes = [highEnergyGenome, highFrequencyGenome, samplingGenome, diversityGenome, broadGenome]
+  .map(generateSoundSpiritPhenotype);
+representativePhenotypes.forEach((phenotype) => {
+  assert(phenotypeVisualDistance(phenotype, DEFAULT_SOUND_SPIRIT_PHENOTYPE) >= 0.24, 'Every meaningful representative history must meet minimum visual separation.');
+});
+for (let left = 0; left < representativePhenotypes.length; left += 1) {
+  for (let right = left + 1; right < representativePhenotypes.length; right += 1) {
+    assert(phenotypeVisualDistance(representativePhenotypes[left], representativePhenotypes[right]) >= 0.1, 'Representative histories must not collapse into the same phenotype.');
+  }
+}
 
 const frozenRecorder = populateBroadHistory();
 const frozenPhenotype = createSoundSpiritPhenotype(frozenRecorder.snapshot());
@@ -129,6 +165,9 @@ const [bodyLengthMin, bodyLengthMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyLengt
 const [membraneMin, membraneMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.membraneOpacity;
 const [glowMin, glowMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.glowIntensity;
 const [asymmetryMin, asymmetryMax] = SOUND_SPIRIT_SPECIES_GUARDRAILS.wingAsymmetry;
+const rendererSource = readFileSync('src/visualization/WaveCanvas.tsx', 'utf8');
+assert(rendererSource.includes('addWingSurface(mainGeometry, 0xb9f5ff'), 'The main shell membrane must remain icy white for every phenotype.');
+assert(rendererSource.includes('createMasterSpiritMaterial(0x7bd7e8'), 'The body shell must retain the Golden icy-cyan material.');
 
 for (let seed = 1; seed <= 32; seed += 1) {
   for (let mask = 0; mask < 32; mask += 1) {
@@ -151,6 +190,15 @@ for (let seed = 1; seed <= 32; seed += 1) {
     assert(phenotype.membraneOpacity >= membraneMin && phenotype.membraneOpacity <= membraneMax, 'Membrane opacity must remain bounded.');
     assert(phenotype.glowIntensity >= glowMin && phenotype.glowIntensity <= glowMax, 'Internal glow must remain bounded.');
     assert(phenotype.veinExtra >= 0 && phenotype.veinExtra <= 2, 'Membrane detail density must remain bounded.');
+    assert(phenotype.wingScallop >= -0.055 && phenotype.wingScallop <= 0.055, 'Wing scalloping must remain organic and bounded.');
+    assert(phenotype.veinFan >= -0.16 && phenotype.veinFan <= 0.16, 'Vein topology must remain bounded.');
+    assert(phenotype.heartLobeWidths.length === 5 && phenotype.heartLobeLengths.length === 5, 'Heart must retain five deterministic lobe proportions.');
+    assert([...phenotype.heartLobeWidths, ...phenotype.heartLobeLengths].every((value) => value >= 0.82 && value <= 1.18), 'Heart lobe variation must remain bounded.');
+    for (const color of [phenotype.primaryColor, phenotype.secondaryColor, phenotype.accentColor, phenotype.energyColor]) {
+      assert(Number.isInteger(color) && color >= 0 && color <= 0xffffff, 'Palette colors must be valid finite RGB values.');
+      assert(colorBrightness(color) > 0.38, 'Individual energy colors must remain luminous rather than dark blobs.');
+    }
+    assert(rgbDistance(phenotype.primaryColor, 0xd8fbff) > 0.16, 'Individual energy color must remain readable against the icy shell.');
   }
 }
 
@@ -160,3 +208,17 @@ assert(SOUND_SPIRIT_SPECIES_GUARDRAILS.heartPresent, 'The Heart must always be p
 assert(SOUND_SPIRIT_SPECIES_GUARDRAILS.heartLobeCount === 5, 'The Heart must retain its five-lobed structure.');
 
 console.log('Living Genome and Sound Spirit species guardrail checks passed.');
+
+function colorBrightness(color: number) {
+  const red = (color >> 16) & 0xff;
+  const green = (color >> 8) & 0xff;
+  const blue = color & 0xff;
+  return (red * 0.2126 + green * 0.7152 + blue * 0.0722) / 255;
+}
+
+function rgbDistance(left: number, right: number) {
+  const red = ((left >> 16) & 0xff) - ((right >> 16) & 0xff);
+  const green = ((left >> 8) & 0xff) - ((right >> 8) & 0xff);
+  const blue = (left & 0xff) - (right & 0xff);
+  return Math.hypot(red, green, blue) / 441.67;
+}

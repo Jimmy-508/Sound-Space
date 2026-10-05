@@ -74,18 +74,28 @@ export interface SoundSpiritPhenotypeConfig {
   wingHeight: number;
   wingSweep: number;
   wingCurvature: number;
+  wingScallop: number;
+  wingInnerContour: number;
   wingAsymmetry: number;
   membraneOpacity: number;
   membraneLayerExtra: number;
   veinExtra: number;
+  veinFan: number;
+  veinBranch: number;
   veinOpacity: number;
   rimOpacity: number;
   heartScale: number;
   heartVariation: number;
+  heartLobeWidths: readonly [number, number, number, number, number];
+  heartLobeLengths: readonly [number, number, number, number, number];
+  heartCoreScale: number;
+  heartPulse: number;
   heartGlow: number;
   energyOpacity: number;
   energyPathExtra: number;
   energyRouting: number;
+  energyRoutePhase: number;
+  energyPathEmphasis: number;
   particleRichness: number;
   iridescence: number;
   glowIntensity: number;
@@ -107,19 +117,27 @@ export const SOUND_SPIRIT_SPECIES_GUARDRAILS = Object.freeze({
   wingHeight: Object.freeze([0.9, 1.12] as const),
   wingSweep: Object.freeze([0.92, 1.12] as const),
   wingCurvature: Object.freeze([-0.12, 0.12] as const),
+  wingScallop: Object.freeze([-0.055, 0.055] as const),
+  wingInnerContour: Object.freeze([-0.05, 0.05] as const),
   wingAsymmetry: Object.freeze([-0.055, 0.055] as const),
   bodyFullness: Object.freeze([0.91, 1.11] as const),
   bodyLength: Object.freeze([0.94, 1.07] as const),
   bodyAsymmetry: Object.freeze([-0.035, 0.035] as const),
   membraneOpacity: Object.freeze([0.88, 1.18] as const),
   veinExtra: Object.freeze([0, 2] as const),
+  veinFan: Object.freeze([-0.16, 0.16] as const),
+  veinBranch: Object.freeze([-0.14, 0.14] as const),
   veinOpacity: Object.freeze([0.88, 1.35] as const),
   rimOpacity: Object.freeze([0.9, 1.34] as const),
   heartScale: Object.freeze([0.86, 1.2] as const),
   heartVariation: Object.freeze([-0.07, 0.07] as const),
+  heartLobeScale: Object.freeze([0.82, 1.18] as const),
+  heartCoreScale: Object.freeze([0.88, 1.18] as const),
+  heartPulse: Object.freeze([0.84, 1.2] as const),
   heartGlow: Object.freeze([0.82, 1.38] as const),
   energyOpacity: Object.freeze([0.72, 1.48] as const),
   energyRouting: Object.freeze([-0.09, 0.09] as const),
+  energyPathEmphasis: Object.freeze([0.82, 1.28] as const),
   particleRichness: Object.freeze([1, 1.42] as const),
   iridescence: Object.freeze([0.9, 1.38] as const),
   glowIntensity: Object.freeze([0.84, 1.34] as const),
@@ -160,18 +178,28 @@ export const DEFAULT_SOUND_SPIRIT_PHENOTYPE: SoundSpiritPhenotypeConfig = Object
   wingHeight: 1,
   wingSweep: 1,
   wingCurvature: 0,
+  wingScallop: 0,
+  wingInnerContour: 0,
   wingAsymmetry: 0,
   membraneOpacity: 1,
   membraneLayerExtra: 0,
   veinExtra: 0,
+  veinFan: 0,
+  veinBranch: 0,
   veinOpacity: 1,
   rimOpacity: 1,
   heartScale: 1,
   heartVariation: 0,
+  heartLobeWidths: Object.freeze([1, 1, 1, 1, 1] as const),
+  heartLobeLengths: Object.freeze([1, 1, 1, 1, 1] as const),
+  heartCoreScale: 1,
+  heartPulse: 1,
   heartGlow: 1,
   energyOpacity: 1,
   energyPathExtra: 0,
   energyRouting: 0,
+  energyRoutePhase: 0,
+  energyPathEmphasis: 1,
   particleRichness: 1,
   iridescence: 1,
   glowIntensity: 1,
@@ -321,17 +349,21 @@ export function resolveSoundSpiritGenome(history: SoundSpiritInteractionHistory)
   const channelBreadth = Math.min(1, history.channels.size / 2);
   const combinationBreadth = 1 - Math.exp(-history.samplingCombinations.size / 4.2);
   const crossLab = history.waveExplored && history.samplingExplored ? 1 : 0;
-  const energy = clamp01(
-    amplitude * 0.35 + amplitudeRange * 0.4 + amplitudeRegions * 0.2
-    + (1 - Math.exp(-history.features.amplitude.sessions / 3)) * 0.05,
-  );
-  const frequency = clamp01(frequencyMean * 0.72 + frequencyRange * 0.16 + frequencyRegions * 0.12);
+  const energy = history.features.amplitude.sessions > 0
+    ? clamp01(amplitude * 0.35 + amplitudeRange * 0.4 + amplitudeRegions * 0.2
+      + (1 - Math.exp(-history.features.amplitude.sessions / 3)) * 0.05)
+    : 0.5;
+  const frequency = history.features.frequency.sessions > 0
+    ? clamp01(frequencyMean * 0.5 + frequencyRange * 0.28 + frequencyRegions * 0.22)
+    : 0.5;
   const diversity = clamp01(
     waveformBreadth * 0.21 + amplitudeRange * 0.14 + frequencyRange * 0.17
     + samplingRange * 0.12 + bitDepthRange * 0.11 + channelBreadth * 0.08
     + combinationBreadth * 0.1 + crossLab * 0.07,
   );
-  const precision = clamp01(sampleRate * 0.58 + bitDepth * 0.34 + Math.min(1, (samplingRange + bitDepthRange) * 0.8) * 0.08);
+  const precision = history.features.sampleRate.sessions > 0 || history.features.bitDepth.sessions > 0
+    ? clamp01(sampleRate * 0.4 + bitDepth * 0.25 + Math.min(1, (samplingRange + bitDepthRange) * 0.8) * 0.35)
+    : 0.5;
   const breadth = [
     history.features.amplitude.sessions,
     history.features.frequency.sessions,
@@ -358,24 +390,29 @@ export function resolveSoundSpiritGenome(history: SoundSpiritInteractionHistory)
 
 export function generateSoundSpiritPhenotype(genome: SoundSpiritGenome): SoundSpiritPhenotypeConfig {
   if (!genome.hasHistory) return DEFAULT_SOUND_SPIRIT_PHENOTYPE;
-  const random = seededRandom(genome.seed);
   const energy = clamp01(genome.energy);
   const frequency = clamp01(genome.frequency);
   const diversity = clamp01(genome.diversity);
   const precision = clamp01(genome.precision);
   const depth = clamp01(genome.interactionDepth);
-  const energyBias = energy - 0.5;
-  const frequencyBias = frequency - 0.5;
-  const individuality = (random() * 2 - 1) * diversity;
-  const routeIndividuality = (random() * 2 - 1) * diversity;
-  const richness = clamp01(depth * 0.7 + diversity * 0.18 + precision * 0.12);
-  const cool = mixHex(0xb36dff, 0x64efff, frequency);
-  const secondary = mixHex(0xf06fd5, 0x778dff, clamp01(frequency * 0.72 + individuality * 0.08 + 0.12));
-  const accent = mixHex(0xff9fca, 0xffd28a, clamp01(energy * 0.76 + diversity * 0.24));
-  const energyColor = mixHex(0xff9f91, 0xffc269, clamp01(energy * 0.82 + precision * 0.18));
-  const seedDetail = (random() - 0.5) * 0.018 * diversity;
+  const genes = { energy, frequency, diversity, precision, depth };
+  const traitPlan = deriveTraitPlan(genes, genome.seed);
+  const geometryRandom = seededRandom(genome.seed ^ 0x91e10da5);
+  const lobeRandom = seededRandom(genome.seed ^ 0x4f1bbcdc);
+  const energyDirection = geneDirection(energy, geometryRandom);
+  const frequencyDirection = geneDirection(frequency, geometryRandom);
+  const diversityDirection = geneDirection(diversity, geometryRandom);
+  const precisionDirection = geneDirection(precision, geometryRandom);
+  const depthDirection = geneDirection(depth, geometryRandom);
+  const geometryBias = geometryRandom() * 2 - 1;
+  const routeBias = geometryRandom() * 2 - 1;
+  const richness = clamp01(depth * 0.42 + diversity * 0.25 + precision * 0.33);
+  const palette = deriveIndividualPalette(genes, genome.seed);
+  const lobeVariation = 0.055 + traitPlan.diversity * 0.105 + traitPlan.energy * 0.035;
+  const heartLobeWidths = createLobeFactors(lobeRandom, lobeVariation, diversityDirection * 0.035);
+  const heartLobeLengths = createLobeFactors(lobeRandom, lobeVariation * 1.08, -diversityDirection * 0.025);
 
-  return {
+  let phenotype: SoundSpiritPhenotypeConfig = {
     key: `personal-${genome.seed}-${roundKey(energy)}-${roundKey(frequency)}-${roundKey(diversity)}-${roundKey(precision)}-${roundKey(depth)}`,
     isDefault: false,
     seed: genome.seed,
@@ -384,36 +421,156 @@ export function generateSoundSpiritPhenotype(genome: SoundSpiritGenome): SoundSp
     diversity,
     precision,
     interactionDepth: depth,
-    bodyFullness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyFullness, 1 + energyBias * 0.2 + seedDetail),
-    bodyLength: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyLength, 1 - frequencyBias * 0.06 + depth * 0.035),
-    bodyAsymmetry: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyAsymmetry, individuality * 0.035),
-    wingSpan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSpan, 1 + frequencyBias * 0.24 + diversity * 0.025),
-    wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 - frequencyBias * 0.18 + (0.5 - energy) * 0.035),
-    wingSweep: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSweep, 1 + frequencyBias * 0.1 + depth * 0.045 + routeIndividuality * 0.025),
-    wingCurvature: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingCurvature, frequencyBias * 0.16 + routeIndividuality * 0.055),
-    wingAsymmetry: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingAsymmetry, individuality * 0.055),
-    membraneOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.membraneOpacity, 0.94 + precision * 0.12 + richness * 0.1),
-    membraneLayerExtra: richness > 0.72 ? 1 : 0,
-    veinExtra: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.veinExtra, Math.floor(precision * 1.45 + richness * 1.35)),
-    veinOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.veinOpacity, 0.92 + precision * 0.24 + richness * 0.16),
-    rimOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.rimOpacity, 0.94 + precision * 0.18 + depth * 0.18),
-    heartScale: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartScale, 1 + energyBias * 0.31 + precision * energy * 0.05),
-    heartVariation: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartVariation, individuality * (0.04 + depth * 0.03)),
-    heartGlow: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartGlow, 0.9 + energy * 0.35 + precision * energy * 0.13),
-    energyOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.energyOpacity, 0.78 + energy * 0.5 + diversity * energy * 0.2),
-    energyPathExtra: Math.min(2, Math.floor(diversity * 1.2 + richness * 1.35)),
-    energyRouting: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.energyRouting, routeIndividuality * (0.055 + depth * 0.035)),
-    particleRichness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.particleRichness, 1 + depth * 0.28 + diversity * 0.14),
-    iridescence: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.iridescence, 0.94 + diversity * 0.2 + precision * 0.14 + depth * 0.1),
-    glowIntensity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.glowIntensity, 0.9 + energy * 0.26 + depth * 0.15 + precision * 0.05),
-    primaryColor: cool,
-    secondaryColor: secondary,
-    accentColor: accent,
-    energyColor,
-    primaryHue: mix(282, 188, frequency),
-    secondaryHue: mix(318, 222, clamp01(frequency * 0.75 + diversity * 0.16)),
-    accentHue: mix(326, 42, clamp01(energy * 0.82 + diversity * 0.18)),
+    bodyFullness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyFullness, 1 + energyDirection * (0.035 + traitPlan.energy * 0.07) + geometryBias * 0.012),
+    bodyLength: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyLength, 1 - frequencyDirection * (0.018 + traitPlan.frequency * 0.025) + depthDirection * (0.012 + traitPlan.depth * 0.04)),
+    bodyAsymmetry: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyAsymmetry, diversityDirection * (0.008 + traitPlan.diversity * 0.027)),
+    wingSpan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSpan, 1 + frequencyDirection * (0.045 + traitPlan.frequency * 0.1) + geometryBias * 0.014),
+    wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 - frequencyDirection * (0.028 + traitPlan.frequency * 0.055) + precisionDirection * traitPlan.precision * 0.035),
+    wingSweep: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSweep, 1 + frequencyDirection * traitPlan.frequency * 0.045 + diversityDirection * (0.025 + traitPlan.diversity * 0.065) + depthDirection * traitPlan.depth * 0.025),
+    wingCurvature: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingCurvature, frequencyDirection * (0.025 + traitPlan.frequency * 0.045) + routeBias * (0.025 + traitPlan.diversity * 0.05)),
+    wingScallop: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingScallop, diversityDirection * (0.014 + traitPlan.diversity * 0.036) + geometryBias * 0.008),
+    wingInnerContour: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingInnerContour, precisionDirection * traitPlan.precision * 0.025 + routeBias * (0.012 + traitPlan.diversity * 0.02)),
+    wingAsymmetry: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingAsymmetry, diversityDirection * (0.012 + traitPlan.diversity * 0.04)),
+    membraneOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.membraneOpacity, 1 + precisionDirection * (0.045 + traitPlan.precision * 0.105) + depthDirection * traitPlan.depth * 0.025),
+    membraneLayerExtra: traitPlan.precision > 0.52 || (traitPlan.depth > 0.58 && precision > 0.42) ? 1 : 0,
+    veinExtra: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.veinExtra, Math.round(traitPlan.precision * 1.35 + traitPlan.depth * 0.75)),
+    veinFan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.veinFan, frequencyDirection * (0.035 + traitPlan.frequency * 0.08) + routeBias * traitPlan.diversity * 0.045),
+    veinBranch: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.veinBranch, precisionDirection * (0.025 + traitPlan.precision * 0.075) + geometryBias * traitPlan.diversity * 0.04),
+    veinOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.veinOpacity, 1 + precisionDirection * (0.08 + traitPlan.precision * 0.2) + traitPlan.frequency * 0.05),
+    rimOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.rimOpacity, 1 + precisionDirection * traitPlan.precision * 0.16 + energyDirection * traitPlan.energy * 0.12),
+    heartScale: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartScale, 1 + energyDirection * (0.065 + traitPlan.energy * 0.125) + diversityDirection * traitPlan.diversity * 0.025),
+    heartVariation: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartVariation, diversityDirection * (0.018 + traitPlan.diversity * 0.05)),
+    heartLobeWidths,
+    heartLobeLengths,
+    heartCoreScale: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartCoreScale, 1 + energyDirection * traitPlan.energy * 0.12 + geometryBias * 0.035),
+    heartPulse: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartPulse, 1 + energyDirection * (0.055 + traitPlan.energy * 0.13)),
+    heartGlow: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartGlow, 1 + energyDirection * (0.1 + traitPlan.energy * 0.25) + depthDirection * traitPlan.depth * 0.06),
+    energyOpacity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.energyOpacity, 1 + energyDirection * (0.1 + traitPlan.energy * 0.3) + depthDirection * traitPlan.depth * 0.08),
+    energyPathExtra: Math.min(2, Math.round(traitPlan.depth * 1.25 + traitPlan.diversity * 0.85)),
+    energyRouting: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.energyRouting, routeBias * (0.028 + traitPlan.diversity * 0.055 + traitPlan.depth * 0.025)),
+    energyRoutePhase: geometryRandom() * Math.PI * 2,
+    energyPathEmphasis: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.energyPathEmphasis, 1 + energyDirection * traitPlan.energy * 0.18 + depthDirection * (0.06 + traitPlan.depth * 0.14)),
+    particleRichness: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.particleRichness, 1 + depthDirection * (0.06 + traitPlan.depth * 0.3) + diversity * 0.05),
+    iridescence: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.iridescence, 1 + precisionDirection * traitPlan.precision * 0.2 + diversityDirection * traitPlan.diversity * 0.12),
+    glowIntensity: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.glowIntensity, 1 + energyDirection * (0.07 + traitPlan.energy * 0.2) + depthDirection * traitPlan.depth * 0.08),
+    primaryColor: palette.primary,
+    secondaryColor: palette.secondary,
+    accentColor: palette.accent,
+    energyColor: palette.energy,
+    primaryHue: hexHue(palette.primary),
+    secondaryHue: hexHue(palette.secondary),
+    accentHue: hexHue(palette.accent),
   };
+
+  if (phenotypeSilhouetteDistance(phenotype, DEFAULT_SOUND_SPIRIT_PHENOTYPE) < 0.24
+    || phenotypeVisualDistance(phenotype, DEFAULT_SOUND_SPIRIT_PHENOTYPE) < 0.24) {
+    phenotype = enforceMinimumVisualSeparation(phenotype, traitPlan.dominant, genome.seed);
+  }
+  return phenotype;
+}
+
+type TraitName = 'energy' | 'frequency' | 'diversity' | 'precision' | 'depth';
+type TraitWeights = Record<TraitName, number> & { dominant: TraitName };
+
+function deriveTraitPlan(genes: Record<TraitName, number>, seed: number): TraitWeights {
+  const random = seededRandom(seed ^ 0x7f4a7c15);
+  const distances = Object.fromEntries(
+    (Object.keys(genes) as TraitName[]).map((name) => [name, Math.abs(genes[name] - 0.5) * 2]),
+  ) as Record<TraitName, number>;
+  const average = Object.values(distances).reduce((sum, value) => sum + value, 0) / 5;
+  const ranked = (Object.keys(genes) as TraitName[])
+    .map((name) => ({
+      name,
+      score: distances[name] * 0.36 + genes[name] * 0.44
+        + Math.max(0, distances[name] - average) * 0.1 + random() * 0.15,
+    }))
+    .sort((left, right) => right.score - left.score);
+  const weights = { energy: 0, frequency: 0, diversity: 0, precision: 0, depth: 0 };
+  const dominantCount = 2 + (seed & 1);
+  const rankWeights = [0.92, 0.7, 0.48];
+  (Object.keys(weights) as TraitName[]).forEach((name) => { weights[name] = 0.08 + distances[name] * 0.08; });
+  ranked.slice(0, dominantCount).forEach(({ name }, index) => { weights[name] += rankWeights[index]; });
+  const budget = Object.values(weights).reduce((sum, value) => sum + value, 0);
+  const scale = Math.min(1, 2.25 / budget);
+  (Object.keys(weights) as TraitName[]).forEach((name) => { weights[name] *= scale; });
+  return { ...weights, dominant: ranked[0].name };
+}
+
+const PALETTE_ANCHORS = [
+  [0x36dcff, 0x7d6dff, 0xff72ba, 0xffa56f],
+  [0x42f0df, 0x4b9dff, 0xffd27d, 0xffb66f],
+  [0x4ba2ff, 0x966cff, 0xff789d, 0xff9d72],
+  [0x9a8cff, 0x54dfff, 0xf38bff, 0xffbd78],
+  [0x32e6d0, 0x6f7cff, 0xff68d2, 0xff987c],
+  [0x776eff, 0x46cfff, 0xffb15f, 0xff8f76],
+] as const;
+
+function deriveIndividualPalette(genes: Record<TraitName, number>, seed: number) {
+  const random = seededRandom(seed ^ 0xc2b2ae35);
+  const position = fract(random() * 0.52 + genes.frequency * 0.18 + genes.diversity * 0.13 + genes.energy * 0.1 + genes.precision * 0.07);
+  const scaled = position * PALETTE_ANCHORS.length;
+  const index = Math.floor(scaled) % PALETTE_ANCHORS.length;
+  const next = (index + 1) % PALETTE_ANCHORS.length;
+  const amount = smoothMix(scaled - Math.floor(scaled));
+  return {
+    primary: mixHex(PALETTE_ANCHORS[index][0], PALETTE_ANCHORS[next][0], amount),
+    secondary: mixHex(PALETTE_ANCHORS[index][1], PALETTE_ANCHORS[next][1], amount),
+    accent: mixHex(PALETTE_ANCHORS[index][2], PALETTE_ANCHORS[next][2], amount),
+    energy: mixHex(PALETTE_ANCHORS[index][3], PALETTE_ANCHORS[next][3], amount),
+  };
+}
+
+function createLobeFactors(random: () => number, variation: number, bias: number): readonly [number, number, number, number, number] {
+  return Object.freeze(Array.from({ length: 5 }, (_, index) => clamp(
+    ...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartLobeScale,
+    1 + (random() * 2 - 1) * variation + bias * (index - 2) * 0.32,
+  )) as [number, number, number, number, number]);
+}
+
+function geneDirection(value: number, random: () => number) {
+  if (Math.abs(value - 0.5) < 0.08) return random() < 0.5 ? -1 : 1;
+  return value < 0.5 ? -1 : 1;
+}
+
+function enforceMinimumVisualSeparation(phenotype: SoundSpiritPhenotypeConfig, dominant: TraitName, seed: number) {
+  const geneValue = dominant === 'depth' ? phenotype.interactionDepth : phenotype[dominant];
+  const direction = Math.abs(Number(geneValue) - 0.5) < 0.08 ? (seed & 2 ? 1 : -1) : Number(geneValue) < 0.5 ? -1 : 1;
+  if (dominant === 'energy') {
+    return { ...phenotype, heartScale: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartScale, 1 + direction * 0.14), heartGlow: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.heartGlow, 1 + direction * 0.24) };
+  }
+  if (dominant === 'frequency') {
+    return { ...phenotype, wingSpan: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSpan, 1 + direction * 0.12), wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 - direction * 0.08) };
+  }
+  if (dominant === 'diversity') {
+    return { ...phenotype, wingSweep: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSweep, 1 + direction * 0.09), wingScallop: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingScallop, direction * 0.045) };
+  }
+  if (dominant === 'precision') {
+    return { ...phenotype, wingHeight: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingHeight, 1 + direction * 0.09), membraneLayerExtra: direction > 0 ? 1 : 0, veinExtra: direction > 0 ? 2 : 0 };
+  }
+  return { ...phenotype, bodyLength: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.bodyLength, 1 + direction * 0.06), wingSweep: clamp(...SOUND_SPIRIT_SPECIES_GUARDRAILS.wingSweep, 1 - direction * 0.08), energyPathExtra: direction > 0 ? 2 : 1 };
+}
+
+export function phenotypeVisualDistance(left: SoundSpiritPhenotypeConfig, right: SoundSpiritPhenotypeConfig) {
+  const silhouette = phenotypeSilhouetteDistance(left, right);
+  const structure = averageDifference(left, right, [
+    ['veinFan', 0.16], ['veinBranch', 0.14], ['energyRouting', 0.09], ['membraneOpacity', 0.18],
+    ['veinExtra', 2], ['energyPathExtra', 2], ['energyPathEmphasis', 0.28],
+  ]);
+  const heart = (tupleDistance(left.heartLobeWidths, right.heartLobeWidths, 0.18)
+    + tupleDistance(left.heartLobeLengths, right.heartLobeLengths, 0.18)
+    + Math.abs(left.heartCoreScale - right.heartCoreScale) / 0.18) / 3;
+  const palette = (
+    colorDistance(left.primaryColor, right.primaryColor) + colorDistance(left.secondaryColor, right.secondaryColor)
+    + colorDistance(left.accentColor, right.accentColor) + colorDistance(left.energyColor, right.energyColor)
+  ) / 4;
+  return clamp01(silhouette * 0.38 + structure * 0.25 + heart * 0.2 + palette * 0.17);
+}
+
+function phenotypeSilhouetteDistance(left: SoundSpiritPhenotypeConfig, right: SoundSpiritPhenotypeConfig) {
+  return averageDifference(left, right, [
+    ['wingSpan', 0.15], ['wingHeight', 0.12], ['wingSweep', 0.12], ['wingCurvature', 0.12],
+    ['wingScallop', 0.055], ['bodyLength', 0.07], ['bodyFullness', 0.11], ['heartScale', 0.2],
+  ]);
 }
 
 export function createSoundSpiritPhenotype(history: SoundSpiritInteractionHistory) {
@@ -538,6 +695,51 @@ function stableHistorySignature(
 function mixHex(from: number, to: number, amount: number) {
   const mixChannel = (shift: number) => Math.round(mix((from >> shift) & 0xff, (to >> shift) & 0xff, amount));
   return (mixChannel(16) << 16) | (mixChannel(8) << 8) | mixChannel(0);
+}
+
+function averageDifference(
+  left: SoundSpiritPhenotypeConfig,
+  right: SoundSpiritPhenotypeConfig,
+  dimensions: Array<[keyof SoundSpiritPhenotypeConfig, number]>,
+) {
+  return dimensions.reduce((sum, [key, range]) => (
+    sum + Math.min(1, Math.abs(Number(left[key]) - Number(right[key])) / range)
+  ), 0) / dimensions.length;
+}
+
+function tupleDistance(left: readonly number[], right: readonly number[], range: number) {
+  return left.reduce((sum, value, index) => sum + Math.min(1, Math.abs(value - right[index]) / range), 0) / left.length;
+}
+
+function colorDistance(left: number, right: number) {
+  const red = ((left >> 16) & 0xff) - ((right >> 16) & 0xff);
+  const green = ((left >> 8) & 0xff) - ((right >> 8) & 0xff);
+  const blue = (left & 0xff) - (right & 0xff);
+  return Math.min(1, Math.hypot(red, green, blue) / 260);
+}
+
+function hexHue(color: number) {
+  const red = ((color >> 16) & 0xff) / 255;
+  const green = ((color >> 8) & 0xff) / 255;
+  const blue = (color & 0xff) / 255;
+  const maximum = Math.max(red, green, blue);
+  const minimum = Math.min(red, green, blue);
+  if (maximum === minimum) return 0;
+  const delta = maximum - minimum;
+  const hue = maximum === red
+    ? ((green - blue) / delta) % 6
+    : maximum === green
+      ? (blue - red) / delta + 2
+      : (red - green) / delta + 4;
+  return (hue * 60 + 360) % 360;
+}
+
+function smoothMix(value: number) {
+  return value * value * (3 - 2 * value);
+}
+
+function fract(value: number) {
+  return value - Math.floor(value);
 }
 
 function mix(from: number, to: number, amount: number) {
