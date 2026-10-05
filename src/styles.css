@@ -474,6 +474,28 @@ h1 {
   touch-action: none;
 }
 
+.sound-spirit-birth-line {
+  position: absolute;
+  right: 1rem;
+  bottom: clamp(0.9rem, 5.5%, 2rem);
+  left: 1rem;
+  z-index: 4;
+  margin: 0;
+  color: rgba(226, 249, 255, 0.92);
+  font-size: clamp(0.78rem, 1.5vw, 0.94rem);
+  line-height: 1.5;
+  text-align: center;
+  text-shadow: 0 0 12px rgba(78, 210, 255, 0.46), 0 1px 10px rgba(0, 7, 18, 0.95);
+  pointer-events: none;
+  animation: sound-spirit-birth-line 4.15s both;
+}
+
+@keyframes sound-spirit-birth-line {
+  0%, 54% { opacity: 0; transform: translateY(4px); }
+  66%, 84% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-2px); }
+}
+
 .control-panel {
   overflow: visible;
   padding: 1rem;

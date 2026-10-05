@@ -1,5 +1,5 @@
 import { Download, Pause, Play, StopCircle } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from 'react';
 import { RangeControl } from '../components/RangeControl';
 import { SegmentedControl } from '../components/SegmentedControl';
 import type { GestureInteractionController } from '../gesture/interactionController';
@@ -15,6 +15,7 @@ import { WaveCanvas } from '../visualization/WaveCanvas';
 import type { Repulsor, SpiritGestureForces } from '../visualization/repulsor';
 import type { SoundSpiritPhenotypeConfig } from '../spirit/soundSpiritIdentity';
 import type { SoundSpiritPersonality } from '../spirit/soundSpiritPersonality';
+import { isSoundSpiritBirthInteractionLocked } from '../spirit/soundSpiritBirth';
 
 type ViewMode = 'wave' | 'spectrum';
 const masterCreatureScale = 0.7;
@@ -25,11 +26,13 @@ interface MusicLabProps {
   controller: MusicAudioController;
   spiritPhenotype: SoundSpiritPhenotypeConfig;
   spiritPersonality: SoundSpiritPersonality;
+  spiritBirthToken: number;
+  spiritBirthStartedAt: number;
   gestureController: GestureInteractionController;
   worldInteraction: WorldInteractionController;
 }
 
-export function MusicLab({ session, onSessionChange, controller, spiritPhenotype, spiritPersonality, gestureController, worldInteraction }: MusicLabProps) {
+export function MusicLab({ session, onSessionChange, controller, spiritPhenotype, spiritPersonality, spiritBirthToken, spiritBirthStartedAt, gestureController, worldInteraction }: MusicLabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('wave');
   const repulsorsRef = useRef<Repulsor[]>([]);
   const [creatureScale, setCreatureScale] = useState(masterCreatureScale);
@@ -54,8 +57,16 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
   const gestureForcesRef = useRef<SpiritGestureForces>({});
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
+  const birthRef = useRef({ token: spiritBirthToken, startedAt: spiritBirthStartedAt });
+  birthRef.current = { token: spiritBirthToken, startedAt: spiritBirthStartedAt };
+  const birthInteractionLocked = () => viewModeRef.current === 'spectrum'
+    && isSoundSpiritBirthInteractionLocked(birthRef.current.token, birthRef.current.startedAt);
   const pointer: PointerPoint = { x: 0.5, y: 0.5 };
   const [filePickerReady, setFilePickerReady] = useState(false);
+
+  useLayoutEffect(() => {
+    if (spiritBirthToken > 0) setViewMode('spectrum');
+  }, [spiritBirthToken]);
 
   const setRepulsor = (repulsor: Repulsor | null) => {
     if (repulsor) repulsorsRef.current[0] = repulsor;
@@ -113,6 +124,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     let attractionX = 0.5;
     let attractionY = 0.5;
     let lastFrameTime = performance.now();
+    let birthWasLocked = false;
     const unsubscribe = worldInteraction.subscribe((event) => {
       const stage = stageRef.current;
       if (!stage || viewModeRef.current !== 'spectrum') return;
@@ -168,6 +180,15 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           if (!local.inside) window.scrollBy({ top: mapPageScrollDelta(gesture.fist.deltaY), behavior: 'auto' });
         }
       }
+      const birthLocked = isSoundSpiritBirthInteractionLocked(birthRef.current.token, birthRef.current.startedAt, now);
+      if (viewModeRef.current === 'spectrum' && birthLocked) {
+        setRepulsor(null);
+        gestureForcesRef.current = {};
+        if (!birthWasLocked) worldInteraction.clear();
+        birthWasLocked = true;
+        return;
+      }
+      birthWasLocked = false;
       if (viewModeRef.current !== 'spectrum') {
         worldInteraction.clear('gesture');
         gestureForcesRef.current = {};
@@ -418,6 +439,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
 
   const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
+      if (birthInteractionLocked()) return;
       if (event.pointerType === 'touch') {
         event.currentTarget.setPointerCapture(event.pointerId);
         touchPointersRef.current.set(event.pointerId, {
@@ -475,6 +497,10 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
 
   const pointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (viewMode === 'spectrum') {
+      if (birthInteractionLocked()) {
+        setRepulsor(null);
+        return;
+      }
       const tracked = touchPointersRef.current.get(event.pointerId);
       if (event.pointerType !== 'touch' && !tracked) {
         const session = pointerIntentsRef.current.get(event.pointerId);
@@ -531,7 +557,8 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     if (viewMode === 'spectrum') {
       const intent = pointerIntentsRef.current.get(event.pointerId);
       const now = performance.now();
-      const isTap = intent?.state === 'pending'
+      const isTap = !birthInteractionLocked()
+        && intent?.state === 'pending'
         && now - intent.startedAt <= worldInteractionThresholds.tapDurationMs
         && touchPointersRef.current.size <= 1
         && !touchSessionRef.current.isPinchLocked();
@@ -583,6 +610,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
     if (!session.sourceUrl) return;
     if (viewMode === 'spectrum') {
       event.preventDefault();
+      if (birthInteractionLocked()) return;
       setCreatureScale((current) => clampCreatureScale(current * Math.exp(-event.deltaY * 0.0018)));
       return;
     }
@@ -631,7 +659,12 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           gestureForcesRef={gestureForcesRef}
           spiritPhenotype={spiritPhenotype}
           spiritPersonality={spiritPersonality}
+          spiritBirthToken={spiritBirthToken}
+          spiritBirthStartedAt={spiritBirthStartedAt}
         />
+        {spiritBirthToken > 0 && (
+          <p key={spiritBirthToken} className="sound-spirit-birth-line" aria-live="polite">音樂賦予牠生命。</p>
+        )}
       </div>
 
       <aside className="control-panel">

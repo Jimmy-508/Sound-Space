@@ -63,6 +63,7 @@ export default function App() {
   const [spiritPersonality, setSpiritPersonality] = useState(
     localPreviewBirth?.personality ?? DEFAULT_SOUND_SPIRIT_PERSONALITY,
   );
+  const [spiritBirth, setSpiritBirth] = useState({ token: 0, startedAt: 0 });
   const [homePlayback, setHomePlayback] = useState<InteractionPlayback | null>(null);
   const [gestureEnabled, setGestureEnabled] = useState(Boolean(localGesturePreview));
   const [gestureStatus, setGestureStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>(localGesturePreview ? 'ready' : 'idle');
@@ -118,6 +119,7 @@ export default function App() {
     const birth = resolveSoundSpiritBirth(spiritInteractionRef.current.snapshot());
     setSpiritPhenotype(birth.phenotype);
     setSpiritPersonality(birth.personality);
+    setSpiritBirth((current) => ({ token: current.token + 1, startedAt: performance.now() }));
   }, []);
 
   const musicController = useMusicAudioController({
@@ -521,6 +523,8 @@ export default function App() {
           controller={musicController}
           spiritPhenotype={spiritPhenotype}
           spiritPersonality={spiritPersonality}
+          spiritBirthToken={spiritBirth.token}
+          spiritBirthStartedAt={spiritBirth.startedAt}
           gestureController={gestureInteractionRef.current}
           worldInteraction={worldInteractionRef.current}
         />

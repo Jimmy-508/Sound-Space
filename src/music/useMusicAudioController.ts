@@ -188,14 +188,7 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
     }
     const loadVersion = loadVersionRef.current + 1;
     loadVersionRef.current = loadVersion;
-    audio.pause();
-    setPlaying(false);
-    setSpectrumData(null);
-    setTimeDomainData(null);
     setError('');
-    const { sourceUrl, visualSeed } = onReplaceFile(file);
-    audio.src = sourceUrl;
-    audio.load();
 
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -205,6 +198,13 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
       const buffer = await context.decodeAudioData(arrayBuffer.slice(0));
       if (loadVersion !== loadVersionRef.current) return;
       const channel = buffer.getChannelData(0);
+      audio.pause();
+      setPlaying(false);
+      setSpectrumData(null);
+      setTimeDomainData(null);
+      const { sourceUrl, visualSeed } = onReplaceFile(file);
+      audio.src = sourceUrl;
+      audio.load();
       onSuccessfulLoad();
       onSessionChange({
         duration: buffer.duration,

@@ -13,6 +13,11 @@ import {
   DEFAULT_SOUND_SPIRIT_PERSONALITY,
   type SoundSpiritPersonality,
 } from '../spirit/soundSpiritPersonality';
+import {
+  ALIVE_SOUND_SPIRIT_BIRTH_FRAME,
+  getSoundSpiritBirthFrame,
+  type SoundSpiritBirthFrame,
+} from '../spirit/soundSpiritBirth';
 
 interface WaveCanvasProps {
   amplitude: number;
@@ -45,6 +50,8 @@ interface WaveCanvasProps {
   homeMusicPlaying?: boolean;
   spiritPhenotype?: SoundSpiritPhenotypeConfig;
   spiritPersonality?: SoundSpiritPersonality;
+  spiritBirthToken?: number;
+  spiritBirthStartedAt?: number;
   pointer: PointerPoint;
 }
 
@@ -105,6 +112,8 @@ export function WaveCanvas({
   homeMusicPlaying = false,
   spiritPhenotype = DEFAULT_SOUND_SPIRIT_PHENOTYPE,
   spiritPersonality = DEFAULT_SOUND_SPIRIT_PERSONALITY,
+  spiritBirthToken = 0,
+  spiritBirthStartedAt = 0,
   pointer,
 }: WaveCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -139,6 +148,8 @@ export function WaveCanvas({
     homeMusicPlaying,
     spiritPhenotype,
     spiritPersonality,
+    spiritBirthToken,
+    spiritBirthStartedAt,
     pointer,
   });
 
@@ -173,6 +184,8 @@ export function WaveCanvas({
     homeMusicPlaying,
     spiritPhenotype,
     spiritPersonality,
+    spiritBirthToken,
+    spiritBirthStartedAt,
     pointer,
   };
 
@@ -399,6 +412,9 @@ export function WaveCanvas({
     let profileSeed = -1;
     let creatureGenome = createSpiritProfile(spiritPhenotype.seed, spiritPhenotype);
     const personality = spiritPersonality;
+    let observedBirthToken = 0;
+    let birthComplete = spiritBirthToken === 0;
+    let currentBirthFrame = ALIVE_SOUND_SPIRIT_BIRTH_FRAME;
     let creatureX = creatureGenome.spawnX;
     let creatureY = creatureGenome.spawnY;
     let creatureVelocityX = Math.cos(creatureGenome.wanderPhase) * 0.025;
@@ -730,7 +746,7 @@ export function WaveCanvas({
       lifeStateUntil = time + duration / personality.turnResponsiveness;
     };
 
-    const updateSpiritPhysics = (time: number, deltaTime: number, current: WaveCanvasProps) => {
+    const updateSpiritPhysics = (time: number, deltaTime: number, current: WaveCanvasProps, birthFrame: SoundSpiritBirthFrame) => {
       const motionScale = reducedMotion ? 0.24 : 1;
       const scale = current.creatureScale ?? 1;
       startlePulse *= Math.exp(-deltaTime * 5.6 * personality.recoveryRate);
@@ -739,6 +755,14 @@ export function WaveCanvas({
       heartStartlePulse *= Math.exp(-deltaTime * 4.6);
       wingContactPulse[0] *= Math.exp(-deltaTime * 3.5);
       wingContactPulse[1] *= Math.exp(-deltaTime * 3.5);
+      if (birthFrame.livingMotion <= 0) {
+        creatureVelocityX = 0;
+        creatureVelocityY = 0;
+        creatureAccelerationX = 0;
+        creatureAccelerationY = 0;
+        curiousResponse *= Math.exp(-deltaTime * 4);
+        return;
+      }
       const visualRadius = creatureGenome.bodyRadius * scale;
       const horizontalLimit = Math.max(0.18, 0.84 - visualRadius * 0.9);
       const verticalLimit = Math.max(0.16, 0.72 - visualRadius * 0.82);
@@ -775,7 +799,7 @@ export function WaveCanvas({
             ? 0.05
             : lifeState === 'curious' ? 0.042 : 0.16;
       const musicMotion = current.musicPlaying ? overallEnergy * 0.032 + rhythmImpulse * 0.018 : 0;
-      const desiredSpeed = (stateSpeed * personality.idleSpeed + musicMotion * personality.rhythmResponse) * arrival * motionScale;
+      const desiredSpeed = (stateSpeed * personality.idleSpeed + musicMotion * personality.rhythmResponse) * arrival * motionScale * birthFrame.livingMotion;
       let desiredVelocityX = targetDeltaX / targetDistance * desiredSpeed;
       let desiredVelocityY = targetDeltaY / targetDistance * desiredSpeed;
       const pathCurve = Math.sin(time * 0.55 + creatureGenome.wanderPhase) * 0.016 * (personality.pathCurvature - 1);
@@ -795,8 +819,8 @@ export function WaveCanvas({
       let repulsorAwayX = 0;
       let repulsorAwayY = 0;
       let curiousTarget = 0;
-      const activeRepulsors = interactionDebugOff ? noRepulsors : current.repulsorsRef?.current ?? current.repulsors ?? noRepulsors;
-      const gestureForces = interactionDebugOff ? undefined : current.gestureForcesRef?.current;
+      const activeRepulsors = interactionDebugOff || birthFrame.interactionLocked ? noRepulsors : current.repulsorsRef?.current ?? current.repulsors ?? noRepulsors;
+      const gestureForces = interactionDebugOff || birthFrame.interactionLocked ? undefined : current.gestureForcesRef?.current;
       const gestureRepulsor = gestureForces?.displacement?.active ? gestureForces.displacement : undefined;
       const repulsorCount = activeRepulsors.length + (gestureRepulsor ? 1 : 0);
       for (let repulsorIndex = 0; repulsorIndex < repulsorCount; repulsorIndex += 1) {
@@ -955,7 +979,7 @@ export function WaveCanvas({
       }
       creatureVelocityX += accelerationX * deltaTime;
       creatureVelocityY += accelerationY * deltaTime;
-      const maxSpeed = (0.13 * personality.idleSpeed + overallEnergy * 0.07 * personality.rhythmResponse + threatResponse * 0.18 + startlePulse * 0.14 + (time < escapeUntil ? 0.06 : 0)) * motionScale;
+      const maxSpeed = (0.13 * personality.idleSpeed + overallEnergy * 0.07 * personality.rhythmResponse + threatResponse * 0.18 + startlePulse * 0.14 + (time < escapeUntil ? 0.06 : 0)) * motionScale * birthFrame.livingMotion;
       const speed = Math.hypot(creatureVelocityX, creatureVelocityY);
       if (speed > maxSpeed) {
         creatureVelocityX = creatureVelocityX / speed * maxSpeed;
@@ -991,6 +1015,7 @@ export function WaveCanvas({
 
 
     const drawUnifiedSpirit = (time: number, deltaTime: number, current: WaveCanvasProps) => {
+      const birthFrame = currentBirthFrame;
       const viewportAspect = Math.min(1, canvasHeight / canvasWidth);
       const scale = current.creatureScale ?? 1;
       const motionScale = reducedMotion ? 0.32 : 1;
@@ -1027,8 +1052,8 @@ export function WaveCanvas({
       const strokeRate = THREE.MathUtils.lerp(autonomousStrokeRate * personality.wingRate, musicStrokeRate * personality.rhythmResponse, musicAwake);
       const strokePower = THREE.MathUtils.lerp(autonomousStrokePower * personality.wingPower, musicStrokePower * personality.rhythmResponse, musicAwake);
       const membraneTension = 0.28 + midEnergy * 0.2 + grooveEnergy * 0.22 + rootBeatPulse * 0.18;
-      const energyFlow = 0.08 + musicAwake * (0.035 + musicEnergy * 0.08 + grooveEnergy * 0.08) + veinBeatPulse * 0.46;
-      const rimActivity = 0.08 + musicAwake * (0.025 + trebleEnergy * 0.08 + grooveEnergy * 0.07) + rimBeatPulse * 0.58;
+      const energyFlow = 0.08 + musicAwake * (0.035 + musicEnergy * 0.08 + grooveEnergy * 0.08) + veinBeatPulse * 0.46 + birthFrame.heartPulse * 0.28;
+      const rimActivity = 0.08 + musicAwake * (0.025 + trebleEnergy * 0.08 + grooveEnergy * 0.07) + rimBeatPulse * 0.58 + birthFrame.awakening * 0.08;
       const debugPhase = spiritDebug === 'power' || spiritDebug === 'funnel-power'
         ? 0.54
         : spiritDebug === 'glide' || spiritDebug === 'funnel-glide' ? 0.76 : 0.1;
@@ -1037,7 +1062,7 @@ export function WaveCanvas({
       const phasePower = spiritDebug === 'power' || spiritDebug === 'funnel-power'
         ? 0.82
         : spiritDebug === 'glide' || spiritDebug === 'funnel-glide' ? 0.24 : strokePower;
-      const actionStrength = spiritDebug ? 1 : 0.72 + musicAwake * 0.28;
+      const actionStrength = (spiritDebug ? 1 : 0.72 + musicAwake * 0.28) * birthFrame.livingMotion;
 
       for (let sideIndex = 0; sideIndex < 2; sideIndex += 1) {
         const sidePhase = sideIndex === 0 ? -0.014 : 0.014;
@@ -1182,6 +1207,12 @@ export function WaveCanvas({
           : spiritLayer === null || (spiritLayer === 'body' && kind < 0.5);
       });
       spiritRig.finalMaterials.forEach((material) => {
+        const kind = material.uniforms.uKind.value as number;
+        const wingReveal = kind >= 5.8 && kind < 6.8
+          ? birthFrame.wingRimReveal
+          : kind >= 6.8
+            ? birthFrame.wingRootReveal
+            : birthFrame.wingMembraneReveal;
         material.uniforms.uTime.value = time;
         material.uniforms.uLife.value = previewPass === 'B' || spiritLayer === 'body' ? 0 : Math.max(lifeEnergy, idleLife);
         material.uniforms.uMusicAwake.value = previewPass === 'B' ? 0 : musicAwake;
@@ -1200,6 +1231,13 @@ export function WaveCanvas({
         material.uniforms.uMembraneTension.value = membraneTension;
         material.uniforms.uEnergyFlow.value = energyFlow;
         material.uniforms.uRimActivity.value = rimActivity;
+        material.uniforms.uBirthReveal.value = kind < 0.5
+          ? birthFrame.bodyReveal
+          : kind > 2.5 && kind < 3.5
+            ? birthFrame.heartReveal
+            : wingReveal;
+        material.uniforms.uBirthCrown.value = birthFrame.crownReveal;
+        material.uniforms.uBirthWing.value = wingReveal;
         material.uniforms.uCycle.value = cycle;
         material.uniforms.uHeartBeat.value = 0;
         material.uniforms.uBeatAge.value = beatAge;
@@ -1226,18 +1264,20 @@ export function WaveCanvas({
 
       spiritRig.heartLobes.forEach((lobe, index) => {
         lobe.visible = spiritLayer !== 'body';
+        const lobeReveal = smoothstep(0.04 + index * 0.075, 0.48 + index * 0.075, birthFrame.heartReveal);
         const idlePhase = (time * 0.3 + index * 0.075) % 1;
         const idleBeat = Math.exp(-Math.pow((idlePhase - 0.18) / 0.1, 2)) * (0.052 + curiousResponse * 0.018);
         const lobeAge = beatAge - heartLobeDelays[index];
         const audioBeat = sampleHeartEnvelope(lobeAge, heartRelease) * expressedRhythm;
         const rebound = sampleHeartEnvelope(lobeAge - 0.1, heartRelease * 0.64) * expressedRhythm;
-        const visibleBeat = THREE.MathUtils.lerp(idleBeat, audioBeat, musicAwake) + heartStartlePulse * 0.24;
+        const visibleBeat = THREE.MathUtils.lerp(idleBeat, audioBeat, musicAwake) + heartStartlePulse * 0.24 + birthFrame.heartPulse;
         const phenotypePulse = (lobe.userData.pulseStrength as number | undefined) ?? 1;
         const beat = 1 - visibleBeat * 0.31 * phenotypePulse + rebound * musicAwake * 0.17 * phenotypePulse;
-        lobe.scale.copy(lobe.userData.baseScale).multiplyScalar(beat);
+        lobe.scale.copy(lobe.userData.baseScale).multiplyScalar(beat * (0.08 + lobeReveal * 0.92));
         lobe.rotation.z = Math.sin(time * 0.2 + index * 1.31) * 0.038;
         const lobeUniforms = (lobe.material as THREE.ShaderMaterial).uniforms;
         if (lobeUniforms?.uHeartBeat) lobeUniforms.uHeartBeat.value = Math.min(1.35, visibleBeat * 1.16);
+        if (lobeUniforms?.uBirthReveal) lobeUniforms.uBirthReveal.value = lobeReveal;
       });
       const visualTelemetryTick = Math.floor(time * 12);
       if (localPreview && visualTelemetryTick !== lastVisualTelemetryTick) {
@@ -1258,7 +1298,7 @@ export function WaveCanvas({
           ? 0
           : previewPass === 'A'
           ? 0.58
-          : 0.035 + Math.max(lifeEnergy, idleLife) * 0.025 + propagation * 0.86 + rhythmImpulse * 0.01 + contactPulse * 0.035) * phenotypeEnergy;
+          : 0.035 + Math.max(lifeEnergy, idleLife) * 0.025 + propagation * 0.86 + rhythmImpulse * 0.01 + contactPulse * 0.035) * phenotypeEnergy * birthFrame.energyReveal;
       });
 
       const funnelTipX = (spiritDebug ? 0 : creatureX) + funnelCenterX[funnelRingCount - 1] * debugScale * scale * viewportAspect;
@@ -1278,7 +1318,7 @@ export function WaveCanvas({
         trailHistoryY[index] += (trailHistoryY[index - 1] - trailHistoryY[index]) * follow;
       }
 
-      const atmosphereVisible = previewPass === null && spiritDebug === null && spiritLayer === null;
+      const atmosphereVisible = previewPass === null && spiritDebug === null && spiritLayer === null && birthFrame.awakening > 0.02;
       const filamentDebugVisible = spiritLayer === 'filaments';
       for (let ribbonIndex = 0; ribbonIndex < wakeRibbonCount; ribbonIndex += 1) {
         const positions = wakePositions[ribbonIndex];
@@ -1368,9 +1408,9 @@ export function WaveCanvas({
       moteGeometry.attributes.position.needsUpdate = true;
       moteGeometry.attributes.color.needsUpdate = true;
       motes.visible = (atmosphereVisible && activeMotes > 0) || spiritLayer === 'motes';
-      moteMaterial.opacity = 0.92;
+      moteMaterial.opacity = 0.92 * (filamentDebugVisible ? 1 : birthFrame.awakening);
       moteMaterial.size = spiritLayer === 'motes' ? 7 : 2.8 + trebleEnergy * 1.8 + motePulse * 0.35;
-      wakeMaterial.opacity = filamentDebugVisible ? 0.78 : 0.12 + grooveEnergy * 0.08;
+      wakeMaterial.opacity = filamentDebugVisible ? 0.78 : (0.12 + grooveEnergy * 0.08) * birthFrame.awakening;
     };
 
     const drawSpectrum = (current: WaveCanvasProps, time: number, deltaTime: number) => {
@@ -1481,7 +1521,53 @@ export function WaveCanvas({
         moteMaterial.color.setHex(0xffffff);
         particleMaterial.color.setHex(creatureGenome.primaryHue);
       }
-      updateSpiritPhysics(time, deltaTime, current);
+      const nextBirthToken = current.spiritBirthToken ?? 0;
+      if (nextBirthToken !== observedBirthToken) {
+        observedBirthToken = nextBirthToken;
+        birthComplete = nextBirthToken === 0;
+        currentBirthFrame = birthComplete ? ALIVE_SOUND_SPIRIT_BIRTH_FRAME : getSoundSpiritBirthFrame(0);
+        creatureX = 0;
+        creatureY = 0;
+        creatureVelocityX = 0;
+        creatureVelocityY = 0;
+        creatureAccelerationX = 0;
+        creatureAccelerationY = 0;
+        lifeState = 'drift';
+        lifeStateUntil = 0;
+        lifeTargetX = 0;
+        lifeTargetY = 0;
+        curiousResponse = 0;
+        threatResponse = 0;
+        startlePulse = 0;
+        contactPulse = 0;
+        heartStartlePulse = 0;
+        escapeUntil = 0;
+        repulsorEscapeUntil = 0;
+        releaseLookUntil = 0;
+        wingSpring.forEach((state) => state.fill(0));
+        wingVelocity.forEach((state) => state.fill(0));
+        funnelCenterX.fill(0);
+        funnelCenterZ.fill(0);
+        funnelRadiusX.fill(1);
+        funnelRadiusZ.fill(1);
+        funnelTilt.fill(0);
+        funnelCompression.fill(0);
+        funnelStretch.fill(0);
+        trailInitialized = false;
+        motesInitialized = false;
+        particleFieldInitialized = false;
+      }
+      if (!birthComplete) {
+        const elapsed = Math.max(0, time - (current.spiritBirthStartedAt ?? 0) / 1000);
+        currentBirthFrame = getSoundSpiritBirthFrame(elapsed);
+        birthComplete = currentBirthFrame.state === 'ALIVE';
+      }
+      if (localPreview) {
+        mount.dataset.spiritBirthState = currentBirthFrame.state;
+        mount.dataset.spiritBirthProgress = currentBirthFrame.progress.toFixed(3);
+        mount.dataset.spiritBirthLocked = String(currentBirthFrame.interactionLocked);
+      }
+      updateSpiritPhysics(time, deltaTime, current, currentBirthFrame);
       drawUnifiedSpirit(time, deltaTime, current);
 
     };
@@ -1764,11 +1850,11 @@ export function WaveCanvas({
         }
       }
       if (spectrumActive) particleFieldInitialized = true;
-      particleMaterial.opacity = previewPass || spiritDebug || spiritLayer === 'body' || spiritLayer === 'filaments' ? 0 : spiritLayer === 'motes'
+      particleMaterial.opacity = (previewPass || spiritDebug || spiritLayer === 'body' || spiritLayer === 'filaments' ? 0 : spiritLayer === 'motes'
         ? 0.24
         : spectrumActive
         ? current.musicPlaying ? 0.055 + midEnergy * 0.1 + trebleEnergy * 0.18 + startlePulse * 0.06 : 0.012
-        : 0.32;
+        : 0.32) * (spectrumActive ? currentBirthFrame.awakening : 1);
       particleMaterial.size = spiritLayer === 'motes'
         ? 4.2
         : spectrumActive ? 2.2 + trebleEnergy * (reducedMotion ? 0.8 : 2.8) + startlePulse * 0.8 : 1.2;
@@ -2315,6 +2401,9 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uIndividuality: { value: phenotype.isDefault ? 0 : 1 },
       uIridescence: { value: phenotype.iridescence },
       uGlowIntensity: { value: phenotype.glowIntensity },
+      uBirthReveal: { value: 1 },
+      uBirthCrown: { value: 1 },
+      uBirthWing: { value: 1 },
     },
     vertexShader: `
       attribute vec3 restPosition;
@@ -2346,6 +2435,7 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uniform float uLayerDelay;
       uniform float uMembraneTension;
       uniform float uCycle;
+      uniform float uBirthWing;
       varying vec3 vLocal;
       varying vec3 vNormalView;
       varying vec3 vViewPosition;
@@ -2396,6 +2486,12 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
           transformed = restPosition;
           float span = clamp(wingCoord.x, 0.0, 1.0);
           float chord = clamp(wingCoord.y, -1.0, 1.0);
+          float localUnfold = smoothstep(span * 0.82, span * 0.82 + 0.18, uBirthWing);
+          vec3 folded = transformed;
+          folded.x = uWingSide * 0.12 + (transformed.x - uWingSide * 0.12) * 0.1;
+          folded.y = 0.53 + (transformed.y - 0.53) * 0.32;
+          folded.z *= 0.3;
+          transformed = mix(folded, transformed, localUnfold);
           float delayedSpan = clamp(span - uLayerDelay * (0.35 + span * 0.65), 0.0, 1.0);
           float stroke = zoneStroke(delayedSpan);
           float rootBlend = smoothstep(0.02, 0.32, span);
@@ -2456,6 +2552,9 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
       uniform float uIndividuality;
       uniform float uIridescence;
       uniform float uGlowIntensity;
+      uniform float uBirthReveal;
+      uniform float uBirthCrown;
+      uniform float uBirthWing;
       varying vec3 vLocal;
       varying vec3 vNormalView;
       varying vec3 vViewPosition;
@@ -2524,6 +2623,15 @@ function createMasterSpiritMaterial(color: number, opacity: number, kind: number
         float membraneDepth = wing * (0.12 + (1.0 - abs(vChord)) * 0.16 + sin(vSpan * 4.8 + vChord * 2.2) * 0.035);
         float alpha = uOpacity * tissue * detailAlpha * featheredMask * (0.52 + fresnel * 0.62 + depthGlow * 0.18 + vFunnelResponse * 0.36 + funnelTravel * 0.86 + contactEnergy * 0.42 + wingTravel * 0.62 + rootBlend * uRootPulse * 0.48 + heart * (0.04 + uHeartBeat * 0.72) + membraneDepth + uMid * wing * 0.06);
         alpha *= mix(1.0, 0.5 + uHeartBeat * 0.62, heart);
+        float body = 1.0 - step(0.5, uKind);
+        float bodyDistance = distance(vLocal.xy, vec2(0.0, 0.48));
+        float bodyReveal = smoothstep(0.0, 0.06, uBirthReveal)
+          * (1.0 - smoothstep(uBirthReveal * 1.15, uBirthReveal * 1.15 + 0.16, bodyDistance));
+        float crownMask = mix(uBirthCrown, 1.0, 1.0 - smoothstep(0.66, 0.9, vLocal.y));
+        float wingUnfold = smoothstep(vSpan * 0.82, vSpan * 0.82 + 0.18, uBirthWing);
+        float birthMask = mix(uBirthReveal, bodyReveal * crownMask, body);
+        birthMask *= mix(1.0, wingUnfold, wing);
+        alpha *= birthMask;
         if (alpha < 0.008) discard;
         gl_FragColor = vec4(finalColor, alpha);
       }
