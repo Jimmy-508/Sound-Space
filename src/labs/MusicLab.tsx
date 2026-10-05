@@ -654,6 +654,7 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           musicTime={session.current}
           musicVisualSeed={session.visualSeed}
           musicPlaying={controller.playing}
+          musicVisualStateRef={controller.visualStateRef}
           creatureScale={creatureScale}
           repulsorsRef={repulsorsRef}
           gestureForcesRef={gestureForcesRef}
@@ -662,9 +663,6 @@ export function MusicLab({ session, onSessionChange, controller, spiritPhenotype
           spiritBirthToken={spiritBirthToken}
           spiritBirthStartedAt={spiritBirthStartedAt}
         />
-        {spiritBirthToken > 0 && (
-          <p key={spiritBirthToken} className="sound-spirit-birth-line" aria-live="polite">音樂賦予牠生命。</p>
-        )}
       </div>
 
       <aside className="control-panel">

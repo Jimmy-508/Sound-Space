@@ -13,6 +13,11 @@ export interface SoundSpiritBirthFrame {
   awakening: number;
   livingMotion: number;
   heartPulse: number;
+  convergence: number;
+  focusGlow: number;
+  birthRing: number;
+  transformationFlash: number;
+  revealEnergy: number;
   interactionLocked: boolean;
 }
 
@@ -31,6 +36,11 @@ export const ALIVE_SOUND_SPIRIT_BIRTH_FRAME: SoundSpiritBirthFrame = Object.free
   awakening: 1,
   livingMotion: 1,
   heartPulse: 0,
+  convergence: 0,
+  focusGlow: 0,
+  birthRing: 0,
+  transformationFlash: 0,
+  revealEnergy: 0,
   interactionLocked: false,
 });
 
@@ -62,6 +72,11 @@ export function getSoundSpiritBirthFrame(elapsedSeconds: number): SoundSpiritBir
     awakening: ease(2.48, SOUND_SPIRIT_BIRTH_DURATION_SECONDS, elapsed),
     livingMotion: ease(2.7, SOUND_SPIRIT_BIRTH_DURATION_SECONDS, elapsed),
     heartPulse: Math.min(1, pulse(elapsed, 0.72, 0.105) + pulse(elapsed, 2.82, 0.14) * 0.72),
+    convergence: ease(0.02, 0.58, elapsed) * (1 - ease(1.02, 1.56, elapsed)),
+    focusGlow: ease(0.08, 0.62, elapsed) * (1 - ease(2.42, 3.08, elapsed)),
+    birthRing: Math.min(1, pulse(elapsed, 0.76, 0.18) + pulse(elapsed, 2.58, 0.21) * 0.9),
+    transformationFlash: pulse(elapsed, 2.58, 0.17),
+    revealEnergy: ease(0.42, 1.94, elapsed) * (1 - ease(2.28, 3.12, elapsed)),
     interactionLocked: true,
   };
 }

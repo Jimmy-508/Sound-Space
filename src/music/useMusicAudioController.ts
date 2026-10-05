@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { refineVisualSeed, type MusicSessionState } from './musicSession';
+import {
+  createAudioOnsetDetectorState,
+  detectAudioOnset,
+  type AudioOnsetDetectorState,
+} from './audioOnsetDetector';
 
 const supportedAudioExtensions = ['.mp3', '.wav', '.m4a', '.aac'];
 const supportedAudioMimeTypes = [
@@ -50,6 +55,8 @@ export interface MusicVisualState {
   beatStrength: number;
   beatAt: number;
   beatToken: number;
+  beatLowStrength: number;
+  beatHighStrength: number;
 }
 
 const initialVisualState: MusicVisualState = {
@@ -61,16 +68,12 @@ const initialVisualState: MusicVisualState = {
   beatStrength: 0,
   beatAt: -Infinity,
   beatToken: 0,
+  beatLowStrength: 0,
+  beatHighStrength: 0,
 };
 
-interface HomeVisualBeatState {
-  baseline: number;
-  deviation: number;
-  previous: number;
-  lastBeatAt: number;
-  lastUpdateAt: number;
-  fluxBaseline: number;
-  fluxDeviation: number;
+interface MusicAnalysisState {
+  onset: AudioOnsetDetectorState;
   previousSpectrum: Float32Array | null;
 }
 
@@ -83,14 +86,8 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
   const contextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const visualStateRef = useRef<MusicVisualState>({ ...initialVisualState });
-  const visualBeatRef = useRef<HomeVisualBeatState>({
-    baseline: 0.055,
-    deviation: 0.018,
-    previous: 0,
-    lastBeatAt: -Infinity,
-    lastUpdateAt: 0,
-    fluxBaseline: 0.003,
-    fluxDeviation: 0.0015,
+  const visualBeatRef = useRef<MusicAnalysisState>({
+    onset: createAudioOnsetDetectorState(),
     previousSpectrum: null,
   });
   const gainRef = useRef<GainNode | null>(null);
@@ -189,6 +186,7 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
     const loadVersion = loadVersionRef.current + 1;
     loadVersionRef.current = loadVersion;
     setError('');
+    const audioGraphReady = ensureAudioGraph().catch(() => undefined);
 
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -204,8 +202,10 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
       setTimeDomainData(null);
       const { sourceUrl, visualSeed } = onReplaceFile(file);
       audio.src = sourceUrl;
+      audio.currentTime = 0;
       audio.load();
-      onSuccessfulLoad();
+      visualStateRef.current = { ...initialVisualState };
+      visualBeatRef.current = { onset: createAudioOnsetDetectorState(), previousSpectrum: null };
       onSessionChange({
         duration: buffer.duration,
         current: 0,
@@ -216,10 +216,18 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
         zoom: 1,
         viewStart: 0,
       });
+      onSuccessfulLoad();
+      await audioGraphReady;
+      try {
+        await audio.play();
+        setPlaying(true);
+      } catch {
+        setPlaying(false);
+      }
     } catch {
       if (loadVersion === loadVersionRef.current) setError(unsupportedAudioMessage);
     }
-  }, [onReplaceFile, onSessionChange, onSuccessfulLoad]);
+  }, [ensureAudioGraph, onReplaceFile, onSessionChange, onSuccessfulLoad]);
 
   const play = useCallback(async () => {
     const audio = audioRef.current;
@@ -296,31 +304,29 @@ export function useMusicAudioController({ session, onSessionChange, onReplaceFil
 
 function updateMusicVisualState(
   target: MusicVisualState,
-  beat: HomeVisualBeatState,
+  analysis: MusicAnalysisState,
   spectrum: Uint8Array,
   analyser: AnalyserNode,
   now: number,
   playing: boolean,
 ) {
-  const deltaTime = Math.min(0.08, Math.max(0.001, (now - (beat.lastUpdateAt || now - 32)) / 1000));
-  beat.lastUpdateAt = now;
-
   const bass = averageFrequencyBand(spectrum, analyser, 35, 220);
   const mid = averageFrequencyBand(spectrum, analyser, 220, 2600);
   const treble = averageFrequencyBand(spectrum, analyser, 2600, 12000);
-  const previousSpectrum = beat.previousSpectrum ?? new Float32Array(spectrum.length);
+  const previousSpectrum = analysis.previousSpectrum ?? new Float32Array(spectrum.length);
   let positiveFlux = 0;
   let fluxWeight = 0;
   for (let index = 1; index < spectrum.length; index += 1) {
     const value = (spectrum[index] ?? 0) / 255;
-    const previous = beat.previousSpectrum ? previousSpectrum[index] : value;
+    const previous = analysis.previousSpectrum ? previousSpectrum[index] : value;
     const weight = index < 24 ? 1.6 : index < 128 ? 1 : 0.55;
     positiveFlux += Math.max(0, value - previous) * weight;
     fluxWeight += weight;
     previousSpectrum[index] = value;
   }
-  beat.previousSpectrum = previousSpectrum;
+  analysis.previousSpectrum = previousSpectrum;
   const spectralFlux = positiveFlux / Math.max(1, fluxWeight);
+  const deltaTime = Math.min(0.08, Math.max(0.001, (now - (analysis.onset.lastUpdateAt || now - 32)) / 1000));
   const smooth = (current: number, next: number) => current + (next - current) * (1 - Math.exp(-deltaTime * (next > current ? 18 : 5.2)));
 
   target.bassEnergy = smooth(target.bassEnergy, playing ? bass : 0);
@@ -330,36 +336,15 @@ function updateMusicVisualState(
   target.beatPulse *= Math.exp(-deltaTime * 9.5);
   target.beatStrength *= Math.exp(-deltaTime * 4.8);
 
-  const rawOverall = bass * 0.46 + mid * 0.36 + treble * 0.18;
-  const beatSignal = bass * 0.72 + rawOverall * 0.28;
-  const distance = Math.abs(beatSignal - beat.baseline);
-  beat.baseline += (beatSignal - beat.baseline) * (1 - Math.exp(-deltaTime * (beatSignal > beat.baseline ? 1.5 : 3.2)));
-  beat.deviation += (distance - beat.deviation) * (1 - Math.exp(-deltaTime * 2.2));
-  const rise = beatSignal - beat.previous;
-  const threshold = beat.baseline + Math.max(0.026, beat.deviation * 1.35);
-  const fluxDistance = Math.abs(spectralFlux - beat.fluxBaseline);
-  beat.fluxBaseline += (spectralFlux - beat.fluxBaseline) * (1 - Math.exp(-deltaTime * 1.7));
-  beat.fluxDeviation += (fluxDistance - beat.fluxDeviation) * (1 - Math.exp(-deltaTime * 2.1));
-  const fluxThreshold = beat.fluxBaseline + Math.max(0.0012, beat.fluxDeviation * 1.2);
-  const transient = spectralFlux > fluxThreshold;
-  const accepted = playing
-    && now - beat.lastBeatAt > 280
-    && target.overallEnergy > 0.035
-    && ((beatSignal > threshold && rise > Math.max(0.007, beat.deviation * 0.13)) || transient);
-
-  if (accepted) {
-    const excess = (beatSignal - threshold) / Math.max(0.045, beat.deviation * 1.8);
-    const fluxStrength = (spectralFlux - fluxThreshold) / Math.max(0.004, beat.fluxDeviation * 2.2);
-    const rawStrength = 0.34 + excess * 0.58 + fluxStrength * 0.42 + Math.max(0, rise) * 1.5;
-    const strength = Number.isFinite(rawStrength) ? Math.min(1.2, Math.max(0.34, rawStrength)) : 0.48;
-    target.beatPulse = strength;
-    target.beatStrength = strength;
+  const onset = detectAudioOnset(analysis.onset, { bass, mid, treble, spectralFlux, playing }, now);
+  if (onset.detected) {
+    target.beatPulse = onset.strength;
+    target.beatStrength = onset.strength;
+    target.beatLowStrength = onset.lowStrength;
+    target.beatHighStrength = onset.highStrength;
     target.beatAt = now;
     target.beatToken += 1;
-    beat.lastBeatAt = now;
   }
-
-  beat.previous = beatSignal;
 }
 
 function averageFrequencyBand(spectrum: Uint8Array, analyser: AnalyserNode, minimumHz: number, maximumHz: number) {

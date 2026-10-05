@@ -33,6 +33,7 @@ const revealKeys = [
   'awakening',
   'livingMotion',
 ] as const;
+const spectacleKeys = ['convergence', 'focusGlow', 'birthRing', 'transformationFlash', 'revealEnergy'] as const;
 let previous = getSoundSpiritBirthFrame(0);
 for (let step = 1; step <= 350; step += 1) {
   const frame = getSoundSpiritBirthFrame(step / 100);
@@ -42,6 +43,13 @@ for (let step = 1; step <= 350; step += 1) {
   });
   previous = frame;
 }
+for (let step = 0; step < 350; step += 1) {
+  const frame = getSoundSpiritBirthFrame(step / 100);
+  spectacleKeys.forEach((key) => assert.ok(frame[key] >= 0 && frame[key] <= 1, `${key} must remain bounded.`));
+}
+spectacleKeys.forEach((key) => assert.equal(ALIVE_SOUND_SPIRIT_BIRTH_FRAME[key], 0, `${key} must terminate at ALIVE.`));
+assert.ok(getSoundSpiritBirthFrame(0.5).convergence > 0.4, 'UNBORN/HEART must visibly converge energy.');
+assert.ok(getSoundSpiritBirthFrame(2.58).transformationFlash > 0.95, 'Wing reveal must contain a brief transformation peak.');
 assert.ok(getSoundSpiritBirthFrame(0.6).heartReveal > 0, 'The five-lobed heart must be the first visible system.');
 assert.equal(getSoundSpiritBirthFrame(0.6).bodyReveal, 0, 'The body must not precede the heart.');
 assert.ok(getSoundSpiritBirthFrame(1.7).wingRootReveal > getSoundSpiritBirthFrame(1.7).wingMembraneReveal, 'Wings must unfold root first.');
@@ -68,7 +76,7 @@ assert.ok(!birthSource.includes('Math.random'), 'Birth timing must be determinis
 assert.ok(appSource.includes('token: current.token + 1'), 'Each successful import must create a fresh, re-entrant birth token.');
 assert.ok(musicSource.includes("setViewMode('spectrum')"), 'A successful birth must navigate to Spectrum.');
 assert.ok(musicSource.includes('isSoundSpiritBirthInteractionLocked'), 'Music Lab must arbitrate direct interaction during birth.');
-assert.ok(musicSource.includes('音樂賦予牠生命。'), 'The approved birth line must appear exactly in Music Lab.');
+assert.ok(!musicSource.includes('音樂賦予牠生命。'), 'Birth must communicate without explanatory text.');
 assert.ok(!musicSource.includes('SoundSpiritInteractionRecorder'), 'Music and birth must write zero DNA history.');
 const decodeIndex = controllerSource.indexOf('await context.decodeAudioData');
 const replaceIndex = controllerSource.indexOf('onReplaceFile(file)');
@@ -80,6 +88,9 @@ assert.equal((birthSource.match(/Geometry/g) ?? []).length, 0, 'Birth must not a
 assert.equal((rendererSource.match(/requestAnimationFrame\(animate\)/g) ?? []).length, 1, 'The renderer must keep one master animation loop.');
 for (const uniform of ['uBirthReveal', 'uBirthCrown', 'uBirthWing']) {
   assert.ok(rendererSource.includes(uniform), `${uniform} must reuse the existing Golden renderer materials.`);
+}
+for (const effect of ['birthEffects', 'birthAura', 'birthRing', 'birthStreaks', 'uBirthFlash']) {
+  assert.ok(rendererSource.includes(effect), `${effect} must participate in the bounded spectacle.`);
 }
 
 console.log('Sound Spirit Birth verification passed: deterministic state flow, transactional import, interaction arbitration, and single-loop rendering.');
