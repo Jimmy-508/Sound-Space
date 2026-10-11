@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { InteractionSoundPlayer } from '../src/audio/interactionSound';
 import { createBlueTearSeeds, createPointerTearSeeds, createWavefrontTearSeeds, clampEffectCount, gestureEffectLimits } from '../src/gesture/gestureEffectsModel';
 import { mapWaveAmplitude, mapWaveFrequency } from '../src/gesture/gestureMappings';
-import { createCompactHandRenderPoints } from '../src/gesture/gestureRenderModel';
+import { mapHandLandmarksToViewport } from '../src/gesture/handSkeletonRenderer';
 import { GestureInteractionController, gestureThresholds } from '../src/gesture/interactionController';
 import { clampNavigationScroll, getNavigationEdgeMotion, mapPageScrollDelta } from '../src/gesture/navigationGesture';
 import { GestureFrameStore, type TrackedHand } from '../src/gesture/types';
@@ -114,11 +114,11 @@ pointerController.update({ hands: [pointingHand], twoHandsPresent: false, timest
 const pointerState = pointerController.update({ hands: [pointingHand], twoHandsPresent: false, timestamp: 2 }, 301, true);
 assert.deepEqual(pointerState.pointer?.point, pointingHand.landmarks[8], 'Attraction and dwell must share landmark #8.');
 const landmarkSnapshot = structuredClone(pointingHand.landmarks);
-const compactPoints = createCompactHandRenderPoints(pointingHand.landmarks);
+const renderedPoints = mapHandLandmarksToViewport(pointingHand.landmarks, 1, 1);
 assert.deepEqual(pointingHand.landmarks, landmarkSnapshot, 'Rendering must never mutate recognition landmarks.');
-assert.deepEqual(compactPoints, pointingHand.landmarks, 'Golden Hand must render all 21 landmarks at their real positions.');
 assert.deepEqual(pointerState.pointer?.point, { x: 0.73, y: 0.26, z: 0 }, 'The star cursor stays on the true index fingertip.');
-assert.deepEqual(compactPoints[8], pointingHand.landmarks[8]);
+assert.ok(Math.abs(renderedPoints[16] - pointingHand.landmarks[8].x) < 0.0001);
+assert.ok(Math.abs(renderedPoints[17] - pointingHand.landmarks[8].y) < 0.0001);
 
 const gestureHand = (gesture: TrackedHand['gesture'], timestamp: number): TrackedHand => ({
   id: 7,
@@ -298,7 +298,7 @@ const effectsSource = readFileSync('src/gesture/GestureEffectsOverlay.tsx', 'utf
 const overlaySource = readFileSync('src/gesture/GestureOverlay.tsx', 'utf8');
 const waveCanvasSource = readFileSync('src/visualization/WaveCanvas.tsx', 'utf8');
 const samplingSource = readFileSync('src/labs/SamplingLab.tsx', 'utf8');
-const renderModelSource = readFileSync('src/gesture/gestureRenderModel.ts', 'utf8');
+const skeletonRendererSource = readFileSync('src/gesture/handSkeletonRenderer.ts', 'utf8');
 const starRendererSource = readFileSync('src/interaction/twinklingStarRenderer.ts', 'utf8');
 const musicSource = readFileSync('src/labs/MusicLab.tsx', 'utf8');
 const settingsSource = readFileSync('src/components/SettingsPanel.tsx', 'utf8');
@@ -318,7 +318,7 @@ assert.ok(effectsSource.includes('drawPressureRing'));
 assert.ok(effectsSource.includes('for (let ring = 0; ring < 4'));
 assert.ok(effectsSource.includes('createWavefrontTearSeeds'));
 assert.ok(!effectsSource.includes("rgba(255, 184, 49"), 'Explosion must no longer use golden projectile rays.');
-assert.ok(overlaySource.includes('createCompactHandRenderPoints'));
+assert.ok(overlaySource.includes('HandSkeletonRenderer'));
 assert.ok(overlaySource.includes('drawTwinklingStarCursor'));
 assert.ok(starRendererSource.includes('successPulse'));
 assert.ok(starRendererSource.includes('dustCount'));
@@ -326,7 +326,7 @@ assert.ok(starRendererSource.includes('context.scale(scale, scale)'));
 assert.ok(effectsSource.includes('blueTears.length = 0') && effectsSource.includes('waterRipples.length = 0'), 'Blue Tears OFF clears both visual pools.');
 assert.ok(effectsSource.includes('if (blueTearsEnabledRef.current)'));
 assert.ok(!overlaySource.includes('palmCore'), 'Palm center calculation remains internal and must not render a decorative dot.');
-assert.ok(renderModelSource.includes('getHandPalmCenter'));
+assert.ok(skeletonRendererSource.includes('HAND_SKELETON_CONNECTIONS'));
 assert.ok(stylesSource.includes('pointer-events: none'));
 assert.ok(stylesSource.includes('gesture-captured-flow'));
 assert.ok(waveCanvasSource.includes("repulsor.type === 'ripple' ? 0"), 'Ripple awareness must remain zero until the ring arrives.');

@@ -1,17 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { gesturePointToViewport } from './coordinateTransform';
-import { HAND_CONNECTIONS } from './gestureEffectsModel';
-import { createCompactHandRenderPoints } from './gestureRenderModel';
+import { HandSkeletonRenderer } from './handSkeletonRenderer';
 import type { GestureInteractionController } from './interactionController';
 import type { GestureFrameStore } from './types';
 import { drawTwinklingStarCursor } from '../interaction/twinklingStarRenderer';
 import type { WorldInteractionController } from '../interaction/worldInteraction';
-
-interface TrailPoint {
-  x: number;
-  y: number;
-  timestamp: number;
-}
 
 interface GestureOverlayProps {
   store: GestureFrameStore;
@@ -28,7 +21,7 @@ export function GestureOverlay({ store, interaction, world }: GestureOverlayProp
     const context = canvas.getContext('2d');
     if (!context) return;
 
-    const trails = new Map<number, TrailPoint[]>();
+    const skeletonRenderer = new HandSkeletonRenderer();
     let frame = 0;
     let width = 1;
     let height = 1;
@@ -47,79 +40,7 @@ export function GestureOverlay({ store, interaction, world }: GestureOverlayProp
     const draw = (timestamp: number) => {
       context.clearRect(0, 0, width, height);
       const snapshot = store.read();
-      const liveIds = new Set(snapshot.hands.map((hand) => hand.id));
-
-      for (const hand of snapshot.hands) {
-        const opacity = Math.min(1, Math.max(0, hand.confidence * hand.lostOpacity));
-        if (opacity <= 0.01 || hand.landmarks.length !== 21) continue;
-        const renderLandmarks = createCompactHandRenderPoints(hand.landmarks);
-        const points = renderLandmarks.map((point) => gesturePointToViewport(point, width, height));
-
-        context.save();
-        context.globalCompositeOperation = 'lighter';
-        context.lineCap = 'round';
-        context.lineJoin = 'round';
-
-        for (const [from, to] of HAND_CONNECTIONS) {
-          const start = points[from];
-          const end = points[to];
-          const gradient = context.createLinearGradient(start.x, start.y, end.x, end.y);
-          gradient.addColorStop(0, `rgba(255, 246, 205, ${0.82 * opacity})`);
-          gradient.addColorStop(0.5, `rgba(255, 204, 92, ${0.72 * opacity})`);
-          gradient.addColorStop(1, `rgba(255, 155, 52, ${0.58 * opacity})`);
-          context.beginPath();
-          context.moveTo(start.x, start.y);
-          context.lineTo(end.x, end.y);
-          context.strokeStyle = `rgba(255, 174, 45, ${0.2 * opacity})`;
-          context.shadowColor = 'rgba(255, 183, 57, 0.7)';
-          context.shadowBlur = 13;
-          context.lineWidth = 4;
-          context.stroke();
-          context.strokeStyle = gradient;
-          context.shadowBlur = 5;
-          context.lineWidth = 1.15;
-          context.stroke();
-        }
-
-        points.forEach((point, index) => {
-          const isTip = [4, 8, 12, 16, 20].includes(index);
-          const radius = index === 8 ? 5.2 : isTip ? 4.1 : index === 0 ? 4.5 : 3;
-          context.beginPath();
-          context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-          context.fillStyle = `rgba(255, 252, 226, ${0.96 * opacity})`;
-          context.shadowColor = index % 2 === 0 ? 'rgba(255, 216, 93, 0.98)' : 'rgba(255, 162, 48, 0.92)';
-          context.shadowBlur = isTip ? 18 : 11;
-          context.fill();
-        });
-
-        const indexTip = points[8];
-        const trail = trails.get(hand.id) ?? [];
-        const last = trail[trail.length - 1];
-        if (hand.lostOpacity > 0.9 && (!last || Math.hypot(indexTip.x - last.x, indexTip.y - last.y) > 2.5)) {
-          trail.push({ x: indexTip.x, y: indexTip.y, timestamp });
-        }
-        while (trail.length && timestamp - trail[0].timestamp > 190) trail.shift();
-        trails.set(hand.id, trail);
-
-        trail.forEach((point, index) => {
-          const life = 1 - (timestamp - point.timestamp) / 190;
-          context.beginPath();
-          context.arc(point.x, point.y, 1 + (index / Math.max(1, trail.length)) * 1.5, 0, Math.PI * 2);
-          context.fillStyle = `rgba(255, 220, 117, ${Math.max(0, life) * 0.5 * opacity})`;
-          context.shadowColor = 'rgba(255, 170, 58, 0.84)';
-          context.shadowBlur = 8;
-          context.fill();
-        });
-        context.restore();
-      }
-
-      for (const id of trails.keys()) {
-        if (!liveIds.has(id)) {
-          const trail = trails.get(id) ?? [];
-          while (trail.length && timestamp - trail[0].timestamp > 190) trail.shift();
-          if (!trail.length) trails.delete(id);
-        }
-      }
+      skeletonRenderer.render(context, snapshot.hands, width, height);
 
       const pointer = interaction.read().pointer;
       if (pointer) {
@@ -159,6 +80,7 @@ export function GestureOverlay({ store, interaction, world }: GestureOverlayProp
     frame = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(frame);
+      skeletonRenderer.clear();
       window.removeEventListener('resize', resize);
       window.visualViewport?.removeEventListener('resize', resize);
     };
